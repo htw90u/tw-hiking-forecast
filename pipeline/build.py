@@ -68,7 +68,29 @@ class Builder:
         self.manifest["layers"]["stations"] = {"time": t, "count": len(merged)}
         return f"{len(merged)} stations (auto {len(auto)}, manned {len(manned)}, rain {len(rain)})"
 
+    def seed_archive(self, root: Path):
+        """Restore monthly archives from the deployed site when the local copy is missing."""
+        url = (self.args.archive_seed_url or "").rstrip("/")
+        if not url or any(root.glob("????-??.csv.gz")):
+            return
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"{url}/data/manifest.json", timeout=60) as r:
+                months = json.loads(r.read().decode("utf-8"))["layers"]["history"]["months"]
+        except Exception as e:  # noqa: BLE001
+            self.log.warn(f"archive seed: cannot read {url}/data/manifest.json ({e})")
+            return
+        root.mkdir(parents=True, exist_ok=True)
+        for m in months:
+            try:
+                with urllib.request.urlopen(f"{url}/data/archive/{m}.csv.gz", timeout=120) as r:
+                    (root / f"{m}.csv.gz").write_bytes(r.read())
+                self.log.info(f"archive seed: restored {m} from {url}")
+            except Exception as e:  # noqa: BLE001
+                self.log.warn(f"archive seed {m}: {e}")
+
     def task_history(self):
+        self.seed_archive(Path(self.args.archive))
         arc = stations.Archive(Path(self.args.archive))
         cur = now()
         arc.load_recent(cur, days=self.args.hist_days_out + 2)
@@ -310,6 +332,8 @@ def main(argv=None):
     ap.add_argument("--history-days", type=int, default=15, help="how far back to ingest S3 history snapshots")
     ap.add_argument("--hist-days-out", type=int, default=31, help="days of hourly history per station file")
     ap.add_argument("--radar-frames", type=int, default=7)
+    ap.add_argument("--archive-seed-url", default="",
+                    help="deployed site URL used to restore data/archive/*.csv.gz when the local archive is empty")
     args = ap.parse_args(argv)
     only = [x.strip() for x in args.only.split(",") if x.strip()]
     bad = [x for x in only if x not in TASKS]

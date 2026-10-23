@@ -1,0 +1,247 @@
+#!/usr/bin/env node
+// End-to-end test of the web app with Playwright (Chromium).
+// Usage: node tests/e2e/run_e2e.cjs [--site site] [--shots logs/shots]
+// Requires site/data built by `python -m pipeline.build`.
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { chromium } = require('playwright');
+
+const ROOT = path.resolve(__dirname, '..', '..');
+const args = process.argv.slice(2);
+const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
+const SITE = path.resolve(ROOT, opt('--site', 'site'));
+const SHOTS = path.resolve(ROOT, opt('--shots', 'logs/shots'));
+const LOGDIR = path.resolve(ROOT, 'logs');
+fs.mkdirSync(SHOTS, { recursive: true });
+fs.mkdirSync(LOGDIR, { recursive: true });
+
+const TZ = process.env.LOG_TZ || 'Asia/Taipei';
+const hms = () => new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
+const stamp = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, dateStyle: 'short', timeStyle: 'medium' }).format(new Date()).replace(/[: ]/g, '').replace(/-/g, '');
+const logFile = path.join(LOGDIR, `e2e-${stamp}.log`);
+fs.writeFileSync(logFile, `# Reproduce: cd ${ROOT} && node tests/e2e/run_e2e.cjs ${args.join(' ')}\n# Started: ${new Date().toISOString()} (time zone ${TZ})\n`);
+const color = process.stdout.isTTY || process.env.FORCE_COLOR || process.env.GITHUB_ACTIONS;
+const C = { PASS: '\x1b[32m', FAIL: '\x1b[31m', INFO: '\x1b[0m', WARN: '\x1b[33m' };
+let failures = 0;
+function log(level, msg) {
+  const line = `[${hms()}] ${level.padEnd(5)} ${msg}`;
+  fs.appendFileSync(logFile, line + '\n');
+  console.log(color ? line.replace(level, `${C[level] || ''}${level}\x1b[0m`) : line);
+}
+async function check(name, fn) {
+  try { await fn(); log('PASS', name); } catch (e) { failures += 1; log('FAIL', `${name}: ${e.message.split('\n')[0]}`); }
+}
+function assert(c, m) { if (!c) throw new Error(m || 'assertion failed'); }
+
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.webmanifest': 'application/manifest+json', '.gz': 'application/gzip', '.txt': 'text/plain' };
+
+function serve() {
+  const srv = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    let p = path.join(SITE, decodeURIComponent(u.pathname));
+    if (!p.startsWith(SITE)) { res.writeHead(403); res.end(); return; }
+    if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
+    fs.readFile(p, (err, buf) => {
+      if (err) { res.writeHead(404); res.end('not found'); return; }
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' });
+      res.end(buf);
+    });
+  });
+  return new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv)));
+}
+
+(async () => {
+  if (!fs.existsSync(path.join(SITE, 'data', 'manifest.json'))) {
+    log('FAIL', 'site/data/manifest.json missing - run `python -m pipeline.build` first');
+    process.exit(1);
+  }
+  const srv = await serve();
+  const base = `http://127.0.0.1:${srv.address().port}/`;
+  log('INFO', `serving ${SITE} at ${base}; log ${logFile}`);
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 412, height: 860 }, locale: 'zh-TW', timezoneId: 'Asia/Taipei' });
+  // External map tiles are not needed for the tests; answer them locally.
+  await ctx.route(/opentopomap|nlsc\.gov\.tw|openstreetmap|windy\.com/, (r) => r.fulfill({ status: 204, body: '' }));
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
+
+  await check('app loads and data ready', async () => {
+    await page.goto(base);
+    await page.waitForSelector('body.ready', { timeout: 30000 });
+    const chips = await page.$$eval('.chip', (b) => b.length);
+    assert(chips >= 7, `expected >= 7 layer chips, got ${chips}`);
+    const status = await page.textContent('#status');
+    assert(/資料更新/.test(status), `status text: ${status}`);
+  });
+
+  await check('radar overlay rendered with legend', async () => {
+    await page.waitForSelector('img.wx-grid', { timeout: 15000 });
+    assert(await page.isVisible('#legend'), 'legend hidden');
+    const t = await page.textContent('#legend summary');
+    assert(t.includes('雷達'), `legend title ${t}`);
+  });
+
+  await check('grid PNG decodes exactly (browser vs pipeline encoding)', async () => {
+    const r = await page.evaluate(async () => {
+      const { loadGrid, sample } = await import('./js/grid.js');
+      const meta = await (await fetch('data/grids/temp.json')).json();
+      const g = await loadGrid(meta);
+      const vals = Array.from(g.values).filter((v) => !Number.isNaN(v));
+      return { n: vals.length, min: Math.min(...vals), max: Math.max(...vals), metaMax: meta.max,
+        offTaiwan: sample(g, 22.0, 123.0), w: g.w, h: g.h, size: meta.size };
+    });
+    assert(r.w === r.size[0] && r.h === r.size[1], 'size mismatch');
+    assert(r.n > 100, 'no valid temperature cells');
+    assert(Math.abs(r.max - r.metaMax) < 0.051, `max ${r.max} vs meta ${r.metaMax}`);
+    assert(r.min > -20 && r.max < 45, `implausible temps ${r.min}..${r.max}`);
+  });
+
+  await check('every layer chip switches without errors', async () => {
+    const ids = await page.$$eval('.chip', (b) => b.map((x) => x.dataset.layer));
+    for (const id of ids) {
+      await page.click(`.chip[data-layer="${id}"]`);
+      await page.waitForTimeout(id === 'none' ? 200 : 1200);
+      const checked = await page.getAttribute(`.chip[data-layer="${id}"]`, 'aria-checked');
+      assert(checked === 'true', `chip ${id} not checked`);
+    }
+    assert(!errors.length, errors.join(' | '));
+  });
+
+  await check('QPF periods (4) and georeferenced overlay', async () => {
+    await page.click('.chip[data-layer="qpf"]');
+    await page.waitForSelector('[data-period]');
+    const n = await page.$$eval('[data-period]', (b) => b.length);
+    assert(n === 4, `periods ${n}`);
+    await page.click('[data-period="1"]');
+    await page.waitForTimeout(800);
+    assert(await page.$('img.qpf-title'), 'QPF title image missing');
+    await page.screenshot({ path: path.join(SHOTS, 'qpf-mobile.png') });
+  });
+
+  await check('click on map opens point panel with risk, stations and history chart', async () => {
+    await page.click('.chip[data-layer="radar"]');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const box = await page.locator('#map').boundingBox();
+    await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.4);
+    await page.waitForSelector('#sheet.open #h-risk', { timeout: 20000 });
+    await page.waitForSelector('#hist-out figure.chart, #hist-out p', { timeout: 20000 });
+    const title = await page.textContent('#sheet-title');
+    assert(title && title !== '查詢中…', `title ${title}`);
+    await page.screenshot({ path: path.join(SHOTS, 'point-mobile.png') });
+  });
+
+  await check('history range switch 7 days', async () => {
+    await page.click('[data-range="168"]');
+    await page.waitForTimeout(800);
+    const has = await page.$('#hist-out figure.chart');
+    assert(has, 'no chart for 7 days');
+  });
+
+  await check('search mountain and open spot forecast', async () => {
+    await page.click('#sheet-close');
+    await page.fill('#q', '玉山');
+    await page.waitForSelector('#q-results li');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#sheet.open [data-panel="d3"] table', { timeout: 20000 });
+    const title = await page.textContent('#sheet-title');
+    assert(title.trim() === '玉山', `title ${title}`);
+  });
+
+  await check('affected mountains list for QPF', async () => {
+    await page.click('#sheet-close');
+    await page.click('.chip[data-layer="qpf"]');
+    await page.waitForTimeout(800);
+    if (!(await page.isVisible('#btn-affected'))) await page.click('#btn-more');
+    await page.click('#btn-affected');
+    await page.waitForSelector('#aff-thr', { timeout: 15000 });
+    const txt = await page.textContent('#sheet-body');
+    assert(/共 \d+ 處/.test(txt), 'no count');
+  });
+
+  await check('alerts, typhoon and earthquake views', async () => {
+    await page.click('#sheet-close');
+    await page.click('#btn-alerts');
+    await page.waitForSelector('#btn-allq');
+    if (await page.$('[data-open="typhoon"]')) {
+      await page.click('[data-open="typhoon"]');
+      await page.waitForSelector('#sheet-title:has-text("颱風")');
+      await page.click('#sheet-back');
+    }
+    await page.click('#btn-allq');
+    await page.waitForSelector('[data-quake]');
+    await page.click('[data-quake] >> nth=0');
+    await page.waitForSelector('#sheet-title:has-text("地震")');
+    const t = await page.textContent('#sheet-body');
+    assert(t.includes('50 km'), 'quake detail missing radius list');
+    await page.screenshot({ path: path.join(SHOTS, 'quake-mobile.png') });
+  });
+
+  await check('settings: font 200%, contrast theme, colour-blind palette persist', async () => {
+    await page.click('#sheet-close');
+    await page.click('#btn-settings');
+    await page.waitForSelector('#set-fs');
+    await page.$eval('#set-fs', (el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.selectOption('#set-theme', 'contrast');
+    await page.selectOption('#set-pal', 'cvd');
+    await page.keyboard.press('Escape');
+    const fs_ = await page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
+    assert(fs_ === '32px', `font-size ${fs_}`);
+    assert((await page.getAttribute('html', 'data-theme')) === 'contrast', 'theme');
+    await page.click('.chip[data-layer="qpe1h"]');
+    await page.waitForTimeout(800);
+    const sw = await page.$eval('#legend .swatches li:last-child .sw', (e) => getComputedStyle(e).backgroundColor);
+    assert(sw === 'rgb(253, 231, 37)', `lowest swatch ${sw} (expected viridis yellow)`);
+    await page.screenshot({ path: path.join(SHOTS, 'contrast-xl-mobile.png') });
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    assert((await page.getAttribute('html', 'data-theme')) === 'contrast', 'theme not persisted');
+    const mapH = await page.evaluate(() => document.getElementById('map').getBoundingClientRect().height / window.innerHeight);
+    assert(mapH > 0.3, `map only ${(mapH * 100).toFixed(0)}% of screen at 200% font`);
+  });
+
+  await check('offline: app shell, data and recent query snapshot from cache', async () => {
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();  // ensure SW controls the page and caches data
+    await page.waitForSelector('body.ready');
+    await page.waitForTimeout(1500);
+    await ctx.setOffline(true);
+    await page.reload();
+    await page.waitForSelector('body.ready', { timeout: 20000 });
+    const st = await page.textContent('#status');
+    assert(st.includes('離線'), `status ${st}`);
+    await page.click('#btn-recent');
+    await page.waitForSelector('[data-rid]');
+    await page.click('[data-kind="recent"] >> nth=0');
+    await page.waitForSelector('.offline-note', { timeout: 10000 });
+    await page.screenshot({ path: path.join(SHOTS, 'offline-recent.png') });
+    await ctx.setOffline(false);
+  });
+
+  await check('desktop layout screenshot', async () => {
+    const p2 = await ctx.newPage();
+    await p2.setViewportSize({ width: 1366, height: 860 });
+    await p2.evaluate(() => {}).catch(() => {});
+    await p2.goto(base);
+    await p2.evaluate(() => { localStorage.clear(); });
+    await p2.reload();
+    await p2.waitForSelector('body.ready');
+    await p2.waitForSelector('img.wx-grid');
+    const box = await p2.locator('#map').boundingBox();
+    await p2.mouse.click(box.x + box.width * 0.42, box.y + box.height * 0.45);
+    await p2.waitForSelector('#sheet.open #h-risk', { timeout: 20000 });
+    await p2.waitForTimeout(1000);
+    await p2.screenshot({ path: path.join(SHOTS, 'desktop.png') });
+    await p2.close();
+  });
+
+  await check('no uncaught page errors', async () => { assert(!errors.length, errors.join(' | ')); });
+
+  await browser.close();
+  srv.close();
+  log(failures ? 'FAIL' : 'PASS', `e2e finished: ${failures} failure(s); screenshots in ${SHOTS}`);
+  process.exit(failures ? 1 : 0);
+})().catch((e) => { log('FAIL', e.stack || String(e)); process.exit(1); });

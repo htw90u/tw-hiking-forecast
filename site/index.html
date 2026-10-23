@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-Hant-TW" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d4e5f">
+<meta name="description" content="整合中央氣象署雷達、雨量、定量降水預報、測站、登山與景點預報、地震與颱風資訊的登山氣象地圖">
+<title>山岳氣象地圖</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<a class="skip" href="#controls">跳至圖層控制</a>
+<header class="topbar">
+  <h1 class="brand"><span aria-hidden="true">⛰</span> 山岳氣象</h1>
+  <form id="search-form" class="search" role="search">
+    <label for="q" class="sr-only">搜尋山名、測站、鄉鎮或座標</label>
+    <input id="q" type="search" autocomplete="off" placeholder="搜尋山名、測站、鄉鎮、座標" role="combobox" aria-expanded="false" aria-controls="q-results" aria-autocomplete="list">
+    <ul id="q-results" role="listbox" hidden></ul>
+  </form>
+  <nav class="actions-top" aria-label="功能">
+    <button id="btn-locate" class="icon-btn" aria-label="定位到我的位置" title="我的位置"><span aria-hidden="true">◎</span></button>
+    <button id="btn-alerts" class="icon-btn" aria-label="警特報與災害" title="警特報與災害"><span aria-hidden="true">⚠</span><span id="alert-badge" class="badge" hidden></span></button>
+    <button id="btn-recent" class="icon-btn" aria-label="收藏與最近查詢" title="收藏與最近查詢"><span aria-hidden="true">★</span></button>
+    <button id="btn-settings" class="icon-btn" aria-label="顯示與無障礙設定" title="設定"><span aria-hidden="true">⚙</span></button>
+  </nav>
+</header>
+<p id="status" class="status" role="status" aria-live="polite">載入中…</p>
+<main id="map" aria-label="地圖。點擊任一處可查看該地的即時觀測、預報與安全評估"></main>
+
+<section id="controls" class="controls" aria-label="圖層控制">
+  <div id="chips" class="chips" role="radiogroup" aria-label="氣象圖層"></div>
+  <div class="tools">
+    <div id="time-ctl" class="time-ctl"></div>
+    <button id="btn-more" class="btn" aria-expanded="false" aria-controls="more">選項</button>
+  </div>
+  <div id="more" class="more">
+    <label class="range">透明度 <input id="opacity" type="range" min="0.2" max="1" step="0.05" aria-valuetext="70%"></label>
+    <button id="btn-affected" class="btn">列出受影響山區</button>
+    <div id="toggles" class="toggles" aria-label="標記"></div>
+  </div>
+</section>
+<details id="legend" class="legend" hidden></details>
+
+<section id="sheet" class="sheet" aria-labelledby="sheet-title" tabindex="-1" hidden>
+  <div class="sheet-head">
+    <button id="sheet-back" class="icon-btn" aria-label="上一頁" hidden><span aria-hidden="true">‹</span></button>
+    <h2 id="sheet-title"></h2>
+    <button id="sheet-toggle" class="icon-btn" aria-label="展開或縮小面板" aria-expanded="false"><span aria-hidden="true">↕</span></button>
+    <button id="sheet-close" class="icon-btn" aria-label="關閉面板"><span aria-hidden="true">✕</span></button>
+  </div>
+  <div id="sheet-body" class="sheet-body"></div>
+</section>
+
+<dialog id="dlg-settings" aria-labelledby="dlg-settings-title">
+  <form method="dialog" class="dlg-head"><h2 id="dlg-settings-title">設定</h2><button class="icon-btn" aria-label="關閉設定"><span aria-hidden="true">✕</span></button></form>
+  <div class="dlg-body"></div>
+</dialog>
+
+<noscript><p class="noscript">此網頁需要啟用 JavaScript。</p></noscript>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/topojson/topojson-client.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

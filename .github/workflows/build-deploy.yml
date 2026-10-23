@@ -1,0 +1,92 @@
+name: Build data and deploy site
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"   # CWA radar/rain update every 10 min; forecasts 4x per day
+  workflow_dispatch:
+  push:
+    paths: ["site/**", "pipeline/**", ".github/workflows/build-deploy.yml"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LOG_TZ: Asia/Taipei
+      FORCE_COLOR: "1"
+    outputs:
+      ok: ${{ steps.build.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      - name: Restore download cache and history archive
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache
+            site/data
+            archive
+          key: cwa-${{ github.run_id }}
+          restore-keys: cwa-
+
+      - name: Unit tests
+        if: github.event_name != 'schedule'
+        run: python -m pytest -q tests
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build data bundle
+        id: build
+        run: python -m pipeline.build --archive-seed-url "${{ steps.pages.outputs.base_url }}"
+
+      - name: Save download cache and history archive
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache
+            site/data
+            archive
+          key: cwa-${{ github.run_id }}
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 3
+
+      - uses: actions/upload-pages-artifact@v3
+        if: always() && hashFiles('site/data/manifest.json') != ''
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: always() && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
