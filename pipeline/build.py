@@ -192,11 +192,12 @@ class Builder:
         topo = geo.load_topo(TOPO)
         g = qpf.GRID
         land = geo.land_mask(topo, g["lon0"], g["lat0"], g["res"], g["nx"], g["ny"])
+        insets = qpf.prepare_insets(topo)
         periods = []
         for i, ds_id in enumerate(qpf.QPF_IDS):
             meta = self.f.get_json(f"Forecast/{ds_id}.json")["cwaopendata"]
             png = self.f.get(f"Forecast/{ds_id}.png").read_bytes()
-            r = qpf.process(png, pts, land)
+            r = qpf.process(png, pts, land, insets)
             if r["refit"]:
                 self.log.warn(f"QPF {ds_id}: layout changed, re-fitted transform {np.round(r['fit'], 2).tolist()}")
             start = qpf.period_start(meta["Sent"]) + timedelta(hours=12 * i)
@@ -204,16 +205,35 @@ class Builder:
             grid = {"data": r["grid"].astype(np.float32), "lon0": g["lon0"], "lat0": g["lat0"], "res": g["res"]}
             grid["data"][grid["data"] == 0] = np.nan
             classes = [{"lo": 0, "hi": 0.5}] + [{"lo": lo, "hi": hi} for lo, hi in qpf.CLASS_BOUNDS]
+            common = {"unit": "mm/12h", "kind": "class", "classes": classes,
+                      "start": start.isoformat(), "end": (start + timedelta(hours=12)).isoformat(), "issued": meta["Sent"],
+                      "src": ds_id}
+            # Outlying islands (drawn in the inset boxes) are written as separate
+            # high-resolution grids placed at their real coordinates.
+            parts = []
+            for iname, ires in r["insets"].items():
+                if "error" in ires:
+                    self.log.warn(f"QPF {ds_id}: {ires['error']}")
+                    continue
+                if ires["refit"]:
+                    self.log.warn(f"QPF {ds_id}: inset {iname} re-fitted {np.round(ires['fit'], 2).tolist()}")
+                ig = insets[iname]["grid"]
+                igrid = {"data": ires["grid"].astype(np.float32), "lon0": ig["lon0"], "lat0": ig["lat0"], "res": ig["res"]}
+                igrid["data"][igrid["data"] == 0] = np.nan
+                pname = f"{name}_{iname}"
+                grids.write_layer(self.out / "grids", pname, igrid, 1, 0, {
+                    **common, "label": qpf.INSETS[iname]["label"], "fitCost": round(ires["cost"], 3)})
+                parts.append(f"grids/{pname}.json")
             grids.write_layer(self.out / "grids", name, grid, 1, 0, {
-                "label": f"定量降水預報({'I II III IV'.split()[i]})", "unit": "mm/12h", "kind": "class",
-                "classes": classes, "cwaColors": [[255, 255, 255]] + [list(c) for c in r["legend"]],
-                "start": start.isoformat(), "end": (start + timedelta(hours=12)).isoformat(), "issued": meta["Sent"],
-                "title": f"grids/{name}_title.png", "src": ds_id, "fitCost": round(r["cost"], 1),
+                **common, "parts": parts,
+                "label": f"定量降水預報({'I II III IV'.split()[i]})",
+                "cwaColors": [[255, 255, 255]] + [list(c) for c in r["legend"]],
+                "title": f"grids/{name}_title.png", "fitCost": round(r["cost"], 1),
             })
             (self.out / "grids" / f"{name}_title.png").write_bytes(r["title_png"])
             periods.append({"meta": f"grids/{name}.json", "start": start.isoformat()})
         self.manifest["layers"]["qpf"] = {"time": periods[0]["start"] if periods else None, "periods": periods}
-        return f"{len(periods)} periods"
+        return f"{len(periods)} periods (+{len(qpf.INSETS)} island insets each)"
 
     def task_spots(self):
         r = forecast.build_spots(self.f.get_json, self.out, self.log)

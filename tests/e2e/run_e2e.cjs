@@ -122,6 +122,25 @@ function serve() {
     await page.screenshot({ path: path.join(SHOTS, 'qpf-mobile.png') });
   });
 
+  await check('QPF outlying islands placed at real coordinates (Matsu, Kinmen)', async () => {
+    const r = await page.evaluate(async () => {
+      const { getGrid, framesFor } = await import('./js/layers.js');
+      const { sample } = await import('./js/grid.js');
+      const g = await getGrid(framesFor('qpf')[0]);
+      return { parts: g.parts.length, beigan: sample(g, 26.222, 120.0), nangan: sample(g, 26.155, 119.94),
+        kinmen: sample(g, 24.45, 118.38), sea: sample(g, 26.0, 119.5) };
+    });
+    assert(r.parts === 4, `parts ${r.parts}`);
+    assert(r.beigan !== null && r.nangan !== null && r.kinmen !== null, JSON.stringify(r));
+    assert(r.sea === null, `sea should be no-data ${JSON.stringify(r)}`);
+    const n = await page.$$eval('img.wx-grid', (x) => x.length);
+    assert(n === 5, `expected 5 overlay images (main + 4 islands), got ${n}`);
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([26.17, 119.96], 11, { animate: false }); });
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(SHOTS, 'qpf-matsu.png') });
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.75, 121.0], 8, { animate: false }); });
+  });
+
   await check('click on map opens point panel with risk, stations and history chart', async () => {
     await page.click('.chip[data-layer="radar"]');
     await page.evaluate(() => window.scrollTo(0, 0));

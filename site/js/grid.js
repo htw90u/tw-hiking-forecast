@@ -38,8 +38,12 @@ export async function loadGrid(meta, base = 'data/') {
   return { meta, w, h, values, bounds: meta.bounds };
 }
 
-/** Value at a WGS84 point (nearest cell) or null. */
+/** Value at a WGS84 point (nearest cell) or null; higher-resolution parts win. */
 export function sample(grid, lat, lon) {
+  for (const part of grid.parts || []) {
+    const v = sample(part, lat, lon);
+    if (v !== null) return v;
+  }
   const [west, south, east, north] = grid.bounds;
   if (lon < west || lon >= east || lat <= south || lat > north) return null;
   const i = Math.floor((lon - west) / (east - west) * grid.w);

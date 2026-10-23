@@ -25,7 +25,13 @@ export function getMeta(path) {
 
 export async function getGrid(path) {
   if (!S.grids.has(path)) {
-    const p = getMeta(path).then((meta) => loadGrid(meta));
+    // Grids may carry extra "parts" (e.g. outlying-island insets of the QPF);
+    // they are loaded together and consulted first by sample().
+    const p = getMeta(path).then(async (meta) => {
+      const grid = await loadGrid(meta);
+      grid.parts = await Promise.all((meta.parts || []).map((pp) => getMeta(pp).then((m) => loadGrid(m))));
+      return grid;
+    });
     p.catch(() => S.grids.delete(path));
     S.grids.set(path, p);
   }
@@ -75,11 +81,12 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
-    const scale = scaleFor(def.kind, S.settings.palette);
-    const canvas = renderGrid(grid, colourFn(scale));
-    const [w, s, e, n] = grid.bounds;
-    const url = canvas.toDataURL('image/png');
-    const ov = L.imageOverlay(url, [[s, w], [n, e]], { opacity: S.settings.opacity, interactive: false, className: 'wx-grid' });
+    const colour = colourFn(scaleFor(def.kind, S.settings.palette));
+    const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
+      const [w, s, e, n] = g.bounds;
+      return L.imageOverlay(renderGrid(g, colour).toDataURL('image/png'), [[s, w], [n, e]],
+        { opacity: S.settings.opacity, interactive: false, className: 'wx-grid' });
+    }));
     ov.addTo(S.map);
     clearOverlay();
     S.layer.overlay = ov;
@@ -147,6 +154,7 @@ export function setOpacity(v) {
   if (!ov) return;
   if (ov.setOpacity) ov.setOpacity(v);
   else if (ov.setStyle) ov.eachLayer((l) => { if (l.options.fillOpacity) l.setStyle({ fillOpacity: v }); });
+  else ov.eachLayer((l) => l.setOpacity && l.setOpacity(v));
 }
 
 export function renderLegend(meta, message) {

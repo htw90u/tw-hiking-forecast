@@ -53,7 +53,7 @@ def qpf_result():
     g = qpf.GRID
     land = geo.land_mask(topo, g["lon0"], g["lat0"], g["res"], g["nx"], g["ny"])
     pts = qpf.boundary_points(TOPO)
-    return qpf.process((FIX / "qpf_I.png").read_bytes(), pts, land), land
+    return qpf.process((FIX / "qpf_I.png").read_bytes(), pts, land, qpf.prepare_insets(topo)), land
 
 
 def test_qpf_legend_and_fit(qpf_result):
@@ -81,6 +81,30 @@ def test_qpf_values(qpf_result):
     assert 11 <= at(121.55, 25.17) <= 14
     # Tainan coast: dry / very light
     assert at(120.2, 23.0) <= 3
+
+
+def test_qpf_island_insets(qpf_result):
+    r, _ = qpf_result
+    ins = r["insets"]
+    assert set(ins) == {"matsu", "dongyin", "juguang", "kinmen"}
+    for name, v in ins.items():
+        assert "error" not in v and v["cost"] < 1.0 and not v["refit"], name
+    counts = {k: set(np.unique(v["grid"]).tolist()) for k, v in ins.items()}
+    # 2026-10-23 20:30 image: Nangan grey (0.5-1), Beigan light cyan (1-2),
+    # Dongyin 2-10 mm, Juguang dry/grey, Kinmen dry (white) everywhere.
+    assert {2, 3} <= counts["matsu"]
+    assert {4, 5} <= counts["dongyin"]
+    assert counts["juguang"] <= {0, 1, 2}
+    assert counts["kinmen"] == {0, 1}
+
+    def at(name, lon, lat):
+        from pipeline.qpf import INSET_RES
+        topo = geo.load_topo(TOPO)
+        g = qpf.prepare_insets(topo)[name]["grid"]
+        return int(ins[name]["grid"][round((lat - g["lat0"]) / INSET_RES), round((lon - g["lon0"]) / INSET_RES)])
+
+    assert at("matsu", 119.94, 26.155) == 2   # Nangan
+    assert at("matsu", 120.000, 26.222) == 3  # Beigan
 
 
 def test_qpf_period_start():

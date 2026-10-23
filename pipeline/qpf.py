@@ -35,6 +35,25 @@ GRID = {"lon0": 119.3, "lat0": 21.85, "res": 0.01, "nx": 290, "ny": 356}
 # Image regions that are not part of the geographic main panel.
 EXCLUDE = [(0, 0, 1245, 152), (88, 198, 502, 662), (50, 1270, 340, 1445), (1060, 680, 1245, 1500), (900, 1420, 1245, 1500)]
 
+# Outlying islands are drawn enlarged in the framed boxes at the top-left of the
+# image. Each box has its own lon/lat scale; it is fitted against the island
+# coastlines and the result is put back at the islands' real position.
+#   box: pixel frame (x0, y0, x1, y1); area: lon/lat window selecting the coastline
+#   rings; centre: (lon, lat) used by the fit; fit: (ax, bx, ay, by) with
+#   x = ax * (lon - centre_lon) + bx, y = ay * (lat - centre_lat) + by
+INSETS = {
+    "matsu": {"label": "南竿・北竿", "box": (88, 198, 322, 482), "area": (119.85, 26.1, 120.05, 26.4),
+              "centre": (119.9622, 26.2108), "fit": (1263.78, 202.56, -1261.44, 344.81)},
+    "dongyin": {"label": "東引", "box": (322, 198, 502, 346), "area": (120.4, 26.3, 120.6, 26.42),
+                "centre": (120.4903, 26.3699), "fit": (1247.34, 415.72, -1248.97, 277.74)},
+    "juguang": {"label": "莒光", "box": (322, 346, 502, 482), "area": (119.9, 25.9, 120.0, 26.0),
+                "centre": (119.9564, 25.9617), "fit": (1256.35, 414.65, -1248.75, 424.65)},
+    "kinmen": {"label": "金門", "box": (88, 500, 322, 662), "area": (118.1, 24.3, 118.5, 24.6),
+               "centre": (118.3148, 24.4557), "fit": (556.11, 189.94, -559.05, 585.66)},
+}
+INSET_RES = 0.002  # about 200 m; the boxes are drawn at ~0.001-0.002 degree per pixel
+INSET_MARGIN = 4   # pixels kept away from the frame lines
+
 
 def boundary_points(topo_path: Path) -> np.ndarray:
     """Densified county-boundary vertices of the main island (lon, lat)."""
@@ -125,28 +144,102 @@ def classify(rgba: np.ndarray, legend: list) -> np.ndarray:
         best[better] = d[better]
         idx[better] = i
     cls = np.where(best <= 12 ** 2, idx, -1)
+    # Anti-aliased grey halos around the black boundary lines look like the
+    # 0.5-1 mm grey class; treat one pixel around every line as unknown too.
+    cls[ndimage.binary_dilation(rgb.max(axis=-1) < 90, iterations=1)] = -1
     # Lines, labels and anti-aliased edges take the class of the nearest clean pixel.
     unknown = cls < 0
     if unknown.any():
         _, (iy, ix) = ndimage.distance_transform_edt(unknown, return_indices=True)
         cls = cls[iy, ix]
-    for x0, y0, x1, y1 in EXCLUDE:
-        cls[y0:y1, x0:x1] = 0
     return cls.astype(np.int16)
 
 
-def resample(cls: np.ndarray, fit) -> np.ndarray:
-    g = GRID
-    lons = g["lon0"] + np.arange(g["nx"]) * g["res"]
-    lats = g["lat0"] + np.arange(g["ny"]) * g["res"]
+def mask_main(cls: np.ndarray) -> np.ndarray:
+    """Blank the title, inset boxes, logo and legend for the main-panel resample."""
+    out = cls.copy()
+    for x0, y0, x1, y1 in EXCLUDE:
+        out[y0:y1, x0:x1] = 0
+    return out
+
+
+def resample(cls: np.ndarray, fit, grid=GRID, project=None, box=None) -> np.ndarray:
+    lons = grid["lon0"] + np.arange(grid["nx"]) * grid["res"]
+    lats = grid["lat0"] + np.arange(grid["ny"]) * grid["res"]
     lon2, lat2 = np.meshgrid(lons, lats)
-    x, y = _project(fit, lon2, lat2)
+    x, y = (project or _project)(fit, lon2, lat2)
     h, w = cls.shape
     xi, yi = np.round(x).astype(int), np.round(y).astype(int)
     inside = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
+    if box is not None:
+        x0, y0, x1, y1 = box
+        inside &= (xi >= x0 + INSET_MARGIN) & (xi < x1 - INSET_MARGIN) & (yi >= y0 + INSET_MARGIN) & (yi < y1 - INSET_MARGIN)
     out = np.zeros(lon2.shape, np.int16)
     out[inside] = cls[yi[inside], xi[inside]]
     return out  # row 0 = south
+
+
+# ------------------------------------------------------------------ inset boxes
+
+def _densify(ring, step=0.0003):
+    ring = np.asarray(ring)
+    parts = []
+    for p, q in zip(ring[:-1], ring[1:]):
+        n = max(2, int(np.hypot(*(q - p)) / step))
+        parts.append(p + (q - p) * np.linspace(0, 1, n)[:, None])
+    return np.concatenate(parts)
+
+
+def prepare_insets(topo: dict) -> dict:
+    """Coastline points, output grid and land mask for every inset box."""
+    from . import geo
+    rings = [np.asarray(poly[0]) for props, polys in geo.polygons(topo, "counties")
+             if props.get("COUNTYNAME") in ("連江縣", "金門縣") for poly in polys]
+    out = {}
+    for name, spec in INSETS.items():
+        w, s, e, n = spec["area"]
+        sel = [r for r in rings if w < r[:, 0].mean() < e and s < r[:, 1].mean() < n]
+        pts = np.concatenate([_densify(r) for r in sel])
+        lw, ls = pts[:, 0].min() - 0.01, pts[:, 1].min() - 0.01
+        nx = int(np.ceil((pts[:, 0].max() + 0.01 - lw) / INSET_RES)) + 1
+        ny = int(np.ceil((pts[:, 1].max() + 0.01 - ls) / INSET_RES)) + 1
+        grid = {"lon0": round(lw, 4), "lat0": round(ls, 4), "res": INSET_RES, "nx": nx, "ny": ny}
+        land = geo.land_mask(topo, grid["lon0"], grid["lat0"], INSET_RES, nx, ny)
+        out[name] = {"pts": pts, "grid": grid, "land": land}
+    return out
+
+
+def _inset_project(centre):
+    def proj(fit, lon, lat):
+        ax, bx, ay, by = fit
+        return ax * (lon - centre[0]) + bx, ay * (lat - centre[1]) + by
+    return proj
+
+
+def fit_inset(rgb: np.ndarray, name: str, pts: np.ndarray, threshold: float = 1.0):
+    """Verify (and if needed re-fit) one inset; trimmed chamfer cost in px^2."""
+    spec = INSETS[name]
+    x0, y0, x1, y1 = spec["box"]
+    m = INSET_MARGIN
+    dark = np.zeros(rgb.shape[:2], bool)
+    dark[y0 + m:y1 - m, x0 + m:x1 - m] = rgb[y0 + m:y1 - m, x0 + m:x1 - m].max(axis=2) < 90
+    dist = ndimage.distance_transform_edt(~dark)
+    proj = _inset_project(spec["centre"])
+    h, w = dist.shape
+
+    def cost(p):
+        x, y = proj(p, pts[:, 0], pts[:, 1])
+        xi = np.clip(np.round(x).astype(int), 0, w - 1)
+        yi = np.clip(np.round(y).astype(int), 0, h - 1)
+        d = np.sort(np.minimum(dist[yi, xi], 10) ** 2)
+        return float(np.mean(d[: int(len(d) * 0.85)]))  # islets missing from the drawing are ignored
+
+    fit = spec["fit"]
+    c = cost(fit)
+    if c <= threshold:
+        return tuple(fit), c, False
+    r = optimize.minimize(cost, fit, method="Nelder-Mead", options={"maxiter": 6000, "xatol": 1e-4, "fatol": 1e-5})
+    return tuple(r.x), float(r.fun), True
 
 
 def period_start(sent_iso: str) -> datetime:
@@ -156,9 +249,11 @@ def period_start(sent_iso: str) -> datetime:
     return t.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=h)
 
 
-def process(png_bytes: bytes, pts: np.ndarray, land: np.ndarray):
+def process(png_bytes: bytes, pts: np.ndarray, land: np.ndarray, insets: dict = None):
     """``land``: boolean mask on GRID (row 0 = south). Dry land and sea share one
-    colour on the CWA image, so land cells without rain become class 1."""
+    colour on the CWA image, so land cells without rain become class 1.
+    ``insets``: result of prepare_insets(); outlying islands are returned in
+    result["insets"][name] = {"grid", "fit", "cost", "refit"}."""
     rgba = np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGBA"))
     legend = read_legend(rgba)
     if len(legend) != len(CLASS_BOUNDS):
@@ -166,9 +261,20 @@ def process(png_bytes: bytes, pts: np.ndarray, land: np.ndarray):
     fit, cost, refit = verify_fit(rgba[..., :3].astype(int), pts)
     if cost > 60:
         raise ValueError(f"QPF georeference check failed (cost {cost:.1f})")
-    grid = resample(classify(rgba, legend), fit)
+    cls = classify(rgba, legend)
+    grid = resample(mask_main(cls), fit)
     grid = np.where(land, np.maximum(grid, 1), 0).astype(np.int16)
+    island_out = {}
+    for name, prep in (insets or {}).items():
+        ifit, icost, irefit = fit_inset(rgba[..., :3].astype(int), name, prep["pts"])
+        if icost > 3.0:
+            island_out[name] = {"error": f"inset {name} georeference check failed (cost {icost:.2f})"}
+            continue
+        g = resample(cls, ifit, prep["grid"], _inset_project(INSETS[name]["centre"]), INSETS[name]["box"])
+        g = np.where(prep["land"], np.maximum(g, 1), 0).astype(np.int16)
+        island_out[name] = {"grid": g, "fit": ifit, "cost": icost, "refit": irefit}
     title = Image.fromarray(rgba[0:150, 0:1000])
     buf = io.BytesIO()
     title.save(buf, "PNG", optimize=True)
-    return {"grid": grid, "legend": legend, "fit": fit, "cost": cost, "refit": refit, "title_png": buf.getvalue()}
+    return {"grid": grid, "legend": legend, "fit": fit, "cost": cost, "refit": refit, "title_png": buf.getvalue(),
+            "insets": island_out}
