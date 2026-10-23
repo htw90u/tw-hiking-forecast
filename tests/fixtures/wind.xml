@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Synthetic test data: same structure as CWA WindTable.xml, all names/values invented. -->
+<WindForecast>
+  <XmlVersion><Version>0.25</Version><Description>Beta</Description></XmlVersion>
+  <BulletinInformation>
+    <BulletinName>測試颱風各地區風力預測</BulletinName>
+    <IssueTime><Time>2026-01-01T10:00:00+08:00</Time></IssueTime>
+    <StartValidTime><Time>2026-01-01T12:00:00+08:00</Time></StartValidTime>
+    <EndValidTime><Time>2026-01-02T00:00:00+08:00</Time></EndValidTime>
+  </BulletinInformation>
+  <TextInformation><Annotate>測試用註解。</Annotate></TextInformation>
+  <WindForecastInformation>
+    <AreaForecastData area="基隆市">
+      <StartValidTime><Time>2026-01-01T12:00:00+08:00</Time></StartValidTime>
+      <EndValidTime><Time>2026-01-01T18:00:00+08:00</Time></EndValidTime>
+      <WindData type="average"><Level>5-6轉6-7</Level><StartLowerBound>5</StartLowerBound><StartCenterString>-</StartCenterString><StartUpperBound>6</StartUpperBound><MiddleCenterString>轉</MiddleCenterString><EndLowerBound>6</EndLowerBound><EndCenterString>-</EndCenterString><EndUpperBound>7</EndUpperBound></WindData>
+    </AreaForecastData>
+    <AreaForecastData area="基隆市">
+      <StartValidTime><Time>2026-01-01T12:00:00+08:00</Time></StartValidTime>
+      <EndValidTime><Time>2026-01-01T18:00:00+08:00</Time></EndValidTime>
+      <WindData type="gust"><Level>8-9轉9-10</Level><StartLowerBound>8</StartLowerBound><StartCenterString>-</StartCenterString><StartUpperBound>9</StartUpperBound><MiddleCenterString>轉</MiddleCenterString><EndLowerBound>9</EndLowerBound><EndCenterString>-</EndCenterString><EndUpperBound>10</EndUpperBound></WindData>
+    </AreaForecastData>
+    <AreaForecastData area="基隆市">
+      <StartValidTime><Time>2026-01-01T18:00:00+08:00</Time></StartValidTime>
+      <EndValidTime><Time>2026-01-02T00:00:00+08:00</Time></EndValidTime>
+      <WindData type="average"><Level>4-5</Level><StartLowerBound>4</StartLowerBound><StartCenterString>-</StartCenterString><StartUpperBound>4</StartUpperBound><MiddleCenterString>-</MiddleCenterString><EndLowerBound>5</EndLowerBound><EndCenterString>-</EndCenterString><EndUpperBound>5</EndUpperBound></WindData>
+    </AreaForecastData>
+  </WindForecastInformation>
+</WindForecast>

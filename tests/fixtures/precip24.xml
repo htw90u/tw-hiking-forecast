@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!-- Synthetic test data: same structure as CWA 24hPrecipTable.xml, all names/values invented. -->
+<TwentyFourHoursPrecipitationForecast>
+  <XmlVersion><Version>0.25</Version><Description>Beta</Description></XmlVersion>
+  <BulletinInformation>
+    <BulletinName>測試颱風各地區24小時雨量預測</BulletinName>
+    <IssueTime><Time>2026-01-01T10:00:00+08:00</Time></IssueTime>
+    <StartValidTime><Time>2026-01-01T14:00:00+08:00</Time></StartValidTime>
+    <EndValidTime><Time>2026-01-02T14:00:00+08:00</Time></EndValidTime>
+    <NextIssueTime><Time>2026-01-01T13:00:00+08:00</Time></NextIssueTime>
+    <Lang>zh_TW</Lang>
+  </BulletinInformation>
+  <TextInformation>
+    <Title>測試颱風</Title>
+    <TitleEdit>01月01日14時至01月02日14時</TitleEdit>
+    <Annotate>測試用註解。</Annotate>
+  </TextInformation>
+  <PrecipitationInformation>
+    <AreaForecastData area="基隆市"><Precipitation region="flat"><Value>10-150</Value><LowerBound>10</LowerBound><UpperBound>150</UpperBound><IsHighlight>False</IsHighlight><Unit>毫米</Unit></Precipitation></AreaForecastData>
+    <AreaForecastData area="臺北市"><Precipitation region="flat"><Value>20-40</Value><LowerBound>20</LowerBound><UpperBound>40</UpperBound><IsHighlight>False</IsHighlight><Unit>毫米</Unit></Precipitation></AreaForecastData>
+    <AreaForecastData area="臺北市"><Precipitation region="mountain"><Value>60-90</Value><LowerBound>60</LowerBound><UpperBound>90</UpperBound><IsHighlight>True</IsHighlight><Unit>毫米</Unit></Precipitation></AreaForecastData>
+  </PrecipitationInformation>
+</TwentyFourHoursPrecipitationForecast>
