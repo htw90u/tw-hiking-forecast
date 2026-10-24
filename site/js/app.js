@@ -156,13 +156,16 @@ function buildChips() {
   const box = document.getElementById('chips');
   const tyTables = S.typhoon?.tables || {};
   const items = LAYERS.filter((l) => !l.typhoonOnly || (S.typhoon?.active && (tyTables.rain24 || tyTables.rainTotal)));
-  box.innerHTML = items.map((l) => `<button class="chip" role="radio" data-layer="${l.id}" aria-checked="${l.id === S.settings.layer}">${esc(l.label)}</button>`).join('');
+  box.innerHTML = items.map((l) => `<button class="chip" role="radio" data-layer="${l.id}" aria-checked="${l.id === S.settings.layer}"${l.id === 'none' ? '' : ` title="${esc(l.label)}（選取中再點一次可關閉圖層）"`}>${esc(l.label)}</button>`).join('');
   box.querySelectorAll('[data-layer]').forEach((b) => b.addEventListener('click', () => {
+    let id = b.dataset.layer;
     // Choosing a weather layer during the earthquake view shows it again.
     if (S.layer.hidden) { setWeatherVisible(true); document.getElementById('legend').classList.remove('quake-hide'); }
-    S.settings.layer = b.dataset.layer;
+    // Tapping the active layer again turns the weather layer off.
+    else if (id === S.layer.id) id = 'none';
+    S.settings.layer = id;
     saveSettings(S.settings);
-    showLayer(b.dataset.layer);
+    showLayer(id);
   }));
   // Arrow-key navigation inside the radio group.
   box.addEventListener('keydown', (e) => {

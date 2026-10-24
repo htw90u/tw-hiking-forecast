@@ -34,6 +34,10 @@ async function check(name, fn) {
   try { await fn(); log('PASS', name); } catch (e) { failures += 1; log('FAIL', `${name}: ${e.message.split('\n')[0]}`); }
 }
 function assert(c, m) { if (!c) throw new Error(m || 'assertion failed'); }
+// Layer chips toggle: tapping the active one turns the layer off, so only tap when not selected.
+async function selectLayerOn(page, sel) {
+  if ((await page.getAttribute(sel, 'aria-checked')) !== 'true') await page.click(sel);
+}
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.webmanifest': 'application/manifest+json', '.gz': 'application/gzip', '.txt': 'text/plain' };
@@ -66,6 +70,7 @@ function serve() {
   // External map tiles are not needed for the tests; answer them locally.
   await ctx.route(/opentopomap|nlsc\.gov\.tw|openstreetmap|windy\.com/, (r) => r.fulfill({ status: 204, body: '' }));
   const page = await ctx.newPage();
+  const selectLayer = (sel) => selectLayerOn(page, sel);
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
@@ -121,7 +126,7 @@ function serve() {
   await check('every layer chip switches without errors', async () => {
     const ids = await page.$$eval('.chip', (b) => b.map((x) => x.dataset.layer));
     for (const id of ids) {
-      await page.click(`.chip[data-layer="${id}"]`);
+      await selectLayer(`.chip[data-layer="${id}"]`);
       await page.waitForTimeout(id === 'none' ? 200 : 1200);
       const checked = await page.getAttribute(`.chip[data-layer="${id}"]`, 'aria-checked');
       assert(checked === 'true', `chip ${id} not checked`);
@@ -130,7 +135,7 @@ function serve() {
   });
 
   await check('accumulated rainfall: selectable periods up to 7 days', async () => {
-    await page.click('.chip[data-layer="rainacc"]');
+    await selectLayer('.chip[data-layer="rainacc"]');
     await page.waitForSelector('[data-period]');
     const labels = await page.$$eval('[data-period]', (b) => b.map((x) => x.textContent.trim()));
     for (const want of ['今日', '過去3小時', '過去24小時', '過去3天', '過去7天']) assert(labels.includes(want), `missing ${want} in ${labels}`);
@@ -143,7 +148,7 @@ function serve() {
   });
 
   await check('QPF periods (4) and georeferenced overlay', async () => {
-    await page.click('.chip[data-layer="qpf"]');
+    await selectLayer('.chip[data-layer="qpf"]');
     await page.waitForSelector('[data-period]');
     const n = await page.$$eval('[data-period]', (b) => b.length);
     assert(n === 4, `periods ${n}`);
@@ -154,7 +159,7 @@ function serve() {
   });
 
   await check('QPF modes: 12h / 6h / 24-48h totals with derived-product attribution', async () => {
-    await page.click('.chip[data-layer="qpf"]');
+    await selectLayer('.chip[data-layer="qpf"]');
     await page.waitForSelector('[data-qpfmode]');
     const modes = await page.$$eval('[data-qpfmode]', (b) => b.map((x) => x.dataset.qpfmode));
     assert(modes.join() === '12,6,acc', `modes ${modes}`);
@@ -180,7 +185,7 @@ function serve() {
   });
 
   await check('satellite: numeric IR / enhanced IR / visible with gradient legend', async () => {
-    await page.click('.chip[data-layer="sat"]');
+    await selectLayer('.chip[data-layer="sat"]');
     await page.waitForSelector('[data-frame]');
     const labels = await page.$$eval('[data-frame]', (b) => b.map((x) => x.textContent));
     assert(labels.length === 3 && labels[1].includes('色調強化'), `sat modes ${labels}`);
@@ -201,7 +206,7 @@ function serve() {
     assert(r.parts === 4, `parts ${r.parts}`);
     assert(r.beigan !== null && r.nangan !== null && r.kinmen !== null, JSON.stringify(r));
     assert(r.sea === null, `sea should be no-data ${JSON.stringify(r)}`);
-    await page.click('.chip[data-layer="qpf"]');
+    await selectLayer('.chip[data-layer="qpf"]');
     await page.waitForFunction(() => document.querySelectorAll('img.wx-grid').length === 5);
     const n = await page.$$eval('img.wx-grid', (x) => x.length);
     assert(n === 5, `expected 5 overlay images (main + 4 islands), got ${n}`);
@@ -227,7 +232,7 @@ function serve() {
   });
 
   await check('click on map opens point panel with risk, stations and history chart', async () => {
-    await page.click('.chip[data-layer="radar"]');
+    await selectLayer('.chip[data-layer="radar"]');
     await page.evaluate(() => window.scrollTo(0, 0));
     const box = await page.locator('#map').boundingBox();
     await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.4);
@@ -261,7 +266,7 @@ function serve() {
 
   await check('affected mountains list for QPF', async () => {
     await page.click('#sheet-close');
-    await page.click('.chip[data-layer="qpf"]');
+    await selectLayer('.chip[data-layer="qpf"]');
     await page.waitForTimeout(800);
     if (!(await page.isVisible('#btn-affected'))) await page.click('#btn-more');
     await page.click('#btn-affected');
@@ -343,7 +348,7 @@ function serve() {
     const fs_ = await page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
     assert(fs_ === '32px', `font-size ${fs_}`);
     assert((await page.getAttribute('html', 'data-theme')) === 'contrast', 'theme');
-    await page.click('.chip[data-layer="qpe1h"]');
+    await selectLayer('.chip[data-layer="qpe1h"]');
     await page.waitForTimeout(800);
     const sw = await page.$eval('#legend .swatches li:last-child .sw', (e) => getComputedStyle(e).backgroundColor);
     assert(sw === 'rgb(253, 231, 37)', `lowest swatch ${sw} (expected viridis yellow)`);
@@ -378,6 +383,17 @@ function serve() {
       await page.waitForFunction(() => document.getElementById('sheet-title')?.textContent.includes('颱風'));
       await page.click('#sheet-close');
     }
+  });
+
+  await check('tapping the active layer chip again turns the layer off', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="radar"]');
+    await page.waitForFunction(() => document.querySelector('.chip[data-layer="radar"]')?.getAttribute('aria-checked') === 'true');
+    await page.click('.chip[data-layer="radar"]');
+    await page.waitForFunction(() => document.querySelector('.chip[data-layer="none"]')?.getAttribute('aria-checked') === 'true');
+    assert((await page.$$('img.wx-grid')).length === 0, 'weather overlay still shown after toggling off');
+    await page.click('.chip[data-layer="radar"]');
+    await page.waitForFunction(() => document.querySelector('.chip[data-layer="radar"]')?.getAttribute('aria-checked') === 'true');
   });
 
   await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {
