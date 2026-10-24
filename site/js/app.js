@@ -204,6 +204,7 @@ function openSettings() {
 <label class="field">主題 <select id="set-theme">${opt({ auto: '跟隨系統', light: '淺色', dark: '深色', contrast: '高對比（黑底黃字）' }, s.theme)}</select></label>
 <label class="field">色盤 <select id="set-pal">${opt(PALETTE_NAMES, s.palette)}</select></label>
 <p class="note">「色弱友善」使用明度遞增的色階，紅綠色弱或藍黃色弱皆可分辨；「高對比」適合強光下或低視力。</p>
+<label class="tog"><input type="checkbox" id="set-smooth"${s.smooth !== false ? ' checked' : ''}> 圖層平滑顯示（關閉則顯示原始格點）</label>
 <label class="tog"><input type="checkbox" id="set-bold"${s.boldText ? ' checked' : ''}> 粗體文字</label>
 <label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>
 </fieldset>
@@ -235,6 +236,7 @@ function openSettings() {
   });
   body.querySelector('#set-theme').addEventListener('change', (e) => { s.theme = e.target.value; save(); });
   body.querySelector('#set-pal').addEventListener('change', (e) => { s.palette = e.target.value; save(); showLayer(S.layer.id, { keepFrame: true }); });
+  body.querySelector('#set-smooth').addEventListener('change', (e) => { s.smooth = e.target.checked; save(); showLayer(S.layer.id, { keepFrame: true }); });
   body.querySelector('#set-bold').addEventListener('change', (e) => { s.boldText = e.target.checked; save(); });
   body.querySelector('#set-motion').addEventListener('change', (e) => { s.reduceMotion = e.target.checked; save(); if (s.reduceMotion) stopAnimation(); });
   body.querySelector('#set-base').addEventListener('change', (e) => { s.basemap = e.target.value; save(); setBasemap(); });

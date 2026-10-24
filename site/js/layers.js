@@ -16,6 +16,9 @@ export const LAYERS = [
   { id: 'none', label: '關閉圖層', kind: 'none' },
 ];
 
+// Interpolation fill for no-data cells per layer kind (temperature: ignore no-data).
+const FILL = { radar: -20, rain: 0, temp: NaN };
+
 export function layerDef(id) { return LAYERS.find((l) => l.id === id) || LAYERS[0]; }
 
 export function getMeta(path) {
@@ -82,9 +85,12 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
     const colour = colourFn(scaleFor(def.kind, S.settings.palette));
+    // Smooth rendering interpolates between cells; "no echo / no rain" counts as a low value
+    // so that rain areas fade out at their edges instead of ending in square steps.
+    const opts = { smooth: S.settings.smooth !== false, fill: FILL[def.kind] ?? NaN };
     const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
       const [w, s, e, n] = g.bounds;
-      return L.imageOverlay(renderGrid(g, colour).toDataURL('image/png'), [[s, w], [n, e]],
+      return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
         { opacity: S.settings.opacity, interactive: false, className: 'wx-grid' });
     }));
     ov.addTo(S.map);

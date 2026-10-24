@@ -100,6 +100,23 @@ function serve() {
     assert(r.min > -20 && r.max < 45, `implausible temps ${r.min}..${r.max}`);
   });
 
+  await check('smooth rendering by default; raw cells when disabled', async () => {
+    const r = await page.evaluate(async () => {
+      const { getGrid, framesFor } = await import('./js/layers.js');
+      const { renderGrid } = await import('./js/grid.js');
+      const { dbzToRate } = await import('./js/views.js');
+      const g = await getGrid(framesFor('radar').slice(-1)[0]);
+      const col = () => [0, 0, 255, 255];
+      const sm = renderGrid(g, col, { smooth: true, fill: -20 });
+      const rw = renderGrid(g, col, { smooth: false });
+      const img = document.querySelector('img.wx-grid');
+      return { gw: g.w, sm: sm.width, rw: rw.width, shown: img && img.naturalWidth, rate40: dbzToRate(40) };
+    });
+    assert(r.rw === r.gw && r.sm >= r.gw * 2, `widths raw ${r.rw} smooth ${r.sm} grid ${r.gw}`);
+    assert(r.shown === r.sm, `default overlay is not smooth (${r.shown} vs ${r.sm})`);
+    assert(Math.abs(r.rate40 - 11.53) < 0.05, `dBZ->mm/h ${r.rate40}`);
+  });
+
   await check('every layer chip switches without errors', async () => {
     const ids = await page.$$eval('.chip', (b) => b.map((x) => x.dataset.layer));
     for (const id of ids) {

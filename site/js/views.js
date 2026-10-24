@@ -268,6 +268,11 @@ function bindHistory(root) {
 }
 
 // ------------------------------------------------------------------ point view
+/** Rain rate estimate from reflectivity, Marshall-Palmer Z = 200 R^1.6. */
+export function dbzToRate(dbz) {
+  return (10 ** (dbz / 10) / 200) ** (1 / 1.6);
+}
+
 async function sampleLayers(lat, lon) {
   const out = {};
   const jobs = [
@@ -326,7 +331,9 @@ export async function showPoint(lat, lon, opts = {}) {
   const vrow = (label, k, unit, digits = 1, empty = '無資料') => {
     const x = vals[k];
     if (!x) return '';
-    return `<tr><th scope="row">${label}</th><td>${x.v === null ? empty : fmtNum(x.v, digits, unit)}</td><td class="muted">${esc(fmtTime(x.meta.time))}</td></tr>`;
+    let txt = x.v === null ? empty : fmtNum(x.v, digits, unit);
+    if (k === 'radar' && x.v !== null && x.v >= 10) txt += `（約 ${fmtNum(dbzToRate(x.v), 1)} mm/h）`;
+    return `<tr><th scope="row">${label}</th><td>${txt}</td><td class="muted">${esc(fmtTime(x.meta.time))}</td></tr>`;
   };
   const qpfRows = framesFor('qpf').map((_, i) => {
     const x = vals[`qpf${i}`];

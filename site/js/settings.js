@@ -8,6 +8,7 @@ export const DEFAULTS = {
   basemap: 'topo',       // topo | emap | photo | osm | custom
   customTile: '',
   reduceMotion: false,
+  smooth: true,          // interpolate grid layers (false = raw cells)
   boldText: false,
   layer: 'radar',
   opacity: 0.7,
