@@ -130,3 +130,16 @@ export function bbox(geometry) {
 }
 
 export function normCounty(name) { return (name || '').replace(/台/g, '臺'); }
+
+/** Intensity value from the pipeline (5 = 5弱, 5.5 = 5強) -> CWA label. */
+export function intText(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  if (n >= 5) return `${Math.floor(n)}${n % 1 ? '強' : '弱'}`;
+  return `${n}級`;
+}
+
+/** Strong earthquake: maximum intensity 5弱 or above, or magnitude 6 or above. */
+export function isStrongQuake(q) {
+  return (Number(q.maxInt) || 0) >= 5 || (Number(q.mag) || 0) >= 6;
+}

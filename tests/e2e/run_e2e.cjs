@@ -33,6 +33,7 @@ function log(level, msg) {
 async function check(name, fn) {
   try { await fn(); log('PASS', name); } catch (e) { failures += 1; log('FAIL', `${name}: ${e.message.split('\n')[0]}`); }
 }
+const PNG1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 function assert(c, m) { if (!c) throw new Error(m || 'assertion failed'); }
 // Layer chips toggle: tapping the active one turns the layer off, so only tap when not selected.
 async function selectLayerOn(page, sel) {
@@ -509,6 +510,57 @@ function serve() {
     await page.selectOption('#set-base', 'topo');
     await page.keyboard.press('Escape');
     await ctx.unroute(/tile\.thunderforest\.com/);
+  });
+
+  await check('Thunderforest Landscape and Outdoors basemaps share the key; keyless falls back', async () => {
+    const seen = [];
+    await ctx.route(/tile\.thunderforest\.com/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
+    await page.click('#btn-settings');
+    await page.fill('#set-tfkey', 'TESTKEY');
+    await page.dispatchEvent('#set-tfkey', 'change');
+    for (const style of ['landscape', 'outdoors']) {
+      await page.selectOption('#set-base', style);
+      await page.waitForTimeout(1200);
+      assert(seen.some((u) => u.includes(`/${style}/`) && u.includes('apikey=TESTKEY')), `no ${style} tile requested`);
+    }
+    await page.fill('#set-tfkey', '');
+    await page.dispatchEvent('#set-tfkey', 'change');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.base-note');
+    assert((await page.textContent('.base-note')).includes('Outdoors'), 'keyless notice does not name the map');
+    await page.click('#btn-settings');
+    await page.selectOption('#set-base', 'topo');
+    await page.keyboard.press('Escape');
+    await ctx.unroute(/tile\.thunderforest\.com/);
+  });
+
+  await check('strong earthquake: map icon opens the report; normal quakes get no icon', async () => {
+    const real = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'quakes.json'), 'utf-8'));
+    const qs = real.quakes.map((q) => ({ ...q, maxInt: Math.min(q.maxInt || 0, 4), mag: Math.min(q.mag || 0, 5.9) }));
+    const iso = new Date(Date.now() - 2 * 3600e3).toISOString();
+    qs.unshift({ ...qs[0], time: iso, mag: 6.4, maxInt: 5.5, areas: [{ area: '花蓮縣地區', county: '花蓮縣', int: '5強', iv: 5.5 }, ...(qs[0].areas || [])] });
+    await ctx.route(/data\/quakes\.json/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ quakes: qs }) }));
+    await ctx.route(/scweb\.cwa\.gov\.tw/, (r) => r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }));
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    await page.waitForSelector('.eq-strong');
+    assert((await page.$$('.eq-strong')).length === 1, 'expected exactly one strong-quake icon');
+    assert((await page.textContent('.eq-strong')).includes('M6.4'), 'icon label missing magnitude');
+    assert((await page.textContent('#eq-banner')).includes('5強'), 'banner does not show intensity 5強');
+    await page.click('.eq-strong .eq-core');
+    await page.waitForFunction(() => (document.getElementById('sheet-title')?.textContent || '').includes('強震'));
+    const body = await page.textContent('#sheet-body');
+    assert(body.includes('強震注意') && body.includes('花蓮縣地區 5強'), 'strong-quake advice missing');
+    assert(await page.$('img.eq-report'), 'report image missing');
+    assert(!(await page.$('.eq-strong')), 'strong icon should give way to the epicentre in the quake view');
+    await page.screenshot({ path: path.join(SHOTS, 'quake-strong.png') });
+    await page.click('#sheet-close');
+    await page.waitForSelector('.eq-strong');
+    await page.screenshot({ path: path.join(SHOTS, 'quake-strong-icon.png') });
+    await ctx.unroute(/data\/quakes\.json/);
+    await ctx.unroute(/scweb\.cwa\.gov\.tw/);
+    await page.reload();
+    await page.waitForSelector('body.ready');
   });
 
   await check('offline: app shell, data and recent query snapshot from cache', async () => {

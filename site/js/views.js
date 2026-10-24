@@ -1,7 +1,7 @@
 // Bottom-sheet / side-panel views.
 import { S } from './state.js';
 import {
-  getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty,
+  getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty, intText, isStrongQuake,
 } from './util.js';
 import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL } from './layers.js';
 import { sample, classRange, renderGrid } from './grid.js';
@@ -421,7 +421,7 @@ export async function showPoint(lat, lon, opts = {}) {
     rain1h: vals.qpe1h?.v ?? null, rainToday: Math.max(vals.rainday?.v ?? 0, vals.acc_24h?.v ?? 0) || null, qpfMax: qpfFirst, radar: vals.radar?.v ?? null,
     stations: stationsNear.map((x) => x.it), spotMinAT: minApparent(fcForCold),
     warnings: countyWarn?.hazards || [], typhoon: ty,
-    quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: q.areas?.[0]?.int || `${q.maxInt}級` })),
+    quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
   }, S.settings.thresholds);
 
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
@@ -478,7 +478,7 @@ export async function showPoint(lat, lon, opts = {}) {
     ? html`<section class="card warn" aria-labelledby="h-warn"><h3 id="h-warn">⚠ ${county} 警特報</h3><ul>${countyWarn.hazards.map((h) => html`<li>${h.ph}${h.sig}（至 ${fmtTime(h.end)}）</li>`)}</ul></section>`
     : '';
   const tyHtml = S.typhoon?.active ? html`<section class="card warn"><h3>🌀 颱風警報中</h3><button class="btn" data-open="typhoon">查看颱風路徑、風力與雨量預測</button></section>` : '';
-  const qHtml = quakesNear.length ? html`<section class="card"><h3>近 3 天 50 km 內地震</h3><ul>${quakesNear.map((q) => html`<li><button class="link" data-quake="${q.time}">${fmtTime(q.time)} 規模 ${q.mag}</button> <span class="meta">距此 ${q.d.toFixed(0)} km・最大震度 ${q.maxInt}</span></li>`)}</ul></section>` : '';
+  const qHtml = quakesNear.length ? html`<section class="card"><h3>近 3 天 50 km 內地震</h3><ul>${quakesNear.map((q) => html`<li><button class="link" data-quake="${q.time}">${fmtTime(q.time)} 規模 ${q.mag}</button> <span class="meta">距此 ${q.d.toFixed(0)} km・最大震度 ${intText(q.maxInt)}</span></li>`)}</ul></section>` : '';
 
   const station = opts.stationId ? S.stations.find((x) => x.id === opts.stationId) : null;
   const riskHtml = html`<section class="card risk ${LEVELS[risk.level].cls}" aria-labelledby="h-risk"><h3 id="h-risk">登山安全評估 ${lvBadge(risk.level)}</h3>
@@ -594,7 +594,7 @@ export function showQuakes({ recentMs = 0 } = {}) {
   const list = S.quakes.slice(0, 40);
   const isRecent = (q) => recentMs && Date.now() - new Date(q.time).getTime() < recentMs;
   const item = (q) => html`<li><button class="link" data-quake="${q.time}"><strong>M${q.mag}</strong> ${q.loc}</button>
-<span class="meta">${fmtTime(q.time)}・深度 ${q.depth} km・最大震度 ${q.maxInt}${q.kind === 'local' ? '・小區域' : ''}</span></li>`;
+<span class="meta">${fmtTime(q.time)}・深度 ${q.depth} km・最大震度 ${intText(q.maxInt)}${isStrongQuake(q) ? '・強震' : ''}${q.kind === 'local' ? '・小區域' : ''}</span></li>`;
   const recent = list.filter(isRecent);
   const body = html`${recent.length ? html`<section class="card warn"><h3>24 小時內地震（${recent.length} 起）</h3><ul class="list">${recent.map(item)}</ul></section>` : ''}
 <p class="muted">最近的有感地震報告（顯著與小區域）。點選查看震度分布與震央附近的山區。</p>
@@ -641,8 +641,15 @@ export async function showQuake(q) {
   const scale = scaleFor('intensity', S.settings.palette);
   const legend = html`<ol class="swatches inline">${scale.map((x) => html`<li><span class="sw" style="background:${x[1]}"></span>${x[2]}</li>`)}</ol>`;
   const li = ({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${d.toFixed(1)} km</span></li>`;
-  const body = html`<p><strong>規模 ${q.mag}</strong>・深度 ${q.depth} km・${fmtTime(q.time)}・最大震度 ${q.areas?.[0]?.int || q.maxInt}</p>
+  const strong = isStrongQuake(q);
+  const hard = (q.areas || []).filter((a) => (a.iv ?? 0) >= 4);
+  const body = html`<p><strong>規模 ${q.mag}</strong>・深度 ${q.depth} km・${fmtTime(q.time)}・最大震度 ${intText(q.maxInt)}</p>
 <p>${q.loc}</p>
+${strong ? html`<section class="card warn"><h3>強震注意</h3>
+<p>最大震度 ${intText(q.maxInt)}${hard.length ? html`，震度 4 級以上：${hard.map((a) => `${a.area} ${a.int}`).join('、')}` : ''}。</p>
+<ul><li>山區可能有落石、坍方、步道或林道中斷，接下來數天仍可能有規模較大的餘震。</li>
+<li>出發前請向林業及自然保育署、國家公園管理處或當地公所確認步道與道路開放狀態。</li>
+<li>已在山上：遠離邊坡、溪谷與崩塌地，盡量不要在落石區停留，必要時考慮撤退。</li></ul></section>` : ''}
 <section class="card"><h3>地圖說明</h3>
 <p>${q.shake ? '彩色區塊：氣象署等震度圖（自動對位疊合）。' : '此筆地震沒有等震度圖（氣象署僅提供最新一筆顯著有感地震）。'}方塊數字：各測站實測震度。紅色虛線：距震央 10／30／50 km。</p>
 ${legend}<p class="note">按標題列的 ▾ 或往下滑可縮小面板，地圖上的距離圈與震度仍會保留；按 ✕ 才會清除。</p></section>
@@ -651,9 +658,10 @@ ${others.length ? html`<section class="card"><h3>其他景點</h3><ul class="col
 ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內）</h3><p>${towns.join('、')}</p></section>` : ''}
 <section class="card"><h3>各地震度</h3><table class="kv"><tbody>${q.areas.map((a) => html`<tr><th scope="row">${a.area}</th><td>${a.int}</td></tr>`)}</tbody></table></section>
 <p class="muted">${q.text || ''}</p>
+${strong && q.img ? html`<section class="card"><h3>氣象署地震報告圖</h3><img class="eq-report" src="${q.img}" alt="地震報告圖（震央與各地震度）" loading="lazy"></section>` : ''}
 <p><a href="${q.web}" target="_blank" rel="noopener">氣象署地震報告頁</a>${q.img ? html`・<a href="${q.img}" target="_blank" rel="noopener">報告圖</a>` : ''}</p>
 <p class="note">震度 4 級以上的山區請留意落石、坍方與步道受損。</p>`;
-  openSheet(`地震 M${q.mag}`, body, { onRender: bindCommon, peek: true, quake: true });
+  openSheet(`地震 M${q.mag}${strong ? '（強震）' : ''}`, body, { onRender: bindCommon, peek: true, quake: true });
   // Zoom to the felt area (stations with intensity >= 1, at least the 50 km ring) above the sheet.
   const pts = (q.stations || []).filter((s) => (s.iv ?? 0) >= 1).map((s) => [s.lat, s.lon]);
   const bounds = L.latLngBounds([[q.lat, q.lon], ...pts]).extend(L.latLng(q.lat, q.lon).toBounds(110000));
@@ -867,7 +875,7 @@ export function showSources() {
 <p class="note">颱風各地區風力、24小時雨量與總雨量預測表附有中央氣象署著作權聲明，未取得授權前本網站不顯示。</p></section>
 <section class="card"><h3>其他來源</h3><ul>
 <li>行政區界：taiwan-atlas（MIT），資料來源內政部。</li>
-<li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap（Maps © Thunderforest）。</li>
+<li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap／Landscape／Outdoors（Maps © Thunderforest）。</li>
 <li>山頭（非氣象署登山預報點）：© OpenStreetMap contributors，依開放資料庫授權（ODbL 1.0）使用，每週更新；點選時顯示鄰近鄉鎮預報。</li>
 <li>地圖程式庫：Leaflet（BSD-2）、topojson-client（ISC）。</li></ul></section>`;
   openSheet('資料來源與授權', body);

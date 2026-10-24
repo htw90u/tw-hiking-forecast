@@ -91,3 +91,23 @@
 [data-theme="dark"] { --eq: #f0a050; }
 [data-theme="dark"] .ty-banner.eq-banner { color: #000; }
 [data-theme="contrast"] { --eq: #ff0; }
+
+/* Strong earthquake marker (max intensity >= 5弱 or M >= 6, last 3 days) */
+.eq-strong { position: relative; background: none; border: 0; }
+.eq-strong .eq-core {
+  position: absolute; inset: 6px; display: grid; place-items: center; border-radius: 50%;
+  background: #c62828; color: #fff; font: 700 15px/1 system-ui, sans-serif; border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+}
+.eq-strong .eq-pulse {
+  position: absolute; inset: 0; border-radius: 50%; border: 3px solid #c62828;
+  animation: eq-pulse 1.6s ease-out infinite;
+}
+.eq-strong .eq-tag {
+  position: absolute; top: 40px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  background: #c62828; color: #fff; font: 700 11px/1.3 system-ui, sans-serif; padding: 1px 5px; border-radius: 3px;
+}
+@keyframes eq-pulse { from { transform: scale(.7); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+[data-theme="contrast"] .eq-strong .eq-core, [data-theme="contrast"] .eq-strong .eq-tag { background: #000; color: #ff0; border-color: #ff0; }
+[data-theme="contrast"] .eq-strong .eq-pulse { border-color: #ff0; }
+img.eq-report { display: block; max-width: 100%; height: auto; margin: 0 auto; }

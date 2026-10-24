@@ -1,7 +1,7 @@
 // Entry point: map setup, data loading, overlays, controls and settings.
 import { S } from './state.js';
 import { loadSettings, saveSettings, applySettings, DEFAULTS } from './settings.js';
-import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $ } from './util.js';
+import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $, intText, isStrongQuake } from './util.js';
 import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
 import {
@@ -19,11 +19,17 @@ const BASEMAPS = {
   osm: { label: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', max: 19,
     attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' },
   cycle: { label: '自行車／步道地圖 (OpenCycleMap)', url: 'https://{s}.tile.thunderforest.com/cycle/{z}/{x}/{y}{r}.png?apikey={apikey}', max: 22, sub: 'abc',
-    attr: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', noBulk: true },
+    attr: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', noBulk: true, tf: 'OpenCycleMap' },
+  landscape: { label: '地景地圖 (Thunderforest Landscape)', url: 'https://{s}.tile.thunderforest.com/landscape/{z}/{x}/{y}{r}.png?apikey={apikey}', max: 22, sub: 'abc',
+    attr: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', noBulk: true, tf: 'Landscape' },
+  outdoors: { label: '戶外地圖 (Thunderforest Outdoors)', url: 'https://{s}.tile.thunderforest.com/outdoors/{z}/{x}/{y}{r}.png?apikey={apikey}', max: 22, sub: 'abc',
+    attr: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', noBulk: true, tf: 'Outdoors' },
   custom: { label: '自訂圖磚網址', url: '', max: 19, attr: '自訂底圖' },
 };
 
 let baseLayer = null;
+let strongLayer = null;
+const STRONG_QUAKE_MS = 3 * 864e5;
 
 /** Personal key from the settings, else the site-wide key from the manifest. */
 function thunderforestKey() {
@@ -34,10 +40,11 @@ function setBasemap() {
   const s = S.settings;
   let key = s.basemap;
   S.baseNotice = '';
-  // OpenCycleMap without an API key only returns "API Key Required" tiles: show the topo map instead.
-  if (key === 'cycle' && !thunderforestKey()) {
+  // Thunderforest maps without an API key only return "API Key Required" tiles: show the topo map instead.
+  const tf = BASEMAPS[key]?.tf;
+  if (tf && !thunderforestKey()) {
     key = 'topo';
-    S.baseNotice = 'OpenCycleMap 需要 Thunderforest API key（設定 → 底圖），目前先以等高線地形圖顯示。';
+    S.baseNotice = `${tf} 需要 Thunderforest API key（設定 → 底圖），目前先以等高線地形圖顯示。`;
   }
   const def = BASEMAPS[key] || BASEMAPS.topo;
   const url = key === 'custom' ? s.customTile : def.url;
@@ -45,12 +52,12 @@ function setBasemap() {
   if (url) {
     // Thunderforest tiles are shown as plain images (no CORS request needed).
     baseLayer = L.tileLayer(url, { maxZoom: def.max, maxNativeZoom: def.max, subdomains: def.sub || 'abc', attribution: def.attr,
-      crossOrigin: key !== 'cycle', apikey: thunderforestKey() });
-    if (key === 'cycle') {
+      crossOrigin: !def.tf, apikey: thunderforestKey() });
+    if (def.tf) {
       let errors = 0;
       baseLayer.on('tileerror', () => {
         errors += 1;
-        if (errors === 6) { S.baseNotice = 'OpenCycleMap 圖磚載入失敗：請確認 API key 是否正確或額度是否用完。'; updateStatus(); }
+        if (errors === 6) { S.baseNotice = `${def.tf} 圖磚載入失敗：請確認 API key 是否正確或額度是否用完。`; updateStatus(); }
       });
     }
     baseLayer.addTo(S.map);
@@ -59,6 +66,22 @@ function setBasemap() {
 }
 
 // ---------------------------------------------------------------- overlays
+/** Strong earthquakes (max intensity >= 5弱 or M >= 6) in the last 3 days: a warning icon that is always shown. */
+function buildStrongQuakes() {
+  if (strongLayer) S.map.removeLayer(strongLayer);
+  strongLayer = L.layerGroup();
+  S.quakes.filter((q) => isStrongQuake(q) && Date.now() - new Date(q.time).getTime() < STRONG_QUAKE_MS).forEach((q) => {
+    const label = `強震 M${Number(q.mag).toFixed(1)}`;
+    const icon = L.divIcon({ className: 'eq-strong', iconSize: [40, 40],
+      html: `<span class="eq-pulse" aria-hidden="true"></span><span class="eq-core" aria-hidden="true">震</span><span class="eq-tag">${esc(label)}</span>` });
+    L.marker([q.lat, q.lon], { icon, pane: 'alerts', title: `${label}・最大震度 ${intText(q.maxInt)}：查看地震報告`, alt: label, keyboard: true, zIndexOffset: 1000 })
+      .bindTooltip(`${esc(label)}<br>${esc(fmtTime(q.time))}・最大震度 ${esc(intText(q.maxInt))}`, { direction: 'top', offset: [0, -18] })
+      .on('click', (e) => { L.DomEvent.stop(e); showQuake(q); })
+      .addTo(strongLayer);
+  });
+  if (!S.quakeMode) strongLayer.addTo(S.map);
+}
+
 function buildOverlays() {
   const o = S.overlays;
   Object.values(o).forEach((g) => S.map.removeLayer(g));
@@ -95,10 +118,12 @@ function buildOverlays() {
   o.quakes = L.layerGroup();
   S.quakes.filter((q) => Date.now() - new Date(q.time).getTime() < 7 * 864e5).forEach((q) => {
     const m = L.circleMarker([q.lat, q.lon], { radius: 4 + q.mag * 2, color: '#b00020', weight: 2, fillColor: '#ff5a5f', fillOpacity: 0.35, pane: 'spots' });
-    m.bindTooltip(`地震 M${q.mag}<br>${esc(fmtTime(q.time))}・最大震度 ${q.maxInt}`);
+    m.bindTooltip(`地震 M${q.mag}<br>${esc(fmtTime(q.time))}・最大震度 ${intText(q.maxInt)}`);
     m.on('click', (e) => { L.DomEvent.stop(e); showQuake(q); });
     o.quakes.addLayer(m);
   });
+
+  buildStrongQuakes();
 
   o.typhoon = L.layerGroup();
   tyLabels = [];
@@ -319,7 +344,7 @@ function updateStatus() {
   const recentQ = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < QUAKE_RECENT_MS);
   const q0 = recentQ[0];
   const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
-  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner"><span aria-hidden="true">〰</span><span>地震｜${esc(fmtTime(q0.time))} ${esc(qPlace)} 規模${esc(Number(q0.mag).toFixed(1))}・最大震度${esc(q0.maxInt)}級${recentQ.length > 1 ? `（24 小時內 ${recentQ.length} 起）` : ''}</span><span class="ty-more">詳情 ›</span></button>` : '';
+  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner"><span aria-hidden="true">〰</span><span>地震｜${esc(fmtTime(q0.time))} ${esc(qPlace)} 規模${esc(Number(q0.mag).toFixed(1))}・最大震度${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（24 小時內 ${recentQ.length} 起）` : ''}</span><span class="ty-more">詳情 ›</span></button>` : '';
   const baseNote = S.baseNotice ? `<span class="base-note">${esc(S.baseNotice)}</span> ` : '';
   el.innerHTML = `${tyBanner}${eqBanner}${baseNote}${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
   el.querySelector('#btn-sources').addEventListener('click', showSources);
@@ -399,7 +424,7 @@ function openSettings() {
 <label class="field">底圖 <select id="set-base">${opt(BASEMAPS, s.basemap)}</select></label>
 <label class="field">自訂圖磚網址 <input type="url" id="set-custom" value="${esc(s.customTile)}" placeholder="https://.../{z}/{x}/{y}.png"></label>
 <label class="field">Thunderforest API key <input type="text" id="set-tfkey" value="${esc(s.tfKey)}" autocomplete="off" spellcheck="false" placeholder="${S.manifest?.config?.thunderforestKey ? '已使用本站提供的 key' : '選填'}"></label>
-<p class="note" id="set-tf-note">OpenCycleMap 由 Thunderforest 提供，需 API key（可至 thunderforest.com 免費申請 Hobby 方案）；未設定時圖磚會顯示「API Key Required」浮水印。</p>
+<p class="note" id="set-tf-note">OpenCycleMap、Landscape、Outdoors 由 Thunderforest 提供，共用同一組 API key（至 thunderforest.com 註冊免費 Hobby 方案即可取得）；未設定時改以等高線地形圖顯示。</p>
 <p class="note">可填入魯地圖等提供 XYZ 圖磚的網址（請遵守該服務的使用條款）。</p>
 <button class="btn" id="set-dl">下載目前範圍底圖供離線使用</button> <output id="set-dl-out"></output>
 </fieldset>
@@ -437,7 +462,7 @@ function openSettings() {
     e.target.setCustomValidity('');
     s.customTile = v; save(); if (s.basemap === 'custom') setBasemap();
   });
-  body.querySelector('#set-tfkey').addEventListener('change', (e) => { s.tfKey = e.target.value.trim(); save(); if (s.basemap === 'cycle') setBasemap(); });
+  body.querySelector('#set-tfkey').addEventListener('change', (e) => { s.tfKey = e.target.value.trim(); save(); if (BASEMAPS[s.basemap]?.tf) setBasemap(); });
   body.querySelectorAll('[data-th]').forEach((i) => i.addEventListener('change', () => { s.thresholds[i.dataset.th] = Number(i.value); save(); }));
   body.querySelector('#set-dl').addEventListener('click', () => downloadTiles(body.querySelector('#set-dl-out')));
   body.querySelector('#set-src').addEventListener('click', () => { dlg.close(); showSources(); });
@@ -452,7 +477,7 @@ function openSettings() {
 async function downloadTiles(out) {
   if (!baseLayer) return;
   if ((BASEMAPS[S.settings.basemap] || {}).noBulk) {
-    out.textContent = 'OpenCycleMap 不提供批次下載（Thunderforest 用量計費）；瀏覽過的圖磚仍會快取供離線使用。';
+    out.textContent = 'Thunderforest 底圖不提供批次下載（用量計費）；瀏覽過的圖磚仍會快取供離線使用。';
     return;
   }
   const b = S.map.getBounds();
@@ -536,6 +561,7 @@ async function main() {
   S.map.getPane('labels').style.pointerEvents = 'none';
   S.map.createPane('stations').style.zIndex = 610;
   S.map.createPane('spots').style.zIndex = 620;
+  S.map.createPane('alerts').style.zIndex = 640; // strong-earthquake icons, above all other markers
   S.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
   L.control.scale({ imperial: false }).addTo(S.map);
   setBasemap();
@@ -547,6 +573,8 @@ async function main() {
     applyOverlayVisibility();
     setWeatherVisible(!e.detail);
     document.getElementById('legend').classList.toggle('quake-hide', e.detail);
+    // The earthquake view draws its own epicentre marker.
+    if (strongLayer) { if (e.detail) S.map.removeLayer(strongLayer); else strongLayer.addTo(S.map); }
   });
 
   $('#sheet-close').addEventListener('click', closeSheet);
@@ -602,7 +630,7 @@ async function main() {
     $('#status').innerHTML = '<span class="warn-txt">無法載入資料。若為首次開啟請連上網路；之後即可離線使用已快取的資料。</span>';
     return;
   }
-  if (S.settings.basemap === 'cycle') setBasemap(); // the site-wide key arrives with the manifest
+  if (BASEMAPS[S.settings.basemap]?.tf) setBasemap(); // the site-wide key arrives with the manifest
   buildChips();
   buildOverlayToggles();
   bindSearch();
