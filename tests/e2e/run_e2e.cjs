@@ -416,6 +416,37 @@ function serve() {
     if (await page.isVisible('#btn-more')) await page.click('#btn-more');
   });
 
+  await check('map options panel sits in the map top-right; font sliders resize labels live', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    const map = await page.locator('#map').boundingBox();
+    const btn = await page.locator('#btn-more').boundingBox();
+    assert(btn.y >= map.y && btn.y < map.y + 60 && btn.x + btn.width > map.x + map.width - 60, `button not at the map top-right ${JSON.stringify(btn)}`);
+    assert(!(await page.locator('#controls #btn-more').count()), 'options button still in the bottom controls');
+    const lg = await page.locator('#legend').boundingBox();
+    if (lg) assert(lg.y >= btn.y + btn.height, 'legend overlaps the options button');
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.47, 120.96], 11, { animate: false }); });
+    await page.click('#btn-more');
+    await page.check('[data-lbl="mountains"]');
+    await page.waitForSelector('.map-lbl.lbl-mountains');
+    const size = () => page.$eval('.map-lbl.lbl-mountains', (e) => parseFloat(getComputedStyle(e).fontSize));
+    const s0 = await size();
+    assert(s0 >= 14, `default label size too small: ${s0}px`);
+    await page.$eval('#lbl-size', (i) => { i.value = '1.8'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+    const s1 = await size();
+    assert(s1 > s0 * 1.3, `label size did not follow the slider: ${s0} -> ${s1}`);
+    assert((await page.textContent('#lbl-size-out')) === '180%', 'slider value not shown');
+    const boxes = await page.$$eval('.map-lbl', (els) => els.map((e) => { const el = e.firstElementChild || e; const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }));
+    const hit = boxes.some((a, i) => boxes.some((b, j) => j > i && a[0] < b[2] - 1 && b[0] < a[2] - 1 && a[1] < b[3] - 1 && b[1] < a[3] - 1));
+    assert(!hit, 'large labels overlap');
+    await page.screenshot({ path: path.join(SHOTS, 'map-options.png') });
+    await page.$eval('#lbl-size', (i) => { i.value = '1.25'; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page.uncheck('[data-lbl="mountains"]');
+    // A map tap closes the panel without opening a point.
+    await page.mouse.click(map.x + 40, map.y + map.height - 60);
+    assert(!(await page.isVisible('#more')), 'panel still open after a map tap');
+    assert(!(await page.isVisible('#sheet')), 'map tap with the panel open should not open a point');
+  });
+
   await check('OSM peaks: markers from zoom 11, peak panel shows the nearby township forecast', async () => {
     await page.click('#sheet-close').catch(() => {});
     const n = await page.evaluate(async () => (await import('./js/state.js')).S.peaks.length);

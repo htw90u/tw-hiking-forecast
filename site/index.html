@@ -38,14 +38,19 @@
   <div id="chips" class="chips" role="radiogroup" aria-label="氣象圖層"></div>
   <div class="tools">
     <div id="time-ctl" class="time-ctl"></div>
-    <button id="btn-more" class="btn" aria-expanded="false" aria-controls="more">選項</button>
   </div>
-  <div id="more" class="more">
+</section>
+<!-- Map options: moved into the map's top-right corner as a Leaflet control at start-up. -->
+<div id="map-opts" class="map-opts">
+  <button id="btn-more" class="map-opts-btn" aria-expanded="false" aria-controls="more" title="圖層與顯示選項"><span aria-hidden="true">☰</span> 選項</button>
+  <div id="more" class="more" role="group" aria-label="圖層與顯示選項">
     <label class="range">透明度 <input id="opacity" type="range" min="0.2" max="1" step="0.05" aria-valuetext="70%"></label>
+    <label class="range">名稱字體 <input id="lbl-size" type="range" min="0.8" max="2" step="0.05"> <output id="lbl-size-out"></output></label>
+    <label class="range">介面字體 <input id="ui-size" type="range" min="0.9" max="2" step="0.05"> <output id="ui-size-out"></output></label>
     <button id="btn-affected" class="btn">列出受影響山區</button>
     <div id="toggles" class="toggles" aria-label="標記"></div>
   </div>
-</section>
+</div>
 <div id="tabbar" class="tabbar"></div>
 <details id="legend" class="legend" hidden></details>
 

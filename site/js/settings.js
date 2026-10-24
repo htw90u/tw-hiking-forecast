@@ -3,6 +3,7 @@ const KEY = 'hikingwx.settings.v1';
 
 export const DEFAULTS = {
   fontScale: 1,          // 1 = 100 %, up to 2 = 200 %
+  labelScale: 1.25,      // map name labels relative to the map text size
   theme: 'auto',         // auto | light | dark | contrast
   palette: 'cwa',        // cwa | cvd (color-vision-deficiency safe) | contrast
   basemap: 'topo',       // topo | emap | photo | osm | custom
@@ -43,6 +44,7 @@ export function applySettings(s) {
   const root = document.documentElement;
   const scale = Math.min(2, Math.max(0.85, Number(s.fontScale) || 1));
   root.style.setProperty('--fs', String(scale));
+  root.style.setProperty('--lbl', String(Math.min(2, Math.max(0.8, Number(s.labelScale) || DEFAULTS.labelScale))));
   let theme = s.theme;
   if (theme === 'auto') {
     let dark = false;

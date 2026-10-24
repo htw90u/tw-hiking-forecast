@@ -132,6 +132,24 @@ a { color: var(--accent); }
 .sw { width: calc(var(--u) * 1.4); height: calc(var(--u) * .9); border: 1px solid rgba(0,0,0,.5); display: inline-block; flex: none; }
 .qpf-title { width: 100%; background: #fff; margin: .2rem 0; }
 body.sheet-open .legend { display: none; }
+body.opts-open .legend { display: none !important; }
+
+/* ---------- map options (top-right map control) */
+.map-opts { font-size: var(--u); display: flex; flex-direction: column; align-items: flex-end; }
+.map-opts-btn {
+  background: var(--card); color: var(--fg); border: 2px solid var(--line); border-radius: calc(var(--u) * .5); box-shadow: var(--shadow);
+  min-height: calc(var(--u) * 2.75); padding: calc(var(--u) * .3) calc(var(--u) * .7); font: inherit; font-weight: 700; cursor: pointer;
+}
+.map-opts-btn[aria-expanded="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.map-opts .more {
+  flex-direction: column; align-items: stretch; margin-top: calc(var(--u) * .4); padding: calc(var(--u) * .5) calc(var(--u) * .7);
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: calc(var(--u) * .5); box-shadow: var(--shadow);
+  width: min(calc(var(--u) * 20), calc(100vw - 2rem)); max-height: var(--opts-max-h, 60vh); overflow: auto; overscroll-behavior: contain; cursor: auto;
+}
+.map-opts .range { justify-content: space-between; }
+.map-opts .range input[type=range] { flex: 1; min-width: 0; width: auto; }
+.map-opts .range output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+.map-opts .btn { align-self: flex-start; min-height: calc(var(--u) * 2.75); }
 
 /* ---------- sheet */
 .sheet {
@@ -161,8 +179,6 @@ body.sheet-open .legend { display: none; }
   .sheet.full { width: min(48rem, 70vw); height: auto; }
   body.sheet-open #map, body.sheet-open .controls, body.sheet-open .status { margin-right: min(30rem, 42vw); }
   body.sheet-open.sheet-full #map, body.sheet-open.sheet-full .controls, body.sheet-open.sheet-full .status { margin-right: min(48rem, 70vw); }
-  .more { display: flex; }
-  #btn-more { display: none; }
   .legend { right: calc(var(--u) * .5); }
   body.sheet-open .legend { right: calc(min(30rem, 42vw) + .5rem); }
   body.sheet-open .legend { display: block; }
@@ -300,7 +316,7 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 [data-theme="contrast"] .seg-btn.mtn > span, [data-theme="dark"] .seg-btn.mtn > span { color: inherit; }
 
 /* Name labels on the map (optional per kind) */
-.map-lbl { white-space: nowrap; font-size: calc(var(--u) * .75); font-weight: 700; line-height: 1.2; color: #222; pointer-events: none;
+.map-lbl { white-space: nowrap; font-size: calc(var(--u) * .75 * var(--lbl, 1.25)); font-weight: 700; line-height: 1.2; color: #222; pointer-events: none;
   text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; }
 .map-lbl.lbl-mountains { color: #5b3a1a; }
 .map-lbl.lbl-stations { color: #17406d; font-weight: 600; }

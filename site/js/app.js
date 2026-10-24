@@ -241,8 +241,11 @@ function updateLabels() {
   labelLayer.clearLayers();
   const z = S.map.getZoom();
   const view = S.map.getBounds().pad(0.05);
-  const charW = 12 * Math.min(Number(S.settings.fontScale) || 1, 1.4) + 1;
-  const h = charW + 6;
+  // Matches .map-lbl: 16px * min(font scale, 1.4) * .75 * label scale; CJK glyphs are about 1em wide.
+  const lblScale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lbl')) || 1.25;
+  const fontPx = 12 * Math.min(Number(S.settings.fontScale) || 1, 1.4) * lblScale;
+  const charW = fontPx + 1;
+  const h = Math.ceil(fontPx * 1.2) + 4;
   const overlaps = (r, list) => list.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
   const kinds = LABEL_KINDS.filter(([k, minZ]) => S.settings.labels?.[k] && z >= minZ && S.overlays[k] && S.map.hasLayer(S.overlays[k]))
     .map(([k, , items]) => {
@@ -326,7 +329,50 @@ function buildOverlayToggles() {
 /** Keep the floating legend just below the status bar, whose height varies (typhoon banner, font size). */
 function placeLegend() {
   const r = document.getElementById('status').getBoundingClientRect();
-  document.documentElement.style.setProperty('--legend-top', `${Math.round(r.bottom + 6)}px`);
+  const btn = document.getElementById('btn-more').getBoundingClientRect();
+  const bottom = btn.height ? Math.max(r.bottom, btn.bottom) : r.bottom;
+  document.documentElement.style.setProperty('--legend-top', `${Math.round(bottom + 6)}px`);
+  // The open options panel must fit above the bottom controls.
+  const map = document.getElementById('map').getBoundingClientRect();
+  document.documentElement.style.setProperty('--opts-max-h', `${Math.max(120, Math.round(map.bottom - btn.bottom - 16))}px`);
+}
+
+// ---------------------------------------------------------------- map options control
+function setOptsOpen(open) {
+  $('#more').classList.toggle('open', open);
+  $('#btn-more').setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('opts-open', open);
+  if (open) placeLegend();
+}
+
+function initMapOptions() {
+  const el = $('#map-opts');
+  L.DomEvent.disableClickPropagation(el);
+  L.DomEvent.disableScrollPropagation(el);
+  const Ctl = L.Control.extend({ onAdd: () => el });
+  new Ctl({ position: 'topright' }).addTo(S.map);
+  $('#btn-more').addEventListener('click', () => setOptsOpen(!$('#more').classList.contains('open')));
+  el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setOptsOpen(false); $('#btn-more').focus(); } });
+  // Font sliders apply while dragging so the map shows the result at once.
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  const slider = (id, key) => {
+    const input = $(`#${id}`);
+    const out = $(`#${id}-out`);
+    const show = () => { out.textContent = pct(input.value); input.setAttribute('aria-valuetext', pct(input.value)); };
+    input.value = String(S.settings[key] ?? DEFAULTS[key]);
+    show();
+    input.addEventListener('input', () => {
+      S.settings[key] = Number(input.value);
+      applySettings(S.settings);
+      show();
+      updateLabels();
+      placeLegend();
+    });
+    input.addEventListener('change', () => saveSettings(S.settings));
+    return input;
+  };
+  slider('lbl-size', 'labelScale');
+  slider('ui-size', 'fontScale');
 }
 
 const QUAKE_RECENT_MS = 24 * 3600e3;
@@ -448,6 +494,9 @@ function openSettings() {
     body.querySelector('#set-fs-out').textContent = `${Math.round(s.fontScale * 100)}%`;
     e.target.setAttribute('aria-valuetext', `${Math.round(s.fontScale * 100)}%`);
     save();
+    const ui = $('#ui-size');
+    if (ui) { ui.value = String(s.fontScale); $('#ui-size-out').textContent = `${Math.round(s.fontScale * 100)}%`; }
+    updateLabels();
   });
   body.querySelector('#set-ui').addEventListener('change', (e) => { s.ui = e.target.value; save(); });
   body.querySelector('#set-theme').addEventListener('change', (e) => { s.theme = e.target.value; save(); });
@@ -470,6 +519,11 @@ function openSettings() {
   body.querySelector('#set-reset').addEventListener('click', () => {
     Object.assign(s, JSON.parse(JSON.stringify(DEFAULTS)));
     save(); setBasemap(); showLayer(s.layer); dlg.close();
+    [['lbl-size', 'labelScale'], ['ui-size', 'fontScale']].forEach(([id, k]) => {
+      $(`#${id}`).value = String(s[k]);
+      $(`#${id}-out`).textContent = `${Math.round(s[k] * 100)}%`;
+    });
+    updateLabels();
   });
   dlg.showModal();
 }
@@ -565,7 +619,12 @@ async function main() {
   S.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
   L.control.scale({ imperial: false }).addTo(S.map);
   setBasemap();
-  S.map.on('click', (e) => showPoint(e.latlng.lat, e.latlng.lng));
+  initMapOptions();
+  // A map tap first closes the options panel instead of opening a point.
+  S.map.on('click', (e) => {
+    if ($('#more').classList.contains('open')) { setOptsOpen(false); return; }
+    showPoint(e.latlng.lat, e.latlng.lng);
+  });
   S.map.on('zoomend', applyOverlayVisibility);
   S.map.on('moveend', () => { updatePeaks(); updateLabels(); });
   S.map.on('zoomend', layoutTyLabels);
@@ -591,10 +650,6 @@ async function main() {
     setTimeout(() => S.map.invalidateSize(), 50);
   });
   bindSheetSwipe();
-  $('#btn-more').addEventListener('click', () => {
-    const open = $('#more').classList.toggle('open');
-    $('#btn-more').setAttribute('aria-expanded', String(open));
-  });
   // Keep the map sized correctly when the side panel opens/closes on wide screens.
   new MutationObserver(() => S.map.invalidateSize()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   new MutationObserver(() => S.map.invalidateSize()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-ui'] });
@@ -605,7 +660,7 @@ async function main() {
   $('#btn-alerts').addEventListener('click', showAlerts);
   $('#btn-typhoon').addEventListener('click', showTyphoon);
   $('#btn-recent').addEventListener('click', showRecent);
-  $('#btn-affected').addEventListener('click', showAffected);
+  $('#btn-affected').addEventListener('click', () => { setOptsOpen(false); showAffected(); });
   $('#btn-locate').addEventListener('click', () => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((p) => {
