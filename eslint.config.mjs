@@ -5,7 +5,7 @@ const browser = {
   indexedDB: 'readonly', matchMedia: 'readonly', getComputedStyle: 'readonly', setTimeout: 'readonly',
   clearTimeout: 'readonly', setInterval: 'readonly', clearInterval: 'readonly', console: 'readonly', alert: 'readonly',
   DecompressionStream: 'readonly', AbortController: 'readonly', caches: 'readonly', self: 'readonly', L: 'readonly',
-  topojson: 'readonly', MutationObserver: 'readonly', CustomEvent: 'readonly', performance: 'readonly',
+  topojson: 'readonly', MutationObserver: 'readonly', ResizeObserver: 'readonly', CustomEvent: 'readonly', performance: 'readonly',
 };
 const node = { require: 'readonly', process: 'readonly', __dirname: 'readonly', console: 'readonly', URL: 'readonly' };
 export default [

@@ -188,13 +188,28 @@ function buildOverlayToggles() {
   }));
 }
 
+/** Keep the floating legend just below the status bar, whose height varies (typhoon banner, font size). */
+function placeLegend() {
+  const r = document.getElementById('status').getBoundingClientRect();
+  document.documentElement.style.setProperty('--legend-top', `${Math.round(r.bottom + 6)}px`);
+}
+
 function updateStatus() {
   const el = document.getElementById('status');
   const built = S.manifest?.built;
   const off = !navigator.onLine;
   const failed = Object.entries(S.manifest?.status || {}).filter(([, v]) => !v.ok).map(([k]) => k);
-  el.innerHTML = `${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
+  const ty = S.typhoon?.active ? S.typhoon : null;
+  const tyNames = ty ? ty.cyclones.map((c) => c.cname || c.name).filter(Boolean).join('、') : '';
+  const tyTitle = ty ? (ty.warnings || []).map((w) => w.title).filter(Boolean)[0] || '颱風警報' : '';
+  const tyBanner = ty ? `<button class="ty-banner" id="ty-banner"><span aria-hidden="true">🌀</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}｜${esc(tyTitle)}</span><span class="ty-more">詳情 ›</span></button>` : '';
+  el.innerHTML = `${tyBanner}${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
   el.querySelector('#btn-sources').addEventListener('click', showSources);
+  el.querySelector('#ty-banner')?.addEventListener('click', showTyphoon);
+  placeLegend();
+  const tyBtn = document.getElementById('btn-typhoon');
+  tyBtn.hidden = !ty;
+  if (ty) tyBtn.setAttribute('aria-label', `${tyNames}颱風${tyTitle}生效中：查看颱風資訊`);
   const n = (S.warnings?.counties || []).filter((c) => c.hazards.length).length + (S.typhoon?.active ? 1 : 0);
   const badge = document.getElementById('alert-badge');
   badge.hidden = !n;
@@ -431,6 +446,7 @@ async function main() {
   });
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-alerts').addEventListener('click', showAlerts);
+  $('#btn-typhoon').addEventListener('click', showTyphoon);
   $('#btn-recent').addEventListener('click', showRecent);
   $('#btn-affected').addEventListener('click', showAffected);
   $('#btn-locate').addEventListener('click', () => {
@@ -445,6 +461,8 @@ async function main() {
   op.addEventListener('input', () => { setOpacity(Number(op.value)); op.setAttribute('aria-valuetext', `${Math.round(op.value * 100)}%`); });
   op.addEventListener('change', () => saveSettings(S.settings));
   $('#dlg-settings').addEventListener('close', () => updateStatus());
+  window.addEventListener('resize', placeLegend);
+  new ResizeObserver(placeLegend).observe($('#status'));
   window.addEventListener('online', updateStatus);
   window.addEventListener('offline', updateStatus);
 

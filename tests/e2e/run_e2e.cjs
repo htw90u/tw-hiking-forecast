@@ -355,6 +355,31 @@ function serve() {
     assert(mapH > 0.3, `map only ${(mapH * 100).toFixed(0)}% of screen at 200% font`);
   });
 
+  await check('station click: station data and nearby mountains first, safety after', async () => {
+    await page.evaluate(async () => {
+      const { S } = await import('./js/state.js'); const v = await import('./js/views.js');
+      const st = S.stations.find((x) => x.k === 'manned' && x.alt > 2000) || S.stations.find((x) => x.k === 'manned');
+      await v.showPoint(st.lat, st.lon, { stationId: st.id, label: `${st.n}測站` });
+    });
+    await page.waitForSelector('#sheet-body .card.station');
+    const order = await page.$$eval('#sheet-body > section, #sheet-body > .card', (els) => els.map((e) => e.querySelector('h3')?.id || ''));
+    assert(order[0] === 'h-stn' && order[1] === 'h-mtn', `card order ${order.slice(0, 4)}`);
+    assert(order.indexOf('h-risk') > order.indexOf('h-mtn'), 'safety card should follow the station cards');
+    assert((await page.$$('#sheet-body .card.station .tile')).length >= 3, 'station value tiles missing');
+    await page.click('#sheet-close');
+  });
+
+  await check('typhoon tab and banner only while a typhoon warning is in force', async () => {
+    const active = await page.evaluate(async () => Boolean((await import('./js/state.js')).S.typhoon?.active));
+    assert((await page.$('#ty-banner')) !== null === active, 'banner presence does not match typhoon state');
+    assert((await page.getAttribute('#btn-typhoon', 'hidden')) === null === active, 'typhoon tab visibility does not match');
+    if (active) {
+      await page.click('#ty-banner');
+      await page.waitForFunction(() => document.getElementById('sheet-title')?.textContent.includes('颱風'));
+      await page.click('#sheet-close');
+    }
+  });
+
   await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {
     await page.click('#btn-settings');
     await page.waitForSelector('#set-ui');

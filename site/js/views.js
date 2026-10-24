@@ -137,6 +137,37 @@ function stationLine(s, d) {
 <span class="vals">${parts.join('｜') || '—'}</span></li>`;
 }
 
+const STATION_KIND = { manned: '氣象站（署屬有人站）', auto: '自動氣象站', rain: '自動雨量站' };
+
+/** Full current observation of one station (station-first point view), as compact value tiles. */
+function stationCard(st) {
+  const tile = (label, value) => `<div class="tile"><span class="tl">${label}</span><span class="tv">${esc(value)}</span></div>`;
+  const num = (label, v, unit, digits = 1) => (v === undefined || v === null ? '' : tile(label, fmtNum(v, digits, unit)));
+  const obs = [
+    st.Wx ? tile('天氣', st.Wx) : '',
+    num('溫度', st.T, '°C'), num('相對濕度', st.RH, '%', 0),
+    st.WS === undefined ? '' : tile('風向風速', `${windDir(st.WD)} ${fmtNum(st.WS, 1, 'm/s')}`),
+    num('最大陣風', st.G, 'm/s'),
+    st.Tmax === undefined ? '' : tile('今日高／低', `${fmtNum(st.Tmax, 1)}／${fmtNum(st.Tmin, 1, '°C')}`),
+    num('氣壓', st.P, 'hPa'), num('能見度', st.vis, 'km'), num('紫外線', st.uv, '', 0),
+  ].join('');
+  const rain = [['10分鐘', 'R10m'], ['1小時', 'R1h'], ['3小時', 'R3h'], ['6小時', 'R6h'], ['12小時', 'R12h'], ['24小時', 'R24h'], ['今日累積', 'Rnow']]
+    .map(([l, k]) => num(l, st[k], 'mm')).join('');
+  return raw(`<section class="card station" aria-labelledby="h-stn"><h3 id="h-stn">${esc(st.n)}測站・即時觀測</h3>
+<p class="meta">${esc(STATION_KIND[st.k] || '測站')}・海拔 ${st.alt !== undefined ? `${Math.round(st.alt)} m` : '不明'}・${esc(st.county || '')}${esc(st.town || '')}・站號 ${esc(st.id)}</p>
+${obs ? `<div class="tiles">${obs}</div>` : ''}
+${rain ? `<h4>雨量</h4><div class="tiles">${rain}</div>` : ''}
+<p class="muted">觀測時間 ${esc(fmtTime(st.t))}（${esc(ageText(st.t))}）</p></section>`);
+}
+
+/** Mountains (CWA hiking spots) near a point, nearest first. */
+function mountainsCard(lat, lon, maxKm = 20) {
+  const list = nearest(S.spots.filter((x) => x.c === 'mountain'), lat, lon, { limit: 8, maxKm });
+  return html`<section class="card" aria-labelledby="h-mtn"><h3 id="h-mtn">鄰近山域（${maxKm} km 內）</h3>
+${list.length ? html`<div class="mtns">${list.map(({ it, d }) => html`<button class="seg-btn mtn" data-spot="${it.k}"><span aria-hidden="true">▲</span> ${it.n} <small>${d.toFixed(1)} km</small></button>`)}</div>
+<p class="note">點山名可查看該山的登山預報與安全評估。</p>` : html`<p>${maxKm} km 內沒有氣象署登山預報點。</p>`}</section>`;
+}
+
 // ------------------------------------------------------------------ forecast tables
 function forecastD3(d3) {
   const pop = el(d3, '3小時降雨機率');
@@ -440,26 +471,33 @@ export async function showPoint(lat, lon, opts = {}) {
   const tyHtml = S.typhoon?.active ? html`<section class="card warn"><h3>🌀 颱風警報中</h3><button class="btn" data-open="typhoon">查看颱風路徑、風力與雨量預測</button></section>` : '';
   const qHtml = quakesNear.length ? html`<section class="card"><h3>近 3 天 50 km 內地震</h3><ul>${quakesNear.map((q) => html`<li><button class="link" data-quake="${q.time}">${fmtTime(q.time)} 規模 ${q.mag}</button> <span class="meta">距此 ${q.d.toFixed(0)} km・最大震度 ${q.maxInt}</span></li>`)}</ul></section>` : '';
 
-  const body = html`
-<p class="place">${placeLine}</p>
-<section class="card risk ${LEVELS[risk.level].cls}" aria-labelledby="h-risk"><h3 id="h-risk">登山安全評估 ${lvBadge(risk.level)}</h3>
+  const station = opts.stationId ? S.stations.find((x) => x.id === opts.stationId) : null;
+  const riskHtml = html`<section class="card risk ${LEVELS[risk.level].cls}" aria-labelledby="h-risk"><h3 id="h-risk">登山安全評估 ${lvBadge(risk.level)}</h3>
 ${risk.reasons.length ? html`<ul>${risk.reasons.map((r) => html`<li>${lvBadge(r.lv)} ${r.text}</li>`)}</ul>` : html`<p>目前未觸發警示條件。</p>`}
-<p class="note">依門檻自動判斷，僅供參考；請以現場狀況與官方資訊為準。門檻可在「設定」調整。</p></section>
-${warnHtml}${tyHtml}
-<section class="card" aria-labelledby="h-now"><h3 id="h-now">此處即時格點值</h3><table class="kv"><tbody>
+<p class="note">依門檻自動判斷，僅供參考；請以現場狀況與官方資訊為準。門檻可在「設定」調整。</p></section>`;
+  const nowHtml = html`<section class="card" aria-labelledby="h-now"><h3 id="h-now">此處即時格點值</h3><table class="kv"><tbody>
 ${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1小時雨量', 'qpe1h', 'mm'))}${raw(vrow('未來1小時雨量', 'qpf1h', 'mm'))}${raw(vrow('溫度分析', 'temp', '°C'))}${raw(vrow('雲頂溫度（紅外線）', 'satir', '°C', 0))}
-</tbody></table></section>
+</tbody></table></section>`;
+  const rainFcHtml = html`
 ${accRows ? html`<section class="card" aria-labelledby="h-acc"><h3 id="h-acc">累積雨量（雨量站內插估計）</h3><table class="kv"><tbody>${raw(accRows)}</tbody></table></section>` : ''}
 ${qpfRows ? html`<section class="card" aria-labelledby="h-qpf"><h3 id="h-qpf">定量降水預報（每12小時）</h3><table class="kv"><tbody>${raw(qpfRows)}</tbody></table></section>` : ''}
 ${qpf6Rows ? html`<section class="card" aria-labelledby="h-qpf6"><h3 id="h-qpf6">定量降水預報（每6小時・颱風警報期間）</h3><table class="kv"><tbody>${raw(qpf6Rows)}</tbody></table></section>` : ''}
 ${qaccRows ? html`<section class="card" aria-labelledby="h-qacc"><h3 id="h-qacc">未來累積降水（由12小時預報加總）</h3><table class="kv"><tbody>${raw(qaccRows)}</tbody></table>${raw(accMeta ? attribution(accMeta) : '')}</section>` : ''}
 ${fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : ''}
-${townHtml ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}
-<section class="card" aria-labelledby="h-st"><h3 id="h-st">鄰近測站（現在）</h3>
-${stationsNear.length ? html`<ul class="stations">${stationsNear.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有測站。</p>`}</section>
-${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}
-${qHtml}
-${near.length ? html`<section class="card"><h3>附近景點／山岳</h3><ul>${near}</ul></section>` : ''}
+${townHtml ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}`;
+  const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
+  const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站（現在）'}</h3>
+${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}</section>`;
+  const histHtml = stationsNear.length ? historyBlock(stationsNear, histDefault) : '';
+  const nearHtml = near.length ? html`<section class="card"><h3>附近景點／山岳</h3><ul>${near}</ul></section>` : '';
+  // Station clicked: its observations and the mountains around it come first; safety and alerts follow.
+  const main = station
+    ? html`${stationCard(station)}${mountainsCard(station.lat, station.lon)}${histHtml}${riskHtml}${warnHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${qHtml}`
+    : html`${riskHtml}${warnHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${histHtml}${qHtml}${nearHtml}`;
+
+  const body = html`
+<p class="place">${placeLine}</p>
+${main}
 <div class="actions"><button class="btn" id="btn-fav">☆ 收藏</button>
 <a class="btn" target="_blank" rel="noopener" href="https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${lat.toFixed(3)},${lon.toFixed(3)},11">在 Windy 開啟</a>
 <button class="btn" id="btn-copy">複製座標</button></div>
