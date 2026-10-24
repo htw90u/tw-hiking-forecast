@@ -447,6 +447,33 @@ function serve() {
     assert(!(await page.isVisible('#sheet')), 'map tap with the panel open should not open a point');
   });
 
+  await check('zoom 10: spot category icons, peak markers and names on by default; 全部取消 / 全選', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([24.85, 121.2], 10, { animate: false }); });
+    if (!(await page.isChecked('[data-ov="spots"]').catch(() => false))) {
+      if (!(await page.isVisible('[data-ov="spots"]'))) await page.click('#btn-more');
+      await page.check('[data-ov="spots"]');
+    }
+    await page.waitForSelector('.pin-cat');
+    const cats = await page.$$eval('.pin-cat', (e) => new Set(e.map((x) => x.className.match(/cat-(\w+)/)?.[1])).size);
+    assert(cats >= 2, `only ${cats} spot icon kind(s)`);
+    await page.waitForFunction(() => document.querySelectorAll('.map-lbl.lbl-spots').length > 0);
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.47, 120.96], 10, { animate: false }); });
+    await page.waitForFunction(() => document.querySelectorAll('.pin-peak').length > 0 && document.querySelectorAll('.map-lbl.lbl-peaks').length > 0);
+    if (!(await page.isVisible('#tg-lbl-t'))) await page.click('#btn-more');
+    const allBtn = page.locator('.tog-group:has(#tg-lbl-t) [data-all]');
+    assert((await allBtn.textContent()) === '全部取消', 'label group button should offer 全部取消');
+    await allBtn.click();
+    await page.waitForTimeout(200);
+    assert((await page.$$('.map-lbl')).length === 0, 'labels remain after 全部取消');
+    assert((await allBtn.textContent()) === '全選', 'button did not switch to 全選');
+    await page.screenshot({ path: path.join(SHOTS, 'labels-off.png') });
+    await allBtn.click();
+    await page.waitForFunction(() => document.querySelectorAll('.map-lbl').length > 0);
+    await page.click('#btn-more');
+    await page.screenshot({ path: path.join(SHOTS, 'zoom10-labels.png') });
+  });
+
   await check('OSM peaks: markers from zoom 11, peak panel shows the nearby township forecast', async () => {
     await page.click('#sheet-close').catch(() => {});
     const n = await page.evaluate(async () => (await import('./js/state.js')).S.peaks.length);

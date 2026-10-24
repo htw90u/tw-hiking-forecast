@@ -66,6 +66,11 @@ function setBasemap() {
 }
 
 // ---------------------------------------------------------------- overlays
+// Map icons for the CWA recreation-forecast categories (F-B0053); mountains keep the ▲ pin.
+const SPOT_ICONS = {
+  beach: '🏖️', park: '🌳', farm: '🐄', fishing: '🎣', coast: '🌊', np: '🏞️', nsa: '📷',
+  port: '⚓', forest: '🌲', reservoir: '💧', scenic: '🌄', water: '🛶', sea: '🚤',
+};
 /** Strong earthquakes (max intensity >= 5弱 or M >= 6) in the last 3 days: a warning icon that is always shown. */
 function buildStrongQuakes() {
   if (strongLayer) S.map.removeLayer(strongLayer);
@@ -105,9 +110,11 @@ function buildOverlays() {
   o.spots = L.layerGroup();
   S.spots.forEach((p) => {
     const mountain = p.c === 'mountain';
-    const icon = L.divIcon({ className: mountain ? 'pin-mtn' : 'pin-spot', html: mountain ? '▲' : '◆', iconSize: [18, 18] });
+    const icon = mountain ? L.divIcon({ className: 'pin-mtn', html: '▲', iconSize: [18, 18] })
+      : L.divIcon({ className: `pin-cat cat-${p.c}`, html: `<span aria-hidden="true">${SPOT_ICONS[p.c] || '◆'}</span>`, iconSize: [22, 22] });
     const m = L.marker([p.lat, p.lon], { icon, title: p.n, keyboard: true, alt: p.n, pane: 'spots' });
-    m.bindTooltip(esc(p.n), { direction: 'top', offset: [0, -8] });
+    const cat = mountain ? '' : S.spotCats.find((c) => c.id === p.c)?.label;
+    m.bindTooltip(`${esc(p.n)}${cat ? `<br><small>${esc(cat)}</small>` : ''}`, { direction: 'top', offset: [0, -10] });
     m.on('click', () => showPoint(p.lat, p.lon, { spotKey: p.k }));
     (mountain ? o.mountains : o.spots).addLayer(m);
   });
@@ -200,17 +207,20 @@ function applyOverlayVisibility() {
   updateLabels();
 }
 
-const PEAK_MIN_ZOOM = 11;
-const MAX_PEAK_MARKERS = 800;
+const PEAK_MIN_ZOOM = 10;
+// Highest peaks first: fewer markers when zoomed out.
+const peakLimit = (z) => (z <= 10 ? 250 : z === 11 ? 500 : 800);
 let peakKeys = '';
+let peakView = [];
 
 /** (Re)create OSM peak markers for the current view. */
 function updatePeaks() {
   const g = S.overlays.peaks;
   if (!g) return;
-  if (!S.map.hasLayer(g)) { g.clearLayers(); peakKeys = ''; return; }
+  if (!S.map.hasLayer(g)) { g.clearLayers(); peakKeys = ''; peakView = []; return; }
   const view = S.map.getBounds().pad(0.2);
-  const list = S.peaks.filter((p) => view.contains([p.lat, p.lon])).slice(0, MAX_PEAK_MARKERS);
+  const list = S.peaks.filter((p) => view.contains([p.lat, p.lon])).slice(0, peakLimit(S.map.getZoom()));
+  peakView = list;
   const keys = list.map((p) => p.k).join();
   if (keys === peakKeys) return;
   peakKeys = keys;
@@ -226,11 +236,12 @@ function updatePeaks() {
 
 // ---------------------------------------------------------------- name labels
 // [kind, min zoom, items]: labels follow their marker layer and skip any that would overlap.
+// [kind, min zoom, items, marker half-size px]; earlier kinds win when labels collide.
 const LABEL_KINDS = [
-  ['mountains', 10, () => S.spots.filter((p) => p.c === 'mountain')],
-  ['peaks', 12, () => S.peaks],
-  ['spots', 11, () => S.spots.filter((p) => p.c !== 'mountain')],
-  ['stations', 11, () => S.stations],
+  ['mountains', 9, () => S.spots.filter((p) => p.c === 'mountain'), 8],
+  ['spots', 10, () => S.spots.filter((p) => p.c !== 'mountain'), 11],
+  ['peaks', 10, () => peakView, 7],
+  ['stations', 11, () => S.stations, 5],
 ];
 const MAX_LABELS = 300;
 let labelLayer = null;
@@ -248,22 +259,22 @@ function updateLabels() {
   const h = Math.ceil(fontPx * 1.2) + 4;
   const overlaps = (r, list) => list.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
   const kinds = LABEL_KINDS.filter(([k, minZ]) => S.settings.labels?.[k] && z >= minZ && S.overlays[k] && S.map.hasLayer(S.overlays[k]))
-    .map(([k, , items]) => {
+    .map(([k, , items, half]) => {
       const list = items().filter((p) => view.contains([p.lat, p.lon]));
       if (k === 'stations') list.sort((a, b) => (a.k === 'rain') - (b.k === 'rain')); // weather stations first
-      return [k, list.map((p) => ({ p, pt: S.map.latLngToContainerPoint([p.lat, p.lon]) }))];
+      return [k, list.map((p) => ({ p, pt: S.map.latLngToContainerPoint([p.lat, p.lon]) })), half];
     });
   // Labels must not cover any labelled kind's own markers.
-  const marks = kinds.flatMap(([, list]) => list.map(({ pt }) => ({ x: pt.x - 6, y: pt.y - 6, w: 12, h: 12 })));
+  const marks = kinds.flatMap(([, list, half]) => list.map(({ pt }) => ({ x: pt.x - half, y: pt.y - half, w: half * 2, h: half * 2, pt })));
   const placed = [];
-  for (const [k, list] of kinds) {
+  for (const [k, list, half] of kinds) {
+    const gap = half + 2;
     for (const { p, pt } of list) {
       if (placed.length >= MAX_LABELS) return;
       const w = p.n.length * charW + 6;
-      const own = (q) => Math.abs(q.x + 6 - pt.x) < 0.5 && Math.abs(q.y + 6 - pt.y) < 0.5;
-      const others = marks.filter((q) => !own(q));
+      const others = marks.filter((q) => q.pt !== pt);
       // Right of the marker first, then left.
-      const r = [{ x: pt.x + 7, left: false }, { x: pt.x - 7 - w, left: true }]
+      const r = [{ x: pt.x + gap, left: false }, { x: pt.x - gap - w, left: true }]
         .map((c) => ({ x: c.x, y: pt.y - h / 2, w, h, left: c.left }))
         .find((c) => !overlaps(c, placed) && !overlaps(c, others));
       if (!r) continue;
@@ -272,8 +283,8 @@ function updateLabels() {
         pane: 'labels', interactive: false, keyboard: false,
         // Left labels: a zero-width box at the marker with the text right-aligned against it.
         icon: r.left
-          ? L.divIcon({ className: `map-lbl lbl-${k} lbl-left`, html: `<span>${esc(p.n)}</span>`, iconSize: [0, h], iconAnchor: [7, h / 2] })
-          : L.divIcon({ className: `map-lbl lbl-${k}`, html: esc(p.n), iconSize: null, iconAnchor: [-7, h / 2] }),
+          ? L.divIcon({ className: `map-lbl lbl-${k} lbl-left`, html: `<span>${esc(p.n)}</span>`, iconSize: [0, h], iconAnchor: [gap, h / 2] })
+          : L.divIcon({ className: `map-lbl lbl-${k}`, html: esc(p.n), iconSize: null, iconAnchor: [-gap, h / 2] }),
       }));
     }
   }
@@ -312,18 +323,36 @@ function buildOverlayToggles() {
   const items = [['stations', '測站'], ['mountains', '山岳'], ['peaks', '山頭(OSM)'], ['spots', '景點'], ['quakes', '地震'], ['typhoon', '颱風']];
   const box = document.getElementById('toggles');
   const names = [['mountains', '山岳'], ['peaks', '山頭'], ['spots', '景點'], ['stations', '測站']];
-  box.innerHTML = items.map(([k, label]) => `<label class="tog"><input type="checkbox" data-ov="${k}"${S.settings.overlays[k] ? ' checked' : ''}> ${label}</label>`).join('')
-    + `<span class="tog-group" role="group" aria-label="在地圖上顯示名稱"><span class="tog-lbl">顯示名稱：</span>${names.map(([k, label]) => `<label class="tog"><input type="checkbox" data-lbl="${k}"${S.settings.labels[k] ? ' checked' : ''}> ${label}</label>`).join('')}</span>`;
-  box.querySelectorAll('[data-lbl]').forEach((c) => c.addEventListener('change', () => {
-    S.settings.labels[c.dataset.lbl] = c.checked;
+  const group = (id, title, attr, list, state) => `<div class="tog-group" role="group" aria-labelledby="${id}-t">
+<div class="tog-head"><span class="tog-lbl" id="${id}-t">${title}</span><button type="button" class="link tog-all" data-all="${attr}"></button></div>
+${list.map(([k, label]) => `<label class="tog"><input type="checkbox" data-${attr}="${k}"${state[k] ? ' checked' : ''}> ${label}</label>`).join('')}</div>`;
+  const cats = S.spotCats.filter((c) => c.id !== 'mountain' && S.spots.some((p) => p.c === c.id));
+  box.innerHTML = group('tg-ov', '地圖標記', 'ov', items, S.settings.overlays)
+    + group('tg-lbl', '顯示名稱', 'lbl', names, S.settings.labels)
+    + `<details class="cat-legend"><summary>景點圖示說明</summary><ul>${cats.map((c) => `<li><span class="pin-cat cat-${c.id}" aria-hidden="true"><span>${SPOT_ICONS[c.id] || '◆'}</span></span>${esc(c.label)}</li>`).join('')}</ul></details>`;
+  const apply = { ov: applyOverlayVisibility, lbl: updateLabels };
+  const store = { ov: S.settings.overlays, lbl: S.settings.labels };
+  // "全部取消" while anything is checked, otherwise "全選".
+  const refreshAll = () => box.querySelectorAll('[data-all]').forEach((b) => {
+    const any = [...box.querySelectorAll(`[data-${b.dataset.all}]:not([data-all])`)].some((c) => c.checked);
+    b.textContent = any ? '全部取消' : '全選';
+  });
+  ['ov', 'lbl'].forEach((attr) => box.querySelectorAll(`input[data-${attr}]`).forEach((c) => c.addEventListener('change', () => {
+    store[attr][c.dataset[attr]] = c.checked;
     saveSettings(S.settings);
-    updateLabels();
-  }));
-  box.querySelectorAll('[data-ov]').forEach((c) => c.addEventListener('change', () => {
-    S.settings.overlays[c.dataset.ov] = c.checked;
+    apply[attr]();
+    refreshAll();
+  })));
+  box.querySelectorAll('[data-all]').forEach((b) => b.addEventListener('click', () => {
+    const attr = b.dataset.all;
+    const inputs = [...box.querySelectorAll(`input[data-${attr}]`)];
+    const on = !inputs.some((c) => c.checked);
+    inputs.forEach((c) => { c.checked = on; store[attr][c.dataset[attr]] = on; });
     saveSettings(S.settings);
-    applyOverlayVisibility();
+    apply[attr]();
+    refreshAll();
   }));
+  refreshAll();
 }
 
 /** Keep the floating legend just below the status bar, whose height varies (typhoon banner, font size). */
@@ -523,7 +552,8 @@ function openSettings() {
       $(`#${id}`).value = String(s[k]);
       $(`#${id}-out`).textContent = `${Math.round(s[k] * 100)}%`;
     });
-    updateLabels();
+    buildOverlayToggles();
+    applyOverlayVisibility();
   });
   dlg.showModal();
 }

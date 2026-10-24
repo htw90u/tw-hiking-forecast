@@ -323,8 +323,24 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .map-lbl.lbl-spots { color: #00577a; font-weight: 600; }
 [data-theme="contrast"] .map-lbl { color: #ff0; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000, 0 0 4px #000; }
 .map-lbl.lbl-left > span { position: absolute; right: 0; top: 0; }
-.tog-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 calc(var(--u) * .9); }
 .tog-lbl { color: var(--muted); }
 .map-lbl.lbl-peaks { color: #6b4f33; font-weight: 600; }
 .seg-btn.mtn.osm > span { color: #8a6a4a; }
 .base-note { display: block; color: var(--lv2); font-weight: 700; }
+
+/* Recreation spots: one icon per CWA category, ringed by group colour */
+.pin-cat > span {
+  display: grid; place-items: center; width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%;
+  background: #fff; border: 2px solid var(--cat, #00577a); font-size: 13px; line-height: 1; box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+.cat-beach, .cat-coast, .cat-sea, .cat-water, .cat-fishing, .cat-port, .cat-reservoir { --cat: #1565c0; }
+.cat-park, .cat-forest, .cat-farm { --cat: #2e7d32; }
+.cat-np, .cat-nsa, .cat-scenic { --cat: #8d5524; }
+[data-theme="contrast"] .pin-cat > span { background: #000; border-color: #ff0; }
+.tog-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0 calc(var(--u) * .9); width: 100%; }
+.tog-head { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: calc(var(--u) * .3); }
+.tog-all { font-size: calc(var(--u) * .85); min-height: calc(var(--u) * 2); }
+.cat-legend { width: 100%; margin-top: calc(var(--u) * .3); }
+.cat-legend summary { cursor: pointer; color: var(--muted); min-height: calc(var(--u) * 2); }
+.cat-legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 8), 1fr)); gap: calc(var(--u) * .3); }
+.cat-legend li { display: flex; align-items: center; gap: calc(var(--u) * .35); }
