@@ -149,6 +149,58 @@ function applyOverlayVisibility() {
     if (!on && S.map.hasLayer(g)) S.map.removeLayer(g);
   });
   document.getElementById('map').dataset.zoom = String(S.map.getZoom());
+  updateLabels();
+}
+
+// ---------------------------------------------------------------- name labels
+// [kind, min zoom, items]: labels follow their marker layer and skip any that would overlap.
+const LABEL_KINDS = [
+  ['mountains', 10, () => S.spots.filter((p) => p.c === 'mountain')],
+  ['spots', 11, () => S.spots.filter((p) => p.c !== 'mountain')],
+  ['stations', 11, () => S.stations],
+];
+const MAX_LABELS = 300;
+let labelLayer = null;
+
+function updateLabels() {
+  if (!S.map) return;
+  if (!labelLayer) labelLayer = L.layerGroup().addTo(S.map);
+  labelLayer.clearLayers();
+  const z = S.map.getZoom();
+  const view = S.map.getBounds().pad(0.05);
+  const charW = 12 * Math.min(Number(S.settings.fontScale) || 1, 1.4) + 1;
+  const h = charW + 6;
+  const overlaps = (r, list) => list.some((q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h);
+  const kinds = LABEL_KINDS.filter(([k, minZ]) => S.settings.labels?.[k] && z >= minZ && S.overlays[k] && S.map.hasLayer(S.overlays[k]))
+    .map(([k, , items]) => {
+      const list = items().filter((p) => view.contains([p.lat, p.lon]));
+      if (k === 'stations') list.sort((a, b) => (a.k === 'rain') - (b.k === 'rain')); // weather stations first
+      return [k, list.map((p) => ({ p, pt: S.map.latLngToContainerPoint([p.lat, p.lon]) }))];
+    });
+  // Labels must not cover any labelled kind's own markers.
+  const marks = kinds.flatMap(([, list]) => list.map(({ pt }) => ({ x: pt.x - 6, y: pt.y - 6, w: 12, h: 12 })));
+  const placed = [];
+  for (const [k, list] of kinds) {
+    for (const { p, pt } of list) {
+      if (placed.length >= MAX_LABELS) return;
+      const w = p.n.length * charW + 6;
+      const own = (q) => Math.abs(q.x + 6 - pt.x) < 0.5 && Math.abs(q.y + 6 - pt.y) < 0.5;
+      const others = marks.filter((q) => !own(q));
+      // Right of the marker first, then left.
+      const r = [{ x: pt.x + 7, left: false }, { x: pt.x - 7 - w, left: true }]
+        .map((c) => ({ x: c.x, y: pt.y - h / 2, w, h, left: c.left }))
+        .find((c) => !overlaps(c, placed) && !overlaps(c, others));
+      if (!r) continue;
+      placed.push(r);
+      labelLayer.addLayer(L.marker([p.lat, p.lon], {
+        pane: 'labels', interactive: false, keyboard: false,
+        // Left labels: a zero-width box at the marker with the text right-aligned against it.
+        icon: r.left
+          ? L.divIcon({ className: `map-lbl lbl-${k} lbl-left`, html: `<span>${esc(p.n)}</span>`, iconSize: [0, h], iconAnchor: [7, h / 2] })
+          : L.divIcon({ className: `map-lbl lbl-${k}`, html: esc(p.n), iconSize: null, iconAnchor: [-7, h / 2] }),
+      }));
+    }
+  }
 }
 
 // ---------------------------------------------------------------- controls
@@ -183,7 +235,14 @@ function buildChips() {
 function buildOverlayToggles() {
   const items = [['stations', '測站'], ['mountains', '山岳'], ['spots', '景點'], ['quakes', '地震'], ['typhoon', '颱風']];
   const box = document.getElementById('toggles');
-  box.innerHTML = items.map(([k, label]) => `<label class="tog"><input type="checkbox" data-ov="${k}"${S.settings.overlays[k] ? ' checked' : ''}> ${label}</label>`).join('');
+  const names = [['mountains', '山岳'], ['spots', '景點'], ['stations', '測站']];
+  box.innerHTML = items.map(([k, label]) => `<label class="tog"><input type="checkbox" data-ov="${k}"${S.settings.overlays[k] ? ' checked' : ''}> ${label}</label>`).join('')
+    + `<span class="tog-group" role="group" aria-label="在地圖上顯示名稱"><span class="tog-lbl">顯示名稱：</span>${names.map(([k, label]) => `<label class="tog"><input type="checkbox" data-lbl="${k}"${S.settings.labels[k] ? ' checked' : ''}> ${label}</label>`).join('')}</span>`;
+  box.querySelectorAll('[data-lbl]').forEach((c) => c.addEventListener('change', () => {
+    S.settings.labels[c.dataset.lbl] = c.checked;
+    saveSettings(S.settings);
+    updateLabels();
+  }));
   box.querySelectorAll('[data-ov]').forEach((c) => c.addEventListener('change', () => {
     S.settings.overlays[c.dataset.ov] = c.checked;
     saveSettings(S.settings);
@@ -409,6 +468,8 @@ async function main() {
   S.map = L.map('map', { zoomControl: true, preferCanvas: true, minZoom: 6, maxZoom: 18, keyboard: true })
     .setView([23.75, 121.0], 8);
   S.map.createPane('shake').style.zIndex = 350; // below vector overlays (rings, markers)
+  S.map.createPane('labels').style.zIndex = 605; // names, below the clickable markers
+  S.map.getPane('labels').style.pointerEvents = 'none';
   S.map.createPane('stations').style.zIndex = 610;
   S.map.createPane('spots').style.zIndex = 620;
   S.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
@@ -416,6 +477,7 @@ async function main() {
   setBasemap();
   S.map.on('click', (e) => showPoint(e.latlng.lat, e.latlng.lng));
   S.map.on('zoomend', applyOverlayVisibility);
+  S.map.on('moveend', updateLabels);
   S.map.on('zoomend', layoutTyLabels);
   document.addEventListener('quakemode', (e) => {
     applyOverlayVisibility();

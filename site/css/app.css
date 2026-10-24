@@ -296,3 +296,14 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .seg-btn.mtn small { color: var(--muted); }
 .seg-btn.mtn > span { color: #5b3a1a; }
 [data-theme="contrast"] .seg-btn.mtn > span, [data-theme="dark"] .seg-btn.mtn > span { color: inherit; }
+
+/* Name labels on the map (optional per kind) */
+.map-lbl { white-space: nowrap; font-size: calc(var(--u) * .75); font-weight: 700; line-height: 1.2; color: #222; pointer-events: none;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; }
+.map-lbl.lbl-mountains { color: #5b3a1a; }
+.map-lbl.lbl-stations { color: #17406d; font-weight: 600; }
+.map-lbl.lbl-spots { color: #00577a; font-weight: 600; }
+[data-theme="contrast"] .map-lbl { color: #ff0; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000, 0 0 4px #000; }
+.map-lbl.lbl-left > span { position: absolute; right: 0; top: 0; }
+.tog-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 calc(var(--u) * .9); }
+.tog-lbl { color: var(--muted); }

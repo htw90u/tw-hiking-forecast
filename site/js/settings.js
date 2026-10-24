@@ -15,6 +15,7 @@ export const DEFAULTS = {
   layer: 'radar',
   opacity: 0.7,
   overlays: { stations: true, mountains: true, spots: false, quakes: true, typhoon: true },
+  labels: { mountains: false, spots: false, stations: false }, // names drawn on the map
   thresholds: { rain1h: 10, rain1hRed: 30, rain24: 80, rain24Red: 200, gust: 10, gustRed: 17, cold: 5, coldRed: 0 },
 };
 
@@ -25,6 +26,7 @@ export function loadSettings() {
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { saved = {}; }
   const s = { ...clone(DEFAULTS), ...saved };
   s.overlays = { ...DEFAULTS.overlays, ...(saved.overlays || {}) };
+  s.labels = { ...DEFAULTS.labels, ...(saved.labels || {}) };
   s.thresholds = { ...DEFAULTS.thresholds, ...(saved.thresholds || {}) };
   if (s.layer === 'rainday') s.layer = 'rainacc'; // renamed layer
   if (!s.reduceMotion && saved.reduceMotion === undefined) {

@@ -396,6 +396,23 @@ function serve() {
     await page.waitForFunction(() => document.querySelector('.chip[data-layer="radar"]')?.getAttribute('aria-checked') === 'true');
   });
 
+  await check('map name labels: optional per kind, decluttered', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.47, 120.96], 11, { animate: false }); });
+    if (!(await page.isVisible('[data-lbl="mountains"]'))) await page.click('#btn-more');
+    await page.check('[data-lbl="mountains"]');
+    await page.waitForTimeout(500);
+    const n = await page.$$eval('.map-lbl.lbl-mountains', (e) => e.length);
+    assert(n > 3, `only ${n} mountain labels`);
+    const boxes = await page.$$eval('.map-lbl', (els) => els.map((e) => { const el = e.firstElementChild || e; const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }));
+    const hit = boxes.some((a, i) => boxes.some((b, j) => j > i && a[0] < b[2] - 1 && b[0] < a[2] - 1 && a[1] < b[3] - 1 && b[1] < a[3] - 1));
+    assert(!hit, 'labels overlap');
+    await page.uncheck('[data-lbl="mountains"]');
+    await page.waitForTimeout(300);
+    assert((await page.$$('.map-lbl.lbl-mountains')).length === 0, 'labels remain after turning off');
+    if (await page.isVisible('#btn-more')) await page.click('#btn-more');
+  });
+
   await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {
     await page.click('#btn-settings');
     await page.waitForSelector('#set-ui');
