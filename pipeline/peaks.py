@@ -31,6 +31,7 @@ QUERY = '[out:json][timeout:180];node["natural"="peak"]["name"]({},{},{},{});out
 MAX_AGE = timedelta(days=7)
 NAME_KEYS = ("name:zh-Hant", "name:zh_TW", "name:zh-TW", "name:zh", "name")
 FIELDS = ["n", "lat", "lon", "ele", "osm", "area", "tags"]
+ENRICH_VERSION = 2  # 2: peaks outside Taiwan's townships (Fujian coast) are dropped
 ROOT = Path(__file__).resolve().parent.parent
 TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 LISTS_DIR = Path(__file__).resolve().parent / "data" / "peak_lists"
@@ -164,7 +165,8 @@ def load_lists(lists_dir=LISTS_DIR):
 
 
 def lists_version(lists) -> str:
-    return hashlib.sha1(json.dumps(lists, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+    # ENRICH_VERSION changes whenever the area / filtering rules change, so cached files are re-processed.
+    return hashlib.sha1(json.dumps([ENRICH_VERSION, lists], ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
 
 
 def match_tags(name, lat, lon, ele, lists):
@@ -185,12 +187,22 @@ def match_tags(name, lat, lon, ele, lists):
     return tags
 
 
-def enrich(rows, locator, lists):
-    """[[n, lat, lon, ele, osm], ...] -> rows with area ('新竹縣關西鎮', or two joined by ／ on a boundary) and tags appended."""
-    out = []
+def enrich(rows, locator, lists, log=None):
+    """[[n, lat, lon, ele, osm], ...] -> rows with area ('新竹縣關西鎮', or two joined by ／ on a boundary) and tags appended.
+
+    The download box also covers the Fujian coast: a peak that lies in no Taiwan township (MOI boundaries,
+    1 km tolerance for coastlines) is not Taiwan's and is dropped.
+    """
+    out, dropped = [], []
     for r in rows:
         n, lat, lon, ele, osm = r[:5]
-        out.append([n, lat, lon, ele, osm, geo.area_names(locator.locate_all(lat, lon)), match_tags(n, lat, lon, ele, lists)])
+        area = geo.area_names(locator.locate_all(lat, lon))
+        if not area:
+            dropped.append(f"{n} ({lat}, {lon}, {ele} m)")
+            continue
+        out.append([n, lat, lon, ele, osm, area, match_tags(n, lat, lon, ele, lists)])
+    if dropped and log:
+        log.warn(f"peaks: dropped {len(dropped)} peaks outside Taiwan's townships: " + "; ".join(dropped[:20]) + (" ..." if len(dropped) > 20 else ""))
     return out
 
 
@@ -207,7 +219,7 @@ def build(out_dir, log, now, fetch=None, force=False, topo_path=TOPO, lists_dir=
     """Write peaks.json and annotate spots/index.json; returns (count, refreshed?)."""
     dest = out_dir / "peaks.json"
     lists = load_lists(lists_dir)
-    locator = geo.TownLocator(geo.load_topo(topo_path))
+    locator = geo.TownLocator(geo.load_topo(topo_path), snap_km=1.0)
     prev = None
     if dest.exists():
         try:
@@ -225,7 +237,7 @@ def build(out_dir, log, now, fetch=None, force=False, topo_path=TOPO, lists_dir=
         if age < MAX_AGE:
             # Same OSM download, but older format or changed peak lists: add area / tags without refetching.
             if prev.get("fields") != FIELDS or prev.get("listsVersion") != lists_version(lists):
-                rows = enrich(prev.get("peaks", []), locator, lists)
+                rows = enrich(prev.get("peaks", []), locator, lists, log)
                 _write(dest, datetime.fromisoformat(prev["time"]), rows, lists, prev["cwaMatch"])
             annotate_spots(out_dir, prev["cwaMatch"], locator)
             return len(prev.get("peaks", [])), False
@@ -242,6 +254,7 @@ def build(out_dir, log, now, fetch=None, force=False, topo_path=TOPO, lists_dir=
     if not peaks:
         raise FetchError("Overpass returned no named peaks")
     matches = match_cwa(data, cwa)
-    _write(dest, now, enrich(peaks, locator, lists), lists, matches)
+    rows = enrich(peaks, locator, lists, log)
+    _write(dest, now, rows, lists, matches)
     annotate_spots(out_dir, matches, locator)
-    return len(peaks), True
+    return len(rows), True

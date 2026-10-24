@@ -324,7 +324,7 @@ function buildChips() {
   box.querySelectorAll('[data-layer]').forEach((b) => b.addEventListener('click', () => {
     let id = b.dataset.layer;
     // Choosing a weather layer during the earthquake view shows it again.
-    if (S.layer.hidden) { setWeatherVisible(true); document.getElementById('legend').classList.remove('quake-hide'); }
+    if (S.layer.hidden) { setWeatherVisible(true); document.getElementById('legend').classList.remove('quake-hide'); document.getElementById('map-banner').classList.remove('quake-hide'); }
     // Tapping the active layer again turns the weather layer off.
     else if (id === S.layer.id) id = 'none';
     S.settings.layer = id;
@@ -397,6 +397,9 @@ function placeLegend() {
   const map = document.getElementById('map').getBoundingClientRect();
   const attr = document.querySelector('.leaflet-control-attribution')?.getBoundingClientRect();
   const above = attr && attr.height ? attr.height : 0;
+  // Keep the banner clear of the zoom buttons (left) and the options button (right).
+  const side = Math.max(document.getElementById('btn-more').getBoundingClientRect().width, 44) + 22;
+  document.documentElement.style.setProperty('--banner-side', `${Math.round(side)}px`);
   document.documentElement.style.setProperty('--legend-bottom', `${Math.round(window.innerHeight - map.bottom + above + 6)}px`);
   document.documentElement.style.setProperty('--legend-right', `${Math.round(window.innerWidth - map.right + 6)}px`);
   // The open options panel and the legend must fit inside the map: below the options button, above the attribution line.
@@ -759,6 +762,13 @@ async function main() {
   S.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
   L.control.scale({ imperial: false }).addTo(S.map);
   setBasemap();
+  // Layer name and data time, top centre of the map (filled by renderLegend).
+  const banner = document.createElement('div');
+  banner.id = 'map-banner';
+  banner.className = 'map-banner';
+  banner.hidden = true;
+  banner.setAttribute('role', 'status');
+  S.map.getContainer().appendChild(banner);
   initMapOptions();
   // A map tap first closes the options panel instead of opening a point.
   S.map.on('click', (e) => {
@@ -773,6 +783,7 @@ async function main() {
     applyOverlayVisibility();
     setWeatherVisible(!e.detail);
     document.getElementById('legend').classList.toggle('quake-hide', e.detail);
+    document.getElementById('map-banner').classList.toggle('quake-hide', e.detail);
     // The earthquake view draws its own epicentre marker.
     if (strongLayer) { if (e.detail) S.map.removeLayer(strongLayer); else strongLayer.addTo(S.map); }
   });

@@ -522,3 +522,32 @@ def test_cwa_mountain_snapped_to_osm_summit(tmp_path):
     assert "plat" not in idx["mountain-D002"]
     assert idx["mountain-D001"]["a"].startswith("臺中市和平區") and idx["park-A1"]["a"] == "臺東縣成功鎮"
     log.close()
+
+
+def test_peaks_outside_taiwan_dropped(tmp_path):
+    log = Log("t", tmp_path)
+    data = {"elements": [
+        {"type": "node", "id": 1, "lat": 24.383, "lon": 121.231, "tags": {"natural": "peak", "name": "石牛山", "ele": "155"}},
+        {"type": "node", "id": 2, "lat": 25.70, "lon": 118.30, "tags": {"natural": "peak", "name": "石牛山", "ele": "1782"}},   # Fujian
+        {"type": "node", "id": 3, "lat": 25.90, "lon": 119.00, "tags": {"natural": "peak", "name": "石牛山", "ele": "1116"}}]}   # Fujian
+    n, _ = peaks.build(tmp_path, log, datetime(2026, 10, 24, 12, tzinfo=TZ), fetch=lambda _log: data, lists_dir=tmp_path / "none")
+    saved = json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))
+    assert n == 1 and [p[3] for p in saved["peaks"]] == [155] and saved["peaks"][0][5]
+    log.close()
+
+
+def test_cached_peaks_reprocessed_when_rules_change(tmp_path):
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 24, 12, tzinfo=TZ)
+    peaks.build(tmp_path, log, now, fetch=lambda _log: OVERPASS_SAMPLE, lists_dir=tmp_path / "none")
+    saved = json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))
+    saved["peaks"].append(["石牛山", 25.7, 118.3, 1782, 99, "", []])        # a mainland peak left by an older build
+    saved["listsVersion"] = "old"
+    (tmp_path / "peaks.json").write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+
+    def boom(_log):
+        raise AssertionError("no download expected")
+    peaks.build(tmp_path, log, now + timedelta(hours=1), fetch=boom, lists_dir=tmp_path / "none")
+    again = json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))
+    assert all(p[3] != 1782 for p in again["peaks"]) and again["listsVersion"] != "old"
+    log.close()

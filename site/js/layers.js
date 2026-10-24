@@ -362,11 +362,12 @@ export function renderLegend(meta, message) {
   }
   if (S.legendOpen !== undefined) el.open = S.legendOpen;
   if (message) {
-    el.innerHTML = `<summary>${esc(def.label)}</summary><div class="lg-body"><p>${esc(message)}</p></div>`;
+    el.innerHTML = `<summary><span class="lg-unit"><small>說明</small></span></summary><div class="lg-body"><p>${esc(message)}</p></div>`;
     el.hidden = false;
+    setBanner(def.label, '');
     return;
   }
-  if (!meta || def.kind === 'none') { el.hidden = true; el.innerHTML = ''; return; }
+  if (!meta || def.kind === 'none') { el.hidden = true; el.innerHTML = ''; setBanner('', ''); return; }
   const kind = meta.kindOverride || def.kind;
   let body = '';
   let strip = '';
@@ -400,10 +401,11 @@ ${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm
   const title = meta.title ? `<img class="qpf-title" src="data/${esc(meta.title)}" alt="氣象署原圖標題（含發布與有效時間）">` : '';
   const note = meta.note ? `<p class="note">${esc(meta.note)}</p>` : '';
   const qpfNote = meta.kind === 'class' ? '<p class="note">由氣象署定量降水預報圖自動對位轉換；時間以原圖標題為準。</p>' : '';
-  // Collapsed, the legend shows only the unit, time and colour bar; the layer name is inside.
-  const name = (meta.label || def.label).replace(/（雨量站內插）/, '');
-  el.innerHTML = `<summary><span class="lg-unit">${esc(legendUnit(kind, meta.unit || def.unit))}</span><span class="when">${esc(when)}</span>${strip}</summary>
-<div class="lg-body"><p class="lg-name"><strong>${esc(name)}</strong></p>${title}${body}${note}${qpfNote}${attribution(meta)}</div>`;
+  // The layer name and time go to the banner at the top of the map; the legend keeps the unit and colours.
+  setBanner((meta.label || def.label).replace(/（雨量站內插）/, ''), when);
+  const [u1, u2] = legendUnit(kind, meta.unit || def.unit);
+  el.innerHTML = `<summary><span class="lg-unit"><small>${esc(u1)}</small><b>${esc(u2)}</b></span>${strip}</summary>
+<div class="lg-body">${title}${body}${note}${qpfNote}${attribution(meta)}</div>`;
   el.querySelectorAll('[data-spacing]').forEach((b) => b.addEventListener('click', () => {
     S.settings.rainSpacing = b.dataset.spacing;
     saveSettings(S.settings);
@@ -412,14 +414,22 @@ ${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm
   el.hidden = false;
 }
 
-/** Short unit line for the collapsed legend. */
+/** Unit shown on two lines in the legend: ['單位', 'mm']. */
 function legendUnit(kind, unit) {
-  if (kind === 'wind') return '蒲福風級';
-  if (kind === 'ltage') return '閃電・發生時間';
-  if (kind === 'intensity') return '震度';
-  if (kind === 'vis') return '反照率';
-  if (kind === 'irgray' || kind === 'irenh') return '單位 °C（雲頂）';
-  return unit ? `單位 ${unit}` : '';
+  if (kind === 'wind') return ['單位', '風級'];
+  if (kind === 'ltage') return ['單位', '分鐘前'];
+  if (kind === 'intensity') return ['單位', '震度'];
+  if (kind === 'vis') return ['單位', '反照率'];
+  if (kind === 'irgray' || kind === 'irenh') return ['單位', '°C'];
+  return ['單位', unit || '—'];
+}
+
+/** Banner at the top centre of the map: layer name and data time (hidden when empty). */
+export function setBanner(name, when) {
+  const b = document.getElementById('map-banner');
+  if (!b) return;
+  b.hidden = !name;
+  b.innerHTML = name ? `<strong>${esc(name)}</strong>${when ? `<span class="bn-time">${esc(when)}</span>` : ''}` : '';
 }
 
 /** Always-visible colour bar (like the CWA maps): one cell per class, boundary values underneath. */
@@ -430,7 +440,7 @@ function colourStrip(scale, kind) {
   const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).reverse().join('');
   const lbls = scale.map((x, i) => {
     if (i % step) return '';
-    const text = x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0]));
+    const text = kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
     return `<span style="bottom:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
   }).join('');
   return `<span class="lg-strip" style="--n:${n};--ch:${n > 13 ? 9.5 : 12.5}px"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;

@@ -103,8 +103,18 @@ function serve() {
     await page.waitForSelector('img.wx-grid', { timeout: 15000 });
     assert(await page.isVisible('#legend'), 'legend hidden');
     const t = await page.textContent('#legend summary');
-    assert(t.includes('單位 dBZ') && !t.includes('雷達'), `collapsed legend should show the unit only: ${t}`);
-    assert((await page.textContent('#legend .lg-name')).includes('雷達'), 'layer name missing inside the legend');
+    assert(t.includes('單位') && t.includes('dBZ') && !t.includes('雷達') && !/\d\d:\d\d/.test(t.replace(/\s/g, '')), `legend should hold only the unit and colours: ${t}`);
+    const u = await page.$$eval('#legend .lg-unit > *', (e) => e.map((x) => [x.textContent, x.getBoundingClientRect().top]));
+    assert(u.length === 2 && u[0][0] === '單位' && u[1][0] === 'dBZ' && u[1][1] > u[0][1], `unit must be on two lines: ${JSON.stringify(u)}`);
+    const bn = await page.evaluate(() => {
+      const b = document.getElementById('map-banner').getBoundingClientRect(); const m = document.getElementById('map').getBoundingClientRect();
+      const o = document.getElementById('btn-more').getBoundingClientRect(); const z = document.querySelector('.leaflet-control-zoom').getBoundingClientRect();
+      const l = document.getElementById('legend').getBoundingClientRect();
+      return { centre: Math.abs((b.left + b.right) / 2 - (m.left + m.right) / 2), top: b.top - m.top, overlap: b.right > o.left || b.left < z.right, legendW: l.width, text: document.getElementById('map-banner').textContent };
+    });
+    assert(bn.centre < 2 && bn.top < 30 && !bn.overlap, `banner placement ${JSON.stringify(bn)}`);
+    assert(bn.text.includes('雷達') && /\d\d:\d\d/.test(bn.text), `banner should hold the layer name and time: ${bn.text}`);
+    assert(bn.legendW < 100, `collapsed legend too wide: ${bn.legendW}px`);
   });
 
   await check('grid PNG decodes exactly (browser vs pipeline encoding)', async () => {
@@ -158,7 +168,7 @@ function serve() {
     const checked = await page.$eval('[data-period][aria-checked="true"]', (b) => b.textContent.trim());
     assert(checked === '過去24小時', `default period ${checked}`);
     await page.click(`[data-period="${labels.indexOf('過去7天')}"]`);
-    await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('7天'));
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('7天'));
     const top = await page.$eval('#legend .swatches li:first-child', (e) => e.textContent);
     assert(top.includes('1000') || top.includes('1500'), `legend top class ${top}`);
   });
@@ -183,7 +193,7 @@ function serve() {
     if (has6) {
       await page.click('[data-qpfmode="6"]');
       await page.waitForFunction(() => document.querySelectorAll('[data-period]').length >= 4);
-      await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('6小時'));
+      await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('6小時'));
       const lbl = await page.$$eval('[data-period]', (b) => b.map((x) => x.textContent));
       assert(lbl.every((t) => t.includes('–')), `6h period labels lack an interval: ${lbl.slice(0, 2)}`);
       await page.screenshot({ path: path.join(SHOTS, 'qpf6-mobile.png') });
@@ -193,7 +203,7 @@ function serve() {
     await page.click('[data-qpfmode="acc"]');
     await page.waitForFunction(() => [...document.querySelectorAll('[data-period]')].map((b) => b.textContent).join() === '未來24小時,未來48小時');
     await page.click('[data-period="1"]');
-    await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('48'));
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('48'));
     const lg = await page.textContent('#legend');
     for (const want of ['非中央氣象署發布之預報', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0035-015']) assert(lg.includes(want), `legend lacks ${want}`);
     await page.click('[data-qpfmode="12"]');
@@ -549,12 +559,12 @@ function serve() {
     });
     assert(st.filled > 300 && st.arrows >= 5, `wind layer ${JSON.stringify(st)}`);
     assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 12, 'Beaufort colour bar');
-    const before = await page.textContent('#legend summary .when');
+    const before = await page.textContent('#map-banner');
     await page.$eval('#wind-frame', (i) => { i.value = String(Number(i.max)); i.dispatchEvent(new Event('change', { bubbles: true })); });
-    await page.waitForFunction((b) => document.querySelector('#legend summary .when')?.textContent !== b, before);
+    await page.waitForFunction((b) => document.querySelector('#map-banner')?.textContent !== b, before);
     await page.screenshot({ path: path.join(SHOTS, 'wind.png') });
     await page.click('[data-windmode="obs"]');
-    await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('測站'));
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('測站'));
     assert((await page.$$('.wind-mk')).length > 50, 'station wind arrows missing');
     await page.click('[data-windmode="fc"]');
     await selectLayer('.chip[data-layer="radar"]');
@@ -607,7 +617,7 @@ function serve() {
     await selectLayer('.chip[data-layer="lightning"]');
     await page.waitForSelector('.lt-mk');
     assert((await page.$$('.lt-mk')).length === 2 && (await page.$$('.lt-mk.cloud')).length === 1, 'strike markers');
-    assert((await page.textContent('#legend .lg-name')).includes('2 次'), 'legend count');
+    assert((await page.textContent('#map-banner')).includes('2 次'), 'legend count');
     await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.47, 120.957); });
     await page.waitForSelector('#sheet.open #h-risk');
     assert((await page.textContent('#sheet-body')).includes('閃電'), 'lightning not in the risk reasons');

@@ -126,7 +126,7 @@ a { color: var(--accent); }
   position: fixed; right: var(--legend-right, calc(var(--u) * .5)); top: auto; bottom: var(--legend-bottom, 9rem); z-index: 1001; background: var(--card); color: var(--fg); border: 1px solid var(--line);
   border-radius: calc(var(--u) * .5); max-height: var(--legend-max-h, 55vh); overflow: auto; max-width: min(calc(var(--u) * 16), 70vw); box-shadow: var(--shadow); font-size: calc(var(--u) * .8);
 }
-.legend summary { cursor: pointer; padding: calc(var(--u) * .35) calc(var(--u) * .6); font-weight: 700; list-style-position: inside; min-height: calc(var(--u) * 2.75); }
+.legend summary { cursor: pointer; padding: calc(var(--u) * .3) calc(var(--u) * .45); font-weight: 700; list-style-position: inside; min-height: calc(var(--u) * 2.75); }
 .legend summary .when { font-weight: 400; display: block; color: var(--muted); }
 .legend .lg-body { padding: 0 calc(var(--u) * .6) calc(var(--u) * .5); }
 .legend p { margin: calc(var(--u) * .2) 0; }
@@ -359,13 +359,12 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .lg-strip { position: relative; display: flex; gap: 4px; margin-top: calc(var(--u) * .3); font-weight: 400; }
 .lg-strip .cells { display: flex; flex-direction: column; width: 14px; height: calc(var(--n, 12) * var(--ch, 12px)); border: 1px solid rgba(0, 0, 0, .45); }
 .lg-strip .cells > span { flex: 1; }
-.lg-strip .ticks { position: relative; display: block; min-width: 3.2em; height: calc(var(--n, 12) * var(--ch, 12px)); font-size: 12px; line-height: 1; color: var(--fg); }
+.lg-strip .ticks { position: relative; display: block; min-width: 2.3em; height: calc(var(--n, 12) * var(--ch, 12px)); font-size: 12px; line-height: 1; color: var(--fg); }
 .lg-strip .ticks > span { position: absolute; left: 0; transform: translateY(50%); white-space: nowrap; }
 .lg-strip.grad-v .grad { display: block; width: 14px; height: 132px; border: 1px solid rgba(0, 0, 0, .45); margin: 0; }
 .lg-strip.grad-v .ticks { height: 132px; }
 .legend[open] .lg-strip { display: none; }
-.legend:not([open]) { max-width: 9.5em; }
-.legend:not([open]) summary .when { font-size: 12px; }
+.legend:not([open]) { max-width: 7em; }
 .lg-spacing { margin: calc(var(--u) * .3) 0; }
 #q-results .sub { display: block; font-size: .8rem; color: var(--muted); margin-top: .1rem; }
 /* Panel contents never widen the options panel. */
@@ -398,9 +397,20 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .eq-mk.recent > span { background: #e65100; color: #fff; border-color: #fff; }
 [data-theme="contrast"] .eq-mk > span { background: #000; color: #ff0; border-color: #ff0; }
 .tog-row { flex-basis: 100%; height: 0; }
-.legend summary .lg-unit { display: block; }
-.lg-name { margin-top: 0 !important; }
+.legend summary .lg-unit { display: block; line-height: 1.15; }
+.lg-unit small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.lg-unit b { display: block; font-size: calc(var(--u) * .85); }
 .lg-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #222; margin: 0 .3em 0 .2em; vertical-align: middle; }
 .cat-legend .lg-eq, .cat-legend .lg-strong, .cat-legend .lg-me { position: relative; display: inline-block; width: 22px; height: 22px; margin-right: .3em; vertical-align: middle; flex: none; }
 .cat-legend .lg-strong .eq-core { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; background: #c62828; color: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px #c62828; font: 700 12px/1 system-ui, sans-serif; }
 .cat-legend .lg-me span { width: 16px; height: 16px; border-width: 3px; margin: 3px; }
+
+/* Banner (layer name + data time) at the top centre of the map */
+.map-banner {
+  position: absolute; z-index: 900; top: 10px; left: 50%; transform: translateX(-50%); box-sizing: border-box; text-align: center;
+  max-width: calc(100% - 2 * var(--banner-side, 120px)); padding: calc(var(--u) * .2) calc(var(--u) * .6); font-size: calc(var(--u) * .85); line-height: 1.25;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: calc(var(--u) * .5); box-shadow: var(--shadow); pointer-events: none;
+}
+.map-banner[hidden], .map-banner.quake-hide { display: none !important; }
+.map-banner strong { display: block; }
+.map-banner .bn-time { display: block; font-size: 12px; color: var(--muted); }

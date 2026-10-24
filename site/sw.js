@@ -1,5 +1,5 @@
 // Service worker: offline app shell, last-known data, and visited map tiles.
-const VERSION = 'v26';
+const VERSION = 'v27';
 const SHELL = `shell-${VERSION}`;
 const DATA = 'data';
 const TILES = 'tiles';
