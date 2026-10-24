@@ -162,6 +162,9 @@ function serve() {
       await page.click('[data-qpfmode="6"]');
       await page.waitForFunction(() => document.querySelectorAll('[data-period]').length >= 4);
       await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('6小時'));
+      const lbl = await page.$$eval('[data-period]', (b) => b.map((x) => x.textContent));
+      assert(lbl.every((t) => t.includes('–')), `6h period labels lack an interval: ${lbl.slice(0, 2)}`);
+      await page.screenshot({ path: path.join(SHOTS, 'qpf6-mobile.png') });
     } else {
       assert(await page.getAttribute('[data-qpfmode="6"]', 'aria-disabled') === 'true', '6h should be disabled when unavailable');
     }

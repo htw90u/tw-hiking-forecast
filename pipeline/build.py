@@ -345,7 +345,7 @@ class Builder:
                               1, 0, {**common, "parts": parts, "label": f"6小時定量降水預報（第{k + 1}段）",
                                      "title": f"grids/{name}_title.png", "fitCost": round(r["cost"], 1)})
             (self.out / "grids" / f"{name}_title.png").write_bytes(r["title_png"])
-            periods.append({"meta": f"grids/{name}.json", "start": res["start"].isoformat()})
+            periods.append({"meta": f"grids/{name}.json", "start": res["start"].isoformat(), "end": res["end"].isoformat()})
         for old in (self.out / "grids").glob("qpf6_*"):
             m = re.match(r"qpf6_(\d+)", old.name)
             if m and int(m.group(1)) > len(periods):
@@ -413,7 +413,7 @@ class Builder:
             grids.write_layer(self.out / "grids", name, g6, 0.1, 0.0, {
                 "label": f"6小時定量降水預報（颱風警報期間，第{i}段）", "unit": "mm/6h",
                 "start": g6["start"], "end": g6["end"], "issued": g6["issue"], "src": ds_id})
-            periods.append({"meta": f"grids/{name}.json", "start": g6["start"]})
+            periods.append({"meta": f"grids/{name}.json", "start": g6["start"], "end": g6["end"]})
         keep = {f"qpf6_{p['meta'].split('_')[-1].split('.')[0]}" for p in periods}
         for old in (self.out / "grids").glob("qpf6_*.*"):
             if old.stem not in keep:

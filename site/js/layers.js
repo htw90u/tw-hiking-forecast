@@ -290,7 +290,7 @@ export function renderTimeControl(meta) {
       return `<button class="seg-btn" role="radio" aria-checked="${m.id === mode}" data-qpfmode="${m.id}"${off ? ' aria-disabled="true" title="目前無法取得6小時定量降水預報"' : ''}>${esc(m.label)}${off ? '（暫無）' : ''}</button>`;
     }).join('') + '</div>';
     let periods = [];
-    if (mode === '6') periods = (L_.qpf6?.periods || []).map((p, i, a) => ({ label: `${fmtTime(p.start)}`, i, n: a.length }));
+    if (mode === '6') periods = (L_.qpf6?.periods || []).map((p, i) => ({ label: `${fmtTime(p.start)}–${fmtTime(p.end || new Date(new Date(p.start).getTime() + 6 * 3600e3).toISOString(), { date: false })}`, i }));
     else if (mode === 'acc') periods = (L_.qpfacc?.periods || []).map((p, i) => ({ label: `未來${p.hours}小時`, i }));
     else periods = (L_.qpf?.periods || []).map((p, i) => ({ label: `${fmtTime(p.start)}–${fmtTime(new Date(new Date(p.start).getTime() + 12 * 3600e3).toISOString(), { date: false })}`, i }));
     h += '<div class="seg" role="radiogroup" aria-label="預報時段">' + periods.map((p) => `<button class="seg-btn" role="radio" aria-checked="${p.i === S.layer.period}" data-period="${p.i}">${esc(p.label)}</button>`).join('') + '</div>';
