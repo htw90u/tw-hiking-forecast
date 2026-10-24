@@ -379,7 +379,7 @@ export async function showPoint(lat, lon, opts = {}) {
   }, S.settings.thresholds);
 
   const title = opts.label || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
-  const placeLine = [town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : '鄉鎮不明（海上或境外）', `${lat.toFixed(5)}, ${lon.toFixed(5)}`].join('・');
+  const placeLine = [town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
   const near = spotsNear.slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
 
   const vrow = (label, k, unit, digits = 1, empty = '無資料') => {

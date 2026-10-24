@@ -171,6 +171,21 @@ function serve() {
     await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.75, 121.0], 8, { animate: false }); });
   });
 
+  await check('typhoon forecast points have time labels (no overlaps)', async () => {
+    const active = await page.evaluate(async () => (await import('./js/state.js')).S.typhoon?.active);
+    if (!active) return;
+    const boxes = await page.$$eval('.ty-lbl', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height, e.textContent]; }));
+    assert(boxes.length >= 2, `only ${boxes.length} typhoon labels`);
+    assert(boxes.every((b) => /\d+日\d\d時/.test(b[4])), `label format ${boxes.map((b) => b[4])}`);
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        const [ax, ay, aw, ah] = boxes[i]; const [bx, by, bw, bh] = boxes[j];
+        const overlap = ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+        assert(!overlap, `labels overlap: ${boxes[i][4]} / ${boxes[j][4]}`);
+      }
+    }
+  });
+
   await check('click on map opens point panel with risk, stations and history chart', async () => {
     await page.click('.chip[data-layer="radar"]');
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -180,6 +195,7 @@ function serve() {
     await page.waitForSelector('#hist-out figure.chart, #hist-out p', { timeout: 20000 });
     const title = await page.textContent('#sheet-title');
     assert(title && title !== '查詢中…', `title ${title}`);
+    assert(!(await page.textContent('#sheet-body')).includes('鄉鎮不明'), 'unknown-township text should not be shown');
     await page.screenshot({ path: path.join(SHOTS, 'point-mobile.png') });
   });
 

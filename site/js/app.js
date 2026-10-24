@@ -73,6 +73,7 @@ function buildOverlays() {
   });
 
   o.typhoon = L.layerGroup();
+  tyLabels = [];
   if (S.typhoon?.active) {
     S.typhoon.cyclones.forEach((c) => {
       const past = c.past.map((f) => [f.lat, f.lon]);
@@ -87,14 +88,48 @@ function buildOverlays() {
         L.marker([cur.lat, cur.lon], { icon: L.divIcon({ className: 'ty-icon', html: '🌀', iconSize: [30, 30] }), title: `${c.cname}颱風` })
           .on('click', () => showTyphoon()).addTo(o.typhoon);
       }
+      const labels = [];
+      if (cur) labels.push({ lat: cur.lat, lon: cur.lon, text: `現在 ${tyTime(cur.t)}`, priority: true });
       c.fcst.forEach((f) => {
         if (f.r70) L.circle([f.lat, f.lon], { radius: f.r70 * 1000, color: '#d00', weight: 1, dashArray: '3 4', fill: false, interactive: false }).addTo(o.typhoon);
+        const when = f.t && f.h !== null ? new Date(new Date(f.t).getTime() + f.h * 3600e3).toISOString() : null;
         L.circleMarker([f.lat, f.lon], { radius: 4, color: '#d00', fillColor: '#fff', fillOpacity: 1 })
-          .bindTooltip(`+${f.h}h ${f.ws ?? ''}m/s`).addTo(o.typhoon);
+          .bindTooltip(`${when ? fmtTime(when) : ''}（+${f.h} 小時）<br>最大風速 ${f.ws ?? '—'} m/s・70% 機率半徑 ${f.r70 ?? '—'} km`).addTo(o.typhoon);
+        if (when) labels.push({ lat: f.lat, lon: f.lon, text: tyTime(when) });
       });
+      tyLabels.push(...labels.map((l) => ({ ...l, marker: L.marker([l.lat, l.lon], {
+        icon: L.divIcon({ className: `ty-lbl${l.priority ? ' now' : ''}`, html: esc(l.text), iconSize: [90, 18], iconAnchor: [-8, 9] }),
+        interactive: false, keyboard: false,
+      }) })));
     });
   }
   applyOverlayVisibility();
+  layoutTyLabels();
+}
+
+// Typhoon track time labels: "25日08時". Labels that would overlap at the
+// current zoom are hidden (the point tooltip still shows the full time).
+let tyLabels = [];
+function tyTime(iso) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', day: 'numeric', hour: '2-digit', hour12: false })
+    .formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.day}日${p.hour === '24' ? '00' : p.hour}時`;
+}
+
+function layoutTyLabels() {
+  const group = S.overlays.typhoon;
+  if (!group) return;
+  const shown = [];
+  tyLabels.forEach((l) => {
+    const pt = S.map.latLngToContainerPoint([l.lat, l.lon]);
+    const clash = shown.some((q) => Math.abs(q.x - pt.x) < 78 && Math.abs(q.y - pt.y) < 20);
+    if (!clash || l.priority) {
+      shown.push(pt);
+      if (!group.hasLayer(l.marker)) group.addLayer(l.marker);
+    } else if (group.hasLayer(l.marker)) {
+      group.removeLayer(l.marker);
+    }
+  });
 }
 
 function applyOverlayVisibility() {
@@ -344,6 +379,7 @@ async function main() {
   setBasemap();
   S.map.on('click', (e) => showPoint(e.latlng.lat, e.latlng.lng));
   S.map.on('zoomend', applyOverlayVisibility);
+  S.map.on('zoomend', layoutTyLabels);
   document.addEventListener('quakemode', (e) => {
     applyOverlayVisibility();
     setWeatherVisible(!e.detail);

@@ -269,3 +269,5 @@ summary::-webkit-details-marker { display: none; }
   .sheet.mini { top: auto; bottom: 0; width: min(20rem, 50vw); box-shadow: var(--shadow); }
   body.sheet-open.sheet-mini #map, body.sheet-open.sheet-mini .controls, body.sheet-open.sheet-mini .status, body.sheet-open.sheet-mini .topbar { margin-right: 0; }
 }
+.ty-lbl { color: #8b0000; font-weight: 700; font-size: 12px; white-space: nowrap; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; }
+.ty-lbl.now { color: #000; }
