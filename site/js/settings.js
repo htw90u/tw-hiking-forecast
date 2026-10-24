@@ -7,6 +7,7 @@ export const DEFAULTS = {
   palette: 'cwa',        // cwa | cvd (color-vision-deficiency safe) | contrast
   basemap: 'topo',       // topo | emap | photo | osm | custom
   customTile: '',
+  tfKey: '',             // personal Thunderforest API key (OpenCycleMap); overrides the site key
   reduceMotion: false,
   smooth: true,          // interpolate grid layers (false = raw cells)
   boldText: false,

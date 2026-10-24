@@ -25,6 +25,8 @@ jobs:
       FORCE_COLOR: "1"
       # Set the repository variable TYPHOON_TABLES=1 only after CWA grants written permission.
       TYPHOON_TABLES: ${{ vars.TYPHOON_TABLES }}
+      # Optional: Thunderforest API key for the OpenCycleMap basemap (public by design).
+      THUNDERFOREST_KEY: ${{ vars.THUNDERFOREST_KEY }}
     outputs:
       ok: ${{ steps.build.outcome }}
     steps:

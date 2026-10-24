@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { Buffer } = require('buffer');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const args = process.argv.slice(2);
@@ -373,6 +374,26 @@ function serve() {
     await page.keyboard.press('Escape');
     assert(await page.$('.topbar > .actions-top #btn-settings'), 'actions not back in the top bar');
     assert(!(await page.isVisible('#tabbar')), 'tab bar visible in text UI');
+  });
+
+  await check('OpenCycleMap basemap uses the Thunderforest key from settings', async () => {
+    const seen = [];
+    await ctx.route(/tile\.thunderforest\.com/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }); });
+    await page.click('#btn-settings');
+    await page.waitForSelector('#set-tfkey');
+    await page.fill('#set-tfkey', 'TESTKEY');
+    await page.dispatchEvent('#set-tfkey', 'change');
+    await page.selectOption('#set-base', 'cycle');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1500);
+    assert(seen.length > 0, 'no Thunderforest tile requested');
+    assert(seen.every((u) => u.includes('/cycle/') && u.includes('apikey=TESTKEY')), `bad tile url ${seen[0]}`);
+    const attr = await page.textContent('.leaflet-control-attribution');
+    assert(attr.includes('Thunderforest'), 'Thunderforest attribution missing');
+    await page.click('#btn-settings');
+    await page.selectOption('#set-base', 'topo');
+    await page.keyboard.press('Escape');
+    await ctx.unroute(/tile\.thunderforest\.com/);
   });
 
   await check('offline: app shell, data and recent query snapshot from cache', async () => {

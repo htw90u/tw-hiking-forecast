@@ -809,7 +809,7 @@ export function showSources() {
 <p class="note">颱風各地區風力、24小時雨量與總雨量預測表附有中央氣象署著作權聲明，未取得授權前本網站不顯示。</p></section>
 <section class="card"><h3>其他來源</h3><ul>
 <li>行政區界：taiwan-atlas（MIT），資料來源內政部。</li>
-<li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心。</li>
+<li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap（Maps © Thunderforest）。</li>
 <li>地圖程式庫：Leaflet（BSD-2）、topojson-client（ISC）。</li></ul></section>`;
   openSheet('資料來源與授權', body);
 }

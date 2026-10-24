@@ -18,10 +18,17 @@ const BASEMAPS = {
     attr: '© <a href="https://maps.nlsc.gov.tw/">內政部國土測繪中心</a>' },
   osm: { label: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', max: 19,
     attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' },
+  cycle: { label: '自行車／步道地圖 (OpenCycleMap)', url: 'https://{s}.tile.thunderforest.com/cycle/{z}/{x}/{y}{r}.png?apikey={apikey}', max: 22, sub: 'abc',
+    attr: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', noBulk: true },
   custom: { label: '自訂圖磚網址', url: '', max: 19, attr: '自訂底圖' },
 };
 
 let baseLayer = null;
+
+/** Personal key from the settings, else the site-wide key from the manifest. */
+function thunderforestKey() {
+  return (S.settings.tfKey || S.manifest?.config?.thunderforestKey || '').trim();
+}
 
 function setBasemap() {
   const s = S.settings;
@@ -29,7 +36,7 @@ function setBasemap() {
   const url = s.basemap === 'custom' ? s.customTile : def.url;
   if (baseLayer) S.map.removeLayer(baseLayer);
   if (!url) return;
-  baseLayer = L.tileLayer(url, { maxZoom: def.max, maxNativeZoom: def.max, subdomains: def.sub || 'abc', attribution: def.attr, crossOrigin: true });
+  baseLayer = L.tileLayer(url, { maxZoom: def.max, maxNativeZoom: def.max, subdomains: def.sub || 'abc', attribution: def.attr, crossOrigin: true, apikey: thunderforestKey() });
   baseLayer.addTo(S.map);
 }
 
@@ -252,6 +259,8 @@ function openSettings() {
 <fieldset><legend>底圖</legend>
 <label class="field">底圖 <select id="set-base">${opt(BASEMAPS, s.basemap)}</select></label>
 <label class="field">自訂圖磚網址 <input type="url" id="set-custom" value="${esc(s.customTile)}" placeholder="https://.../{z}/{x}/{y}.png"></label>
+<label class="field">Thunderforest API key <input type="text" id="set-tfkey" value="${esc(s.tfKey)}" autocomplete="off" spellcheck="false" placeholder="${S.manifest?.config?.thunderforestKey ? '已使用本站提供的 key' : '選填'}"></label>
+<p class="note" id="set-tf-note">OpenCycleMap 由 Thunderforest 提供，需 API key（可至 thunderforest.com 免費申請 Hobby 方案）；未設定時圖磚會顯示「API Key Required」浮水印。</p>
 <p class="note">可填入魯地圖等提供 XYZ 圖磚的網址（請遵守該服務的使用條款）。</p>
 <button class="btn" id="set-dl">下載目前範圍底圖供離線使用</button> <output id="set-dl-out"></output>
 </fieldset>
@@ -289,6 +298,7 @@ function openSettings() {
     e.target.setCustomValidity('');
     s.customTile = v; save(); if (s.basemap === 'custom') setBasemap();
   });
+  body.querySelector('#set-tfkey').addEventListener('change', (e) => { s.tfKey = e.target.value.trim(); save(); if (s.basemap === 'cycle') setBasemap(); });
   body.querySelectorAll('[data-th]').forEach((i) => i.addEventListener('change', () => { s.thresholds[i.dataset.th] = Number(i.value); save(); }));
   body.querySelector('#set-dl').addEventListener('click', () => downloadTiles(body.querySelector('#set-dl-out')));
   body.querySelector('#set-src').addEventListener('click', () => { dlg.close(); showSources(); });
@@ -302,6 +312,10 @@ function openSettings() {
 
 async function downloadTiles(out) {
   if (!baseLayer) return;
+  if ((BASEMAPS[S.settings.basemap] || {}).noBulk) {
+    out.textContent = 'OpenCycleMap 不提供批次下載（Thunderforest 用量計費）；瀏覽過的圖磚仍會快取供離線使用。';
+    return;
+  }
   const b = S.map.getBounds();
   const z0 = S.map.getZoom();
   const maxZ = Math.min(z0 + 3, 15, baseLayer.options.maxZoom);
@@ -441,6 +455,7 @@ async function main() {
     $('#status').innerHTML = '<span class="warn-txt">無法載入資料。若為首次開啟請連上網路；之後即可離線使用已快取的資料。</span>';
     return;
   }
+  if (S.settings.basemap === 'cycle') setBasemap(); // the site-wide key arrives with the manifest
   buildChips();
   buildOverlayToggles();
   bindSearch();

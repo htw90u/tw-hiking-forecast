@@ -53,6 +53,11 @@ class Builder:
         self.out.mkdir(parents=True, exist_ok=True)
         self.f = Fetcher(Path(args.cache) / "s3", log)
         self.manifest = {"built": now().isoformat(), "tz": TZ.key, "layers": {}, "status": {}}
+        # Optional site-wide Thunderforest key for the OpenCycleMap basemap (repository variable
+        # THUNDERFOREST_KEY); Thunderforest keys are meant to be used in public web pages.
+        tf_key = os.environ.get("THUNDERFOREST_KEY", "").strip()
+        if tf_key:
+            self.manifest["config"] = {"thunderforestKey": tf_key}
         old = self.out / "manifest.json"
         if old.exists():
             try:
