@@ -275,6 +275,23 @@ async function downloadTiles(out) {
   out.textContent = `完成：${urls.length} 張圖磚已快取`;
 }
 
+// Swipe the sheet header: up = expand, down = shrink / close (bottom-sheet layout only).
+function bindSheetSwipe() {
+  const head = document.querySelector('.sheet-head');
+  let y0 = null;
+  head.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+  head.addEventListener('touchend', (e) => {
+    if (y0 === null) return;
+    const dy = e.changedTouches[0].clientY - y0;
+    y0 = null;
+    if (getComputedStyle($('.sheet-grab')).display === 'none' || Math.abs(dy) < 50) return;
+    const sh = $('#sheet');
+    if (dy < 0 && !sh.classList.contains('full')) $('#sheet-toggle').click();
+    else if (dy > 0 && sh.classList.contains('full')) $('#sheet-toggle').click();
+    else if (dy > 0) closeSheet();
+  });
+}
+
 // ---------------------------------------------------------------- boot
 async function loadData() {
   const manifest = await getJSON('manifest.json');
@@ -322,6 +339,7 @@ async function main() {
     $('#sheet-toggle').setAttribute('aria-expanded', String(full));
     setTimeout(() => S.map.invalidateSize(), 50);
   });
+  bindSheetSwipe();
   $('#btn-more').addEventListener('click', () => {
     const open = $('#more').classList.toggle('open');
     $('#btn-more').setAttribute('aria-expanded', String(open));
