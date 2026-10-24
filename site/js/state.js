@@ -12,6 +12,7 @@ export const S = {
   peakLists: {},          // list tag id -> label (百岳, 小百岳, ...)     // OSM named peaks {k, n, lat, lon, ele} (not CWA forecast spots)
   quakes: [],
   typhoon: null,
+  pick: null,            // highlight marker of the selected point
   wind: null,            // wind.json (loaded with the wind layer)
   lightning: null,       // lightning.json (last hour of strikes)
   warnings: null,

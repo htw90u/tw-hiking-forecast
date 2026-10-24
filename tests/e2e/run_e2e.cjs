@@ -687,6 +687,46 @@ function serve() {
     await page.click('#btn-more');
   });
 
+  await check('favourites: star in search results and in the panel header; selected point highlighted', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    await page.evaluate(async () => { const st = await import('./js/store.js'); await Promise.all((await st.listFav()).map((f) => st.deleteFav(f.id))); });
+    await page.fill('#q', '鹿林');
+    await page.waitForSelector('#q-results .fav-btn');
+    await page.click('#q-results [data-fav="0"]');
+    await page.waitForFunction(() => document.querySelector('#q-results [data-fav="0"]')?.getAttribute('aria-pressed') === 'true');
+    assert(!(await page.isVisible('#sheet.open')), 'the star in the results must not open the place');
+    assert((await page.evaluate(async () => (await import('./js/store.js')).listFav().then((f) => f.length))) === 1, 'favourite not saved from the search list');
+    // choosing the result: highlight + header star already filled
+    await page.click('#q-results li[data-i="0"] >> text=鹿林');
+    await page.waitForSelector('#sheet.open #sheet-fav:not([hidden])');
+    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'true');
+    assert((await page.$$('.pick-mk')).length === 1, 'selected point is not highlighted on the map');
+    await page.waitForTimeout(1500);
+    const vis = await page.evaluate(() => {
+      const p = document.querySelector('.pick-mk').getBoundingClientRect(); const sh = document.getElementById('sheet').getBoundingClientRect();
+      const m = document.getElementById('map').getBoundingClientRect();
+      return { room: sh.top - m.top, ok: p.bottom <= sh.top + 2 && p.top >= 0 };
+    });
+    // With 200 % text and two banners the map above the panel can be too short to show anything: only check when there is room.
+    assert(vis.room < 160 || vis.ok, 'the highlighted point is hidden behind the panel');
+    await page.screenshot({ path: path.join(SHOTS, 'pick-highlight.png') });
+    await page.click('#sheet-fav');
+    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'false');
+    assert((await page.evaluate(async () => (await import('./js/store.js')).listFav().then((f) => f.length))) === 0, 'header star did not remove the favourite');
+    await page.click('#sheet-fav');
+    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'true');
+    await page.click('#sheet-close');
+    assert((await page.$$('.pick-mk')).length === 0, 'highlight should be removed when the panel closes');
+    assert(!(await page.isVisible('#sheet-fav')), 'header star should be hidden without a panel');
+    // the saved favourite reopens the same place (with its peak panel)
+    await page.click('#btn-recent');
+    await page.click('[data-kind="fav"][data-rid] >> nth=0');
+    await page.waitForSelector('#sheet.open #h-tfc');
+    await page.click('#sheet-close');
+    await page.evaluate(async () => { const st = await import('./js/store.js'); await Promise.all((await st.listFav()).map((f) => st.deleteFav(f.id))); });
+    await page.fill('#q', '');
+  });
+
   await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {
     const h0 = (await page.locator('#map').boundingBox()).height;
     await page.click('#btn-bar-hide');

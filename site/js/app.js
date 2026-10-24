@@ -7,7 +7,7 @@ import { PALETTE_NAMES } from './palettes.js';
 import {
   showPoint, closeSheet, sheetBack, setSheetMini, showSources, showAlerts, showRecent, showAffected, showQuake, showQuakes, showTyphoon, search, flyTo,
 } from './views.js';
-import { clearAll } from './store.js';
+import { clearAll, toggleFav, listFav, pointId } from './store.js';
 
 const BASEMAPS = {
   topo: { label: '等高線地形圖 (OpenTopoMap)', url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', max: 17, sub: 'abc',
@@ -556,11 +556,28 @@ function bindSearch() {
   };
   input.addEventListener('input', () => {
     results = search(input.value);
-    list.innerHTML = results.map((r, i) => `<li role="option" id="qr-${i}" tabindex="-1" data-i="${i}"><span class="tag">${esc(r.type)}</span>${esc(r.label)}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}</li>`).join('');
+    list.innerHTML = results.map((r, i) => `<li role="option" id="qr-${i}" tabindex="-1" data-i="${i}"><span class="tag">${esc(r.type)}</span>${esc(r.label)}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}<button type="button" class="fav-btn" data-fav="${i}" aria-pressed="false" aria-label="加入收藏：${esc(favTitle(r))}" title="加入收藏">☆</button></li>`).join('');
     list.hidden = !results.length;
     input.setAttribute('aria-expanded', String(!list.hidden));
+    paintFavs();
   });
-  list.addEventListener('click', (e) => {
+  // The star in each result adds the place to the favourites without opening it.
+  const favTitle = (r) => (r.type === '座標' ? `座標 ${r.label}` : r.label.replace(/（[^）]*）$/, ''));
+  const favEntry = (r) => ({ id: pointId(r.lat, r.lon), lat: r.lat, lon: r.lon, title: favTitle(r), spotKey: r.spot, stationId: r.station, peakKey: r.peak?.k });
+  const paintFavs = () => listFav().then((favs) => list.querySelectorAll('[data-fav]').forEach((b) => {
+    const on = favs.some((f) => f.id === pointId(results[Number(b.dataset.fav)].lat, results[Number(b.dataset.fav)].lon));
+    b.textContent = on ? '★' : '☆';
+    b.setAttribute('aria-pressed', String(on));
+    b.title = on ? '取消收藏' : '加入收藏';
+  }));
+  list.addEventListener('click', async (e) => {
+    const star = e.target.closest('[data-fav]');
+    if (star) {
+      e.stopPropagation();
+      await toggleFav(favEntry(results[Number(star.dataset.fav)]));
+      paintFavs();
+      return;
+    }
     const li = e.target.closest('[data-i]');
     if (li) choose(results[Number(li.dataset.i)]);
   });
@@ -572,7 +589,7 @@ function bindSearch() {
   list.addEventListener('keydown', (e) => {
     const li = document.activeElement.closest('li');
     if (!li) return;
-    if (e.key === 'Enter') choose(results[Number(li.dataset.i)]);
+    if (e.key === 'Enter' && !document.activeElement.matches('.fav-btn')) choose(results[Number(li.dataset.i)]);
     if (e.key === 'ArrowDown') (li.nextElementSibling || li).focus();
     if (e.key === 'ArrowUp') (li.previousElementSibling || input).focus();
     if (e.key === 'Escape') { list.hidden = true; input.focus(); }

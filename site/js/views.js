@@ -14,9 +14,10 @@ import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRe
 // ------------------------------------------------------------------ sheet
 const stack = [];
 
-export function openSheet(title, body, { replace = false, onRender, peek = false, quake = false } = {}) {
+export function openSheet(title, body, { replace = false, onRender, peek = false, quake = false, fav = null } = {}) {
   const sheet = document.getElementById('sheet');
-  const entry = { title, body, onRender };
+  const entry = { title, body, onRender, fav };
+  if (quake) clearPick();
   // peek: a low sheet so the map above stays visible (earthquake view).
   sheet.classList.toggle('peek', peek);
   setSheetMini(false, { refit: false });
@@ -39,7 +40,57 @@ function renderTop() {
   body.innerHTML = typeof e.body === 'string' ? e.body : e.body.html;
   body.scrollTop = 0;
   document.getElementById('sheet-back').hidden = stack.length < 2;
+  setSheetFav(e.fav);
   if (e.onRender) e.onRender(body);
+}
+
+// ------------------------------------------------------------------ favourite star + selected-point highlight
+/** The star in the sheet header: adds / removes the current point from the favourites. */
+function setSheetFav(fav) {
+  const b = document.getElementById('sheet-fav');
+  b.hidden = !fav;
+  b.onclick = null;
+  if (!fav) return;
+  const paint = (on) => {
+    b.firstElementChild.textContent = on ? '★' : '☆';
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? `取消收藏：${fav.title}` : `加入收藏：${fav.title}`);
+    b.title = on ? '取消收藏' : '加入收藏';
+    document.querySelectorAll('#btn-fav').forEach((x) => { x.textContent = on ? '★ 已收藏' : '☆ 收藏'; });
+  };
+  paint(false);
+  listFav().then((f) => paint(f.some((x) => x.id === fav.id)));
+  b.onclick = async () => paint(await toggleFav(fav));
+}
+
+/** Highlight the selected point on the map (ring + dot) until the sheet is closed. */
+function showPick(lat, lon) {
+  clearPick();
+  S.pick = L.marker([lat, lon], {
+    icon: L.divIcon({ className: 'pick-mk', html: '<span class="ring"></span><span class="dot"></span>', iconSize: [44, 44] }),
+    interactive: false, keyboard: false, pane: 'alerts', zIndexOffset: 3000,
+  }).addTo(S.map);
+  // flyTo (search results) is still moving at this point: check again when it has settled.
+  revealPoint(lat, lon);
+  setTimeout(() => revealPoint(lat, lon), S.settings.reduceMotion ? 50 : 1000);
+}
+
+/** Pan the map so that a point hidden behind the open panel comes into the visible part of the map. */
+function revealPoint(lat, lon) {
+  const sheet = document.getElementById('sheet');
+  if (sheet.hidden || !S.pick) return;
+  const r = sheet.getBoundingClientRect();
+  const m = S.map.getContainer().getBoundingClientRect();
+  const side = r.left > m.left + 10; // side-panel layout
+  const w = side ? r.left - m.left : m.width;
+  const h = side ? m.height : r.top - m.top;
+  const p = S.map.latLngToContainerPoint([lat, lon]);
+  if (p.x > 40 && p.x < w - 40 && p.y > 70 && p.y < h - 30) return;
+  S.map.panBy([p.x - w / 2, p.y - h / 2 - 20], { animate: !S.settings.reduceMotion });
+}
+
+function clearPick() {
+  if (S.pick) { S.map.removeLayer(S.pick); S.pick = null; }
 }
 
 export function sheetBack() {
@@ -94,6 +145,8 @@ export function closeSheet() {
   S.focusBounds = null;
   setQuakeMode(false);
   stack.length = 0;
+  clearPick();
+  setSheetFav(null);
   const sheet = document.getElementById('sheet');
   sheet.classList.remove('open');
   sheet.hidden = true;
@@ -552,21 +605,21 @@ ${main}
 <p class="src">資料來源：中央氣象署開放資料。資料更新 ${fmtTime(S.manifest?.built)}</p>`;
 
   const id = pointId(lat, lon);
+  // What is needed to reopen exactly this selection from the favourites list.
+  const fav = { id, lat, lon, title, spotKey: spotPick?.k, peakKey: peak?.k, stationId: opts.stationId };
   openSheet(title, body, {
     replace: true,
+    fav,
     onRender: (root) => {
       bindCommon(root);
       bindHistory(root);
-      root.querySelector('#btn-fav')?.addEventListener('click', async (ev) => {
-        const on = await toggleFav({ id, lat, lon, title });
-        ev.target.textContent = on ? '★ 已收藏' : '☆ 收藏';
-      });
-      listFav().then((f) => { if (f.some((x) => x.id === id)) { const b = root.querySelector('#btn-fav'); if (b) b.textContent = '★ 已收藏'; } });
+      root.querySelector('#btn-fav')?.addEventListener('click', () => document.getElementById('sheet-fav').click());
       root.querySelector('#btn-copy')?.addEventListener('click', async (ev) => {
         try { await navigator.clipboard.writeText(`${lat.toFixed(5)}, ${lon.toFixed(5)}`); ev.target.textContent = '已複製'; } catch { ev.target.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; }
       });
     },
   });
+  showPick(lat, lon);
   // Snapshot for offline viewing (history charts render after; store the static part).
   saveRecent({ id, lat, lon, title, html: body.html, dataTime: S.manifest?.built });
 }
@@ -781,7 +834,7 @@ export async function showRecent({ replace = false } = {}) {
   const item = (x, kind) => html`<li class="row-del"><span class="grow"><button class="link" data-rid="${x.id}" data-kind="${kind}">${x.title}</button>
 <span class="meta">${kind === 'recent' ? `查詢於 ${fmtTime(x.savedAt)}` : `${x.lat.toFixed(3)}, ${x.lon.toFixed(3)}`}</span></span>
 <button class="icon-btn del" data-del="${x.id}" data-kind="${kind}" aria-label="${kind === 'recent' ? '刪除這筆查詢紀錄' : '取消收藏'}：${x.title}" title="${kind === 'recent' ? '刪除' : '取消收藏'}"><span aria-hidden="true">✕</span></button></li>`;
-  const body = html`<section class="card"><h3>收藏地點</h3>${fav.length ? html`<ul class="list">${fav.map((x) => item(x, 'fav'))}</ul>` : html`<p>尚無收藏。查詢地點後按「☆ 收藏」。</p>`}</section>
+  const body = html`<section class="card"><h3>收藏地點</h3>${fav.length ? html`<ul class="list">${fav.map((x) => item(x, 'fav'))}</ul>` : html`<p>尚無收藏。查詢地點後按面板右上角的 ☆，或在搜尋結果旁按 ☆。</p>`}</section>
 <section class="card"><h3>最近查詢（可離線瀏覽）</h3>${rec.length ? html`<ul class="list">${rec.map((x) => item(x, 'recent'))}</ul>
 <button class="btn" id="btn-clear-recent">清空最近查詢（${rec.length} 筆）</button>` : html`<p>尚無紀錄。</p>`}</section>
 <p class="note">最近 40 筆查詢會保存在此裝置，沒有網路時仍可開啟當時的資料快照。清空最近查詢不會影響收藏。</p>`;
@@ -791,7 +844,11 @@ export async function showRecent({ replace = false } = {}) {
       root.querySelectorAll('[data-rid]').forEach((b) => b.addEventListener('click', async () => {
         const entry = b.dataset.kind === 'recent' ? await getRecent(b.dataset.rid) : fav.find((f) => f.id === b.dataset.rid);
         if (!entry) return;
-        if (navigator.onLine || !entry.html) { flyTo(entry.lat, entry.lon); showPoint(entry.lat, entry.lon, { label: entry.title }); return; }
+        if (navigator.onLine || !entry.html) {
+          flyTo(entry.lat, entry.lon);
+          showPoint(entry.lat, entry.lon, { label: entry.title, spotKey: entry.spotKey, stationId: entry.stationId, peak: S.peaks.find((p) => p.k === entry.peakKey) });
+          return;
+        }
         showSnapshot(entry);
       }));
       root.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
