@@ -34,6 +34,9 @@ const CWA_ACC = [...CWA_RAIN, '#e88ee8', '#c24ac2', '#8f1f8f', '#5c0a5c', '#2e00
 const VIRIDIS_ACC = [...VIRIDIS17, '#3b0f50', '#2c0a3d', '#1d062a', '#100318', '#000000'];
 const CONTRAST_ACC = [...CONTRAST_RAIN, '#000000', '#000000', '#000000', '#000000', '#000000'];
 
+// CWA "大間距" (wide-interval) rainfall classes for large totals (CWA advises it above 400 mm).
+const BIG_BOUNDS = [1, 10, 20, 60, 100, 150, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1500];
+
 // CWA seismic intensity scale; the third element is the legend label.
 const INT_LABELS = ['1級', '2級', '3級', '4級', '5弱', '5強', '6弱', '6強', '7級'];
 const CWA_INT = ['#d9ffd9', '#00ff00', '#ffff00', '#ff6600', '#ff0000', '#b31a1a', '#663333', '#801a80', '#9900cc'];
@@ -73,6 +76,7 @@ export const SCALES = {
   rain: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   radar: { cwa: zip(RADAR_BOUNDS, CWA_RADAR), cvd: zip(RADAR_BOUNDS, VIRIDIS13), contrast: zip(RADAR_BOUNDS, CONTRAST_RADAR) },
   rainacc: { cwa: zip(ACC_BOUNDS, CWA_ACC), cvd: zip(ACC_BOUNDS, VIRIDIS_ACC), contrast: zip(ACC_BOUNDS, CONTRAST_ACC) },
+  rainbig: { cwa: zip(BIG_BOUNDS, CWA_RAIN), cvd: zip(BIG_BOUNDS, VIRIDIS17), contrast: zip(BIG_BOUNDS, CONTRAST_RAIN) },
   intensity: {
     cwa: zip(INT_BOUNDS, CWA_INT, INT_LABELS), cvd: zip(INT_BOUNDS, CVD_INT, INT_LABELS), contrast: zip(INT_BOUNDS, CONTRAST_INT, INT_LABELS),
   },

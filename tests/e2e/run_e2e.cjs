@@ -36,6 +36,12 @@ async function check(name, fn) {
 const PNG1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 function assert(c, m) { if (!c) throw new Error(m || 'assertion failed'); }
 // Layer chips toggle: tapping the active one turns the layer off, so only tap when not selected.
+// Interface settings live in the map options panel (選項 → 介面與顯示).
+async function openUiOptions(page) {
+  if (!(await page.isVisible('#more'))) await page.click('#btn-more');
+  if (!(await page.getAttribute('#opts-ui', 'open') !== null)) await page.click('#opts-ui > summary');
+  await page.waitForSelector('#set-fs', { state: 'visible' });
+}
 async function selectLayerOn(page, sel) {
   if ((await page.getAttribute(sel, 'aria-checked')) !== 'true') await page.click(sel);
 }
@@ -147,7 +153,7 @@ function serve() {
     await page.click(`[data-period="${labels.indexOf('過去7天')}"]`);
     await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('7天'));
     const top = await page.$eval('#legend .swatches li:first-child', (e) => e.textContent);
-    assert(top.includes('1000'), `legend top class ${top}`);
+    assert(top.includes('1000') || top.includes('1500'), `legend top class ${top}`);
   });
 
   await check('QPF periods (4) and georeferenced overlay', async () => {
@@ -342,12 +348,11 @@ function serve() {
     await page.click('#sheet-close');
     assert(!(await page.evaluate(async () => (await import('./js/state.js')).S.quakeMode)), 'quake mode not cleared on close');
     assert((await page.$$('img.wx-grid')).length > 0, 'weather layer not restored after closing the quake view');
-    await page.click('#btn-settings');
-    await page.waitForSelector('#set-fs');
-    await page.$eval('#set-fs', (el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await openUiOptions(page);
+    await page.$eval('#set-fs', (el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
     await page.selectOption('#set-theme', 'contrast');
     await page.selectOption('#set-pal', 'cvd');
-    await page.keyboard.press('Escape');
+    await page.click('#btn-more');
     const fs_ = await page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
     assert(fs_ === '32px', `font-size ${fs_}`);
     assert((await page.getAttribute('html', 'data-theme')) === 'contrast', 'theme');
@@ -461,17 +466,78 @@ function serve() {
     await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.47, 120.96], 10, { animate: false }); });
     await page.waitForFunction(() => document.querySelectorAll('.pin-peak').length > 0 && document.querySelectorAll('.map-lbl.lbl-peaks').length > 0);
     if (!(await page.isVisible('#tg-lbl-t'))) await page.click('#btn-more');
-    const allBtn = page.locator('.tog-group:has(#tg-lbl-t) [data-all]');
-    assert((await allBtn.textContent()) === '全部取消', 'label group button should offer 全部取消');
-    await allBtn.click();
+    const none = page.locator('[data-all="lbl"][data-on="0"]');
+    const all = page.locator('[data-all="lbl"][data-on="1"]');
+    await none.click();
     await page.waitForTimeout(200);
     assert((await page.$$('.map-lbl')).length === 0, 'labels remain after 全部取消');
-    assert((await allBtn.textContent()) === '全選', 'button did not switch to 全選');
+    assert(await none.isDisabled(), '全部取消 should be disabled when nothing is checked');
     await page.screenshot({ path: path.join(SHOTS, 'labels-off.png') });
-    await allBtn.click();
+    await all.click();
+    assert((await page.$$eval('input[data-lbl]', (e) => e.every((c) => c.checked))), '全選 did not check every label');
+    assert(await all.isDisabled(), '全選 should be disabled when everything is checked');
     await page.waitForFunction(() => document.querySelectorAll('.map-lbl').length > 0);
+    await page.uncheck('[data-lbl="stations"]');
     await page.click('#btn-more');
     await page.screenshot({ path: path.join(SHOTS, 'zoom10-labels.png') });
+  });
+
+  await check('legend: colour bar visible while collapsed; 大間距 classes for accumulated rain', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="radar"]');
+    await page.waitForSelector('#legend summary .lg-strip .cells > span');
+    if (await page.getAttribute('#legend', 'open') !== null) await page.click('#legend summary');
+    assert(await page.isVisible('#legend summary .lg-strip'), 'colour bar hidden when the legend is collapsed');
+    const n = await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length);
+    assert(n === 13, `radar bar has ${n} cells`);
+    await selectLayer('.chip[data-layer="rainacc"]');
+    await page.waitForSelector('#legend [data-spacing]', { state: 'attached' });
+    await page.click('#legend summary');
+    await page.click('#legend [data-spacing="big"]');
+    await page.waitForFunction(() => [...document.querySelectorAll('#legend summary .ticks > span')].some((t) => t.textContent === '1500'));
+    assert(await page.evaluate(async () => (await import('./js/state.js')).S.settings.rainSpacing === 'big'), 'spacing not saved');
+    await page.screenshot({ path: path.join(SHOTS, 'legend-big.png') });
+    await page.click('#legend [data-spacing="auto"]');
+    await page.waitForFunction(() => document.querySelector('#legend [data-spacing="auto"]')?.getAttribute('aria-checked') === 'true');
+    await page.click('#legend summary');
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
+  await check('typhoon shown by default: overlay on and track in view at start-up', async () => {
+    const st = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      if (!S.typhoon?.active) return { active: false };
+      return { active: true, on: S.map.hasLayer(S.overlays.typhoon) };
+    });
+    if (!st.active) return;
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.settings.overlays.typhoon = false; localStorage.setItem('hikingwx.settings.v1', JSON.stringify(S.settings)); });
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    const r = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const c = S.typhoon.cyclones[0]; const cur = c.past[c.past.length - 1];
+      return { on: S.map.hasLayer(S.overlays.typhoon), inView: S.map.getBounds().contains([cur.lat, cur.lon]) };
+    });
+    assert(r.on, 'typhoon overlay not shown at start-up');
+    assert(r.inView, 'typhoon position not in the initial view');
+    await page.screenshot({ path: path.join(SHOTS, 'typhoon-default.png') });
+  });
+
+  await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {
+    const h0 = (await page.locator('#map').boundingBox()).height;
+    await page.click('#btn-bar-hide');
+    await page.waitForTimeout(200);
+    assert(!(await page.isVisible('#controls')), 'layer bar still visible');
+    const h1 = (await page.locator('#map').boundingBox()).height;
+    assert(h1 > h0 + 40, `map did not grow (${h0} -> ${h1})`);
+    assert((await page.textContent('#btn-bar-show')).includes('圖層'), 'restore button missing');
+    await page.screenshot({ path: path.join(SHOTS, 'bar-hidden.png') });
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    assert(!(await page.isVisible('#controls')), 'collapsed state not kept after reload');
+    await page.click('#btn-bar-show');
+    await page.waitForSelector('#controls', { state: 'visible' });
+    assert(!(await page.isVisible('#btn-bar-show')), 'restore button still shown');
   });
 
   await check('OSM peaks: markers from zoom 11, peak panel shows the nearby township forecast', async () => {
@@ -530,10 +596,9 @@ function serve() {
   });
 
   await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {
-    await page.click('#btn-settings');
-    await page.waitForSelector('#set-ui');
+    await openUiOptions(page);
     await page.selectOption('#set-ui', 'icon');
-    await page.keyboard.press('Escape');
+    await page.click('#btn-more');
     assert((await page.getAttribute('html', 'data-ui')) === 'icon', 'data-ui not icon');
     assert(await page.$('#tabbar .actions-top #btn-settings'), 'actions not moved to the tab bar');
     assert(await page.isVisible('#tabbar'), 'tab bar hidden');
@@ -543,9 +608,9 @@ function serve() {
     await page.reload();
     await page.waitForSelector('body.ready');
     assert((await page.getAttribute('html', 'data-ui')) === 'icon', 'icon UI not persisted');
-    await page.click('#btn-settings');
+    await openUiOptions(page);
     await page.selectOption('#set-ui', 'text');
-    await page.keyboard.press('Escape');
+    await page.click('#btn-more');
     assert(await page.$('.topbar > .actions-top #btn-settings'), 'actions not back in the top bar');
     assert(!(await page.isVisible('#tabbar')), 'tab bar visible in text UI');
   });
@@ -602,6 +667,7 @@ function serve() {
     await page.reload();
     await page.waitForSelector('body.ready');
     await page.waitForSelector('.eq-strong');
+    await page.evaluate(async (q) => { const { S } = await import('./js/state.js'); S.map.setView([q.lat, q.lon], 9, { animate: false }); }, qs[0]);
     assert((await page.$$('.eq-strong')).length === 1, 'expected exactly one strong-quake icon');
     assert((await page.textContent('.eq-strong')).includes('M6.4'), 'icon label missing magnitude');
     assert((await page.textContent('#eq-banner')).includes('5強'), 'banner does not show intensity 5強');
@@ -642,9 +708,8 @@ function serve() {
   await check('recent queries: delete one, clear all (confirmed), favourites kept', async () => {
     await page.reload();
     await page.waitForSelector('body.ready');
-    // make one favourite from a fresh point query
-    const box = await page.locator('#map').boundingBox();
-    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.35);
+    // make one favourite from a fresh point query (the start-up view may frame a typhoon)
+    await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.62, 120.93); });
     await page.waitForSelector('#sheet.open #btn-fav');
     await page.click('#btn-fav');
     await page.waitForFunction(() => document.querySelector('#btn-fav').textContent.includes('已收藏'));

@@ -3,6 +3,7 @@ import { S } from './state.js';
 import { getJSON, fmtTime, esc, normCounty } from './util.js';
 import { loadGrid, renderGrid } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
+import { saveSettings } from './settings.js';
 
 export const LAYERS = [
   { id: 'radar', label: '雷達回波', kind: 'radar', unit: 'dBZ' },
@@ -32,6 +33,14 @@ const SAT_MODES = [
 ];
 
 function satGrids() { return S.manifest?.layers?.satellite?.grids || {}; }
+
+/** Wide-interval (大間距) classes: chosen by the user, or automatically when totals exceed 400 mm (CWA's advice). */
+export function useBigSpacing(max) {
+  const s = S.settings.rainSpacing || 'auto';
+  return s === 'big' || (s === 'auto' && Number(max) > 400);
+}
+// Layers whose colour classes can switch between 小間距 and 大間距.
+const SPACING_KINDS = ['rainacc', 'rainbig'];
 
 /** Colour-scale kind actually used for the current layer / mode. */
 export function layerKind(id) {
@@ -116,7 +125,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
-    const kind = layerKind(id);
+    let kind = layerKind(id);
+    if (kind === 'rainacc' && useBigSpacing(grid.meta.max)) kind = 'rainbig';
     const colour = colourFn(scaleFor(kind, S.settings.palette));
     // Smooth rendering interpolates between cells; "no echo / no rain" counts as a low value
     // so that rain areas fade out at their edges instead of ending in square steps.
@@ -160,7 +170,9 @@ function tyTable() {
 function showTyphoonRain() {
   const tbl = tyTable();
   if (!tbl || !S.counties.length) { clearOverlay(); renderLegend(null, '目前沒有颱風雨量預測'); return; }
-  const scale = scaleFor('rain', S.settings.palette);
+  const tyMax = Math.max(0, ...tbl.areas.map((a) => a.hi ?? a.lo ?? 0));
+  const tyKind = useBigSpacing(tyMax) ? 'rainbig' : 'rain';
+  const scale = scaleFor(tyKind, S.settings.palette);
   const col = colourFn(scale);
   const byCounty = {};
   tbl.areas.forEach((a) => {
@@ -184,7 +196,7 @@ function showTyphoonRain() {
   ov.addTo(S.map);
   clearOverlay();
   S.layer.overlay = ov;
-  renderLegend({ label: tbl.name, unit: 'mm', time: tbl.issue, period: tbl.period, note: tbl.note, kindOverride: 'rain' });
+  renderLegend({ label: tbl.name, unit: 'mm', time: tbl.issue, period: tbl.period, note: tbl.note, kindOverride: tyKind, spacing: true });
 }
 
 /** Temporarily hide / restore the weather overlay (e.g. while the shakemap is shown). */
@@ -223,6 +235,7 @@ export function renderLegend(meta, message) {
   if (!meta || def.kind === 'none') { el.hidden = true; el.innerHTML = ''; return; }
   const kind = meta.kindOverride || def.kind;
   let body = '';
+  let strip = '';
   if (kind !== 'sat') {
     const scale = scaleFor(kind, S.settings.palette);
     const unit = meta.unit || def.unit || '';
@@ -231,10 +244,17 @@ export function renderLegend(meta, message) {
       const stops = scale.map((x, i) => `${x[1]} ${(i / (scale.length - 1) * 100).toFixed(1)}%`).join(',');
       const lo = scale[0][0]; const hi = scale[scale.length - 1][0];
       const fmt = (v) => (kind === 'vis' ? `${Math.round(v * 100)}%` : `${v}${unit}`);
-      body = `<div class="grad" style="background:linear-gradient(90deg,${stops})"></div><div class="grad-lbl"><span>${esc(fmt(lo))}</span><span>${esc(fmt((lo + hi) / 2))}</span><span>${esc(fmt(hi))}</span></div>`
-        + (kind === 'vis' ? '<p class="note">可見光僅白天可用（夜間為黑色）。</p>' : '<p class="note">越白（或越鮮豔）代表雲頂越高、越冷，常伴隨強對流。</p>');
+      strip = `<span class="lg-strip"><span class="grad" style="background:linear-gradient(90deg,${stops})"></span><span class="grad-lbl"><span>${esc(fmt(lo))}</span><span>${esc(fmt((lo + hi) / 2))}</span><span>${esc(fmt(hi))}</span></span></span>`;
+      body = (kind === 'vis' ? '<p class="note">可見光僅白天可用（夜間為黑色）。</p>' : '<p class="note">越白（或越鮮豔）代表雲頂越高、越冷，常伴隨強對流。</p>');
     } else {
       body = '<ol class="swatches">' + scale.map((x, i) => `<li><span class="sw" style="background:${x[1]}"></span>${esc(classLabel(scale, i, unit))}</li>`).reverse().join('') + '</ol>';
+      strip = colourStrip(scale, kind);
+    }
+    if (SPACING_KINDS.includes(kind) || meta.spacing) {
+      const cur = S.settings.rainSpacing || 'auto';
+      body = `<div class="seg lg-spacing" role="radiogroup" aria-label="色階間距">${[['auto', '自動'], ['small', '小間距'], ['big', '大間距']]
+        .map(([k, l]) => `<button type="button" class="seg-btn" role="radio" data-spacing="${k}" aria-checked="${k === cur}">${l}</button>`).join('')}</div>
+<p class="note">${kind === 'rainbig' ? '目前為大間距色階（10、20、60、100…1500 mm）。' : '目前為小間距色階。'}自動：最大值超過 400 mm 時改用大間距（同氣象署建議）。</p>${body}`;
     }
   }
   let when = '';
@@ -244,9 +264,30 @@ export function renderLegend(meta, message) {
   const title = meta.title ? `<img class="qpf-title" src="data/${esc(meta.title)}" alt="氣象署原圖標題（含發布與有效時間）">` : '';
   const note = meta.note ? `<p class="note">${esc(meta.note)}</p>` : '';
   const qpfNote = meta.kind === 'class' ? '<p class="note">由氣象署定量降水預報圖自動對位轉換；時間以原圖標題為準。</p>' : '';
-  el.innerHTML = `<summary>${esc(meta.label || def.label)}<span class="when">${esc(when)}</span></summary>
+  el.innerHTML = `<summary>${esc(meta.label || def.label)}<span class="when">${esc(when)}</span>${strip}</summary>
 <div class="lg-body">${title}${body}${note}${qpfNote}${attribution(meta)}</div>`;
+  el.querySelectorAll('[data-spacing]').forEach((b) => b.addEventListener('click', () => {
+    S.settings.rainSpacing = b.dataset.spacing;
+    saveSettings(S.settings);
+    showLayer(S.layer.id, { keepFrame: true });
+  }));
   el.hidden = false;
+}
+
+/** Always-visible colour bar (like the CWA maps): one cell per class, boundary values underneath. */
+function colourStrip(scale, kind) {
+  const n = scale.length;
+  // Label every step-th class, including the first and the last (at most about 6 labels fit).
+  let step = 1;
+  while ((n - 1) / step > 6 || (n - 1) % step) step += 1;
+  if (step > (n - 1) / 2 && n > 3) step = Math.ceil((n - 1) / 5);
+  const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).join('');
+  const lbls = scale.map((x, i) => {
+    if (i % step && i !== n - 1) return '';
+    const text = x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0]));
+    return `<span style="left:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
+  }).join('');
+  return `<span class="lg-strip"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
 }
 
 /** Attribution block (顯名聲明); derived products carry the full statement and a disclaimer. */

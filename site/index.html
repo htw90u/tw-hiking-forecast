@@ -38,6 +38,7 @@
   <div id="chips" class="chips" role="radiogroup" aria-label="氣象圖層"></div>
   <div class="tools">
     <div id="time-ctl" class="time-ctl"></div>
+    <button id="btn-bar-hide" class="btn bar-hide" aria-controls="controls" title="收合圖層列，地圖更大（可由地圖左下角「圖層」按鈕展開）"><span aria-hidden="true">▾</span> 收合</button>
   </div>
 </section>
 <!-- Map options: moved into the map's top-right corner as a Leaflet control at start-up. -->
@@ -46,11 +47,13 @@
   <div id="more" class="more" role="group" aria-label="圖層與顯示選項">
     <label class="range">透明度 <input id="opacity" type="range" min="0.2" max="1" step="0.05" aria-valuetext="70%"></label>
     <label class="range">名稱字體 <input id="lbl-size" type="range" min="0.8" max="2" step="0.05"> <output id="lbl-size-out"></output></label>
-    <label class="range">介面字體 <input id="ui-size" type="range" min="0.9" max="2" step="0.05"> <output id="ui-size-out"></output></label>
-    <button id="btn-affected" class="btn">列出受影響山區</button>
     <div id="toggles" class="toggles" aria-label="標記"></div>
+    <button id="btn-affected" class="btn">列出受影響山區</button>
+    <details id="opts-ui" class="opts-sec"><summary>介面與顯示</summary><div id="opts-ui-body"></div></details>
   </div>
 </div>
+<!-- Shown at the map's bottom-left while the layer bar is collapsed. -->
+<button id="btn-bar-show" class="map-opts-btn bar-show" aria-controls="controls" hidden><span aria-hidden="true">▴</span> 圖層<span id="bar-show-layer"></span></button>
 <div id="tabbar" class="tabbar"></div>
 <details id="legend" class="legend" hidden></details>
 

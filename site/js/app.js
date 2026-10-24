@@ -66,11 +66,26 @@ function setBasemap() {
 }
 
 // ---------------------------------------------------------------- overlays
-// Map icons for the CWA recreation-forecast categories (F-B0053); mountains keep the ▲ pin.
-const SPOT_ICONS = {
-  beach: '🏖️', park: '🌳', farm: '🐄', fishing: '🎣', coast: '🌊', np: '🏞️', nsa: '📷',
-  port: '⚓', forest: '🌲', reservoir: '💧', scenic: '🌄', water: '🛶', sea: '🚤',
+// Map icons for the CWA recreation-forecast categories (F-B0053): white line glyphs (24 px grid)
+// on a rounded square in the category group's colour; mountains keep the ▲ pin.
+const SPOT_GLYPHS = {
+  beach: 'M3 12a9 9 0 0 1 18 0z M12 12v7a2 2 0 0 0 4 0',
+  park: 'M12 3a5 5 0 0 1 5 5 4 4 0 0 1-1 7.5H8A4 4 0 0 1 7 8a5 5 0 0 1 5-5z M12 15.5V21',
+  farm: 'M3 21V10l9-6 9 6v11z M9 21v-6h6v6',
+  fishing: 'M3 12c3-4 8-5 12-3l5-3v12l-5-3c-4 2-9 1-12-3z M8 11h.01',
+  coast: 'M2 13c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2 M2 18c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2',
+  np: 'M2 20 9 8l4 6 3-4 6 10z',
+  nsa: 'M4 8h3l2-3h6l2 3h3v11H4z M12 10.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
+  port: 'M12 6.5v14 M8 10h8 M5 13a7 7 0 0 0 14 0 M12 2.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  forest: 'M12 2l5 7h-3l4 6h-4.5l3 4H7.5l3-4H6l4-6H7z M12 19v3',
+  reservoir: 'M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z',
+  scenic: 'M3 19h18 M7 19a5 5 0 0 1 10 0 M12 7v3 M5 11l2 2 M19 11l-2 2',
+  water: 'M3 16c6 3 12 3 18 0 M6 5l12 12 M4 7l3-3 M17 20l3-3',
+  sea: 'M3 17l2 3h14l2-3z M12 4v13 M12 5l6 9h-6',
 };
+const spotIcon = (c) => (SPOT_GLYPHS[c]
+  ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${SPOT_GLYPHS[c]}"/></svg>`
+  : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l8 8-8 8-8-8z"/></svg>');
 /** Strong earthquakes (max intensity >= 5弱 or M >= 6) in the last 3 days: a warning icon that is always shown. */
 function buildStrongQuakes() {
   if (strongLayer) S.map.removeLayer(strongLayer);
@@ -111,7 +126,7 @@ function buildOverlays() {
   S.spots.forEach((p) => {
     const mountain = p.c === 'mountain';
     const icon = mountain ? L.divIcon({ className: 'pin-mtn', html: '▲', iconSize: [18, 18] })
-      : L.divIcon({ className: `pin-cat cat-${p.c}`, html: `<span aria-hidden="true">${SPOT_ICONS[p.c] || '◆'}</span>`, iconSize: [22, 22] });
+      : L.divIcon({ className: `pin-cat cat-${p.c}`, html: spotIcon(p.c), iconSize: [22, 22] });
     const m = L.marker([p.lat, p.lon], { icon, title: p.n, keyboard: true, alt: p.n, pane: 'spots' });
     const cat = mountain ? '' : S.spotCats.find((c) => c.id === p.c)?.label;
     m.bindTooltip(`${esc(p.n)}${cat ? `<br><small>${esc(cat)}</small>` : ''}`, { direction: 'top', offset: [0, -10] });
@@ -305,6 +320,7 @@ function buildChips() {
     S.settings.layer = id;
     saveSettings(S.settings);
     showLayer(id);
+    updateBarLabel();
   }));
   // Arrow-key navigation inside the radio group.
   box.addEventListener('keydown', (e) => {
@@ -324,18 +340,18 @@ function buildOverlayToggles() {
   const box = document.getElementById('toggles');
   const names = [['mountains', '山岳'], ['peaks', '山頭'], ['spots', '景點'], ['stations', '測站']];
   const group = (id, title, attr, list, state) => `<div class="tog-group" role="group" aria-labelledby="${id}-t">
-<div class="tog-head"><span class="tog-lbl" id="${id}-t">${title}</span><button type="button" class="link tog-all" data-all="${attr}"></button></div>
+<div class="tog-head"><span class="tog-lbl" id="${id}-t">${title}</span><span class="tog-all"><button type="button" class="link" data-all="${attr}" data-on="1">全選</button><button type="button" class="link" data-all="${attr}" data-on="0">全部取消</button></span></div>
 ${list.map(([k, label]) => `<label class="tog"><input type="checkbox" data-${attr}="${k}"${state[k] ? ' checked' : ''}> ${label}</label>`).join('')}</div>`;
   const cats = S.spotCats.filter((c) => c.id !== 'mountain' && S.spots.some((p) => p.c === c.id));
   box.innerHTML = group('tg-ov', '地圖標記', 'ov', items, S.settings.overlays)
     + group('tg-lbl', '顯示名稱', 'lbl', names, S.settings.labels)
-    + `<details class="cat-legend"><summary>景點圖示說明</summary><ul>${cats.map((c) => `<li><span class="pin-cat cat-${c.id}" aria-hidden="true"><span>${SPOT_ICONS[c.id] || '◆'}</span></span>${esc(c.label)}</li>`).join('')}</ul></details>`;
+    + `<details class="cat-legend"><summary>景點圖示說明</summary><ul>${cats.map((c) => `<li><span class="pin-cat cat-${c.id}" aria-hidden="true">${spotIcon(c.id)}</span>${esc(c.label)}</li>`).join('')}</ul></details>`;
   const apply = { ov: applyOverlayVisibility, lbl: updateLabels };
   const store = { ov: S.settings.overlays, lbl: S.settings.labels };
-  // "全部取消" while anything is checked, otherwise "全選".
+  // 全選 is disabled when everything is on, 全部取消 when everything is off.
   const refreshAll = () => box.querySelectorAll('[data-all]').forEach((b) => {
-    const any = [...box.querySelectorAll(`[data-${b.dataset.all}]:not([data-all])`)].some((c) => c.checked);
-    b.textContent = any ? '全部取消' : '全選';
+    const inputs = [...box.querySelectorAll(`input[data-${b.dataset.all}]`)];
+    b.disabled = b.dataset.on === '1' ? inputs.every((c) => c.checked) : !inputs.some((c) => c.checked);
   });
   ['ov', 'lbl'].forEach((attr) => box.querySelectorAll(`input[data-${attr}]`).forEach((c) => c.addEventListener('change', () => {
     store[attr][c.dataset[attr]] = c.checked;
@@ -346,7 +362,7 @@ ${list.map(([k, label]) => `<label class="tog"><input type="checkbox" data-${att
   box.querySelectorAll('[data-all]').forEach((b) => b.addEventListener('click', () => {
     const attr = b.dataset.all;
     const inputs = [...box.querySelectorAll(`input[data-${attr}]`)];
-    const on = !inputs.some((c) => c.checked);
+    const on = b.dataset.on === '1';
     inputs.forEach((c) => { c.checked = on; store[attr][c.dataset[attr]] = on; });
     saveSettings(S.settings);
     apply[attr]();
@@ -401,7 +417,71 @@ function initMapOptions() {
     return input;
   };
   slider('lbl-size', 'labelScale');
-  slider('ui-size', 'fontScale');
+  buildUiOptions();
+  // Layer bar: collapse for a larger map; a bottom-left map button brings it back.
+  const show = $('#btn-bar-show');
+  L.DomEvent.disableClickPropagation(show);
+  const BarCtl = L.Control.extend({ onAdd: () => show });
+  new BarCtl({ position: 'bottomleft' }).addTo(S.map);
+  $('#btn-bar-hide').addEventListener('click', () => { setLayerBar(false); show.focus(); });
+  show.addEventListener('click', () => { setLayerBar(true); $('#chips [aria-checked="true"]')?.focus(); });
+  setLayerBar(S.settings.layerBar !== false, { save: false });
+}
+
+function setLayerBar(on, { save = true } = {}) {
+  S.settings.layerBar = on;
+  if (save) saveSettings(S.settings);
+  document.body.classList.toggle('bar-hidden', !on);
+  $('#controls').hidden = !on;
+  $('#btn-bar-show').hidden = on;
+  $('#btn-bar-hide').setAttribute('aria-expanded', String(on));
+  $('#btn-bar-show').setAttribute('aria-expanded', String(on));
+  const tog = $('#set-bar');
+  if (tog) tog.checked = on;
+  updateBarLabel();
+  setTimeout(() => { S.map.invalidateSize(); placeLegend(); }, 50);
+}
+
+/** The collapsed-bar button names the current weather layer. */
+function updateBarLabel() {
+  const l = LAYERS.find((x) => x.id === S.settings.layer);
+  $('#bar-show-layer').textContent = l && l.id !== 'none' ? `：${l.label}` : '';
+}
+
+/** Interface and display settings, shown in the map options panel so changes are visible at once. */
+function buildUiOptions() {
+  const s = S.settings;
+  const opt = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  const box = $('#opts-ui-body');
+  box.innerHTML = `
+<label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
+<label class="range">介面字體 <input type="range" id="set-fs" min="0.9" max="2" step="0.05" value="${s.fontScale}" aria-valuetext="${pct(s.fontScale)}"> <output id="set-fs-out">${pct(s.fontScale)}</output></label>
+<p class="note">介面字體放大選單、面板與說明文字；名稱字體只調整地圖上的山名、景點、測站名稱。</p>
+<label class="field">主題 <select id="set-theme">${opt({ auto: '跟隨系統', light: '淺色', dark: '深色', contrast: '高對比（黑底黃字）' }, s.theme)}</select></label>
+<label class="field">色盤 <select id="set-pal">${opt(PALETTE_NAMES, s.palette)}</select></label>
+<p class="note">「色弱友善」使用明度遞增的色階，紅綠色弱或藍黃色弱皆可分辨；「高對比」適合強光下或低視力。</p>
+<label class="tog"><input type="checkbox" id="set-bar"${s.layerBar !== false ? ' checked' : ''}> 顯示底部圖層列</label>
+<label class="tog"><input type="checkbox" id="set-smooth"${s.smooth !== false ? ' checked' : ''}> 圖層平滑顯示（關閉則顯示原始格點）</label>
+<label class="tog"><input type="checkbox" id="set-bold"${s.boldText ? ' checked' : ''}> 粗體文字</label>
+<label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>`;
+  const save = () => { saveSettings(s); applySettings(s); placeLegend(); };
+  box.querySelector('#set-fs').addEventListener('input', (e) => {
+    s.fontScale = Number(e.target.value);
+    box.querySelector('#set-fs-out').textContent = pct(s.fontScale);
+    e.target.setAttribute('aria-valuetext', pct(s.fontScale));
+    applySettings(s);
+    updateLabels();
+    placeLegend();
+  });
+  box.querySelector('#set-fs').addEventListener('change', save);
+  box.querySelector('#set-ui').addEventListener('change', (e) => { s.ui = e.target.value; save(); });
+  box.querySelector('#set-theme').addEventListener('change', (e) => { s.theme = e.target.value; save(); });
+  box.querySelector('#set-pal').addEventListener('change', (e) => { s.palette = e.target.value; save(); showLayer(S.layer.id, { keepFrame: true }); });
+  box.querySelector('#set-bar').addEventListener('change', (e) => setLayerBar(e.target.checked));
+  box.querySelector('#set-smooth').addEventListener('change', (e) => { s.smooth = e.target.checked; save(); showLayer(S.layer.id, { keepFrame: true }); });
+  box.querySelector('#set-bold').addEventListener('change', (e) => { s.boldText = e.target.checked; save(); });
+  box.querySelector('#set-motion').addEventListener('change', (e) => { s.reduceMotion = e.target.checked; save(); if (s.reduceMotion) stopAnimation(); });
 }
 
 const QUAKE_RECENT_MS = 24 * 3600e3;
@@ -485,16 +565,7 @@ function openSettings() {
   const opt = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(typeof v === 'string' ? v : v.label)}</option>`).join('');
   const th = s.thresholds;
   body.innerHTML = `
-<fieldset><legend>閱讀與顯示</legend>
-<label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
-<label class="field">字體大小 <input type="range" id="set-fs" min="0.9" max="2" step="0.1" value="${s.fontScale}" aria-valuetext="${Math.round(s.fontScale * 100)}%"> <output id="set-fs-out">${Math.round(s.fontScale * 100)}%</output></label>
-<label class="field">主題 <select id="set-theme">${opt({ auto: '跟隨系統', light: '淺色', dark: '深色', contrast: '高對比（黑底黃字）' }, s.theme)}</select></label>
-<label class="field">色盤 <select id="set-pal">${opt(PALETTE_NAMES, s.palette)}</select></label>
-<p class="note">「色弱友善」使用明度遞增的色階，紅綠色弱或藍黃色弱皆可分辨；「高對比」適合強光下或低視力。</p>
-<label class="tog"><input type="checkbox" id="set-smooth"${s.smooth !== false ? ' checked' : ''}> 圖層平滑顯示（關閉則顯示原始格點）</label>
-<label class="tog"><input type="checkbox" id="set-bold"${s.boldText ? ' checked' : ''}> 粗體文字</label>
-<label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>
-</fieldset>
+<p class="note">介面樣式、字體大小、主題、色盤等顯示設定在地圖右上角「選項 → 介面與顯示」，調整時可直接看到效果。</p>
 <fieldset><legend>底圖</legend>
 <label class="field">底圖 <select id="set-base">${opt(BASEMAPS, s.basemap)}</select></label>
 <label class="field">自訂圖磚網址 <input type="url" id="set-custom" value="${esc(s.customTile)}" placeholder="https://.../{z}/{x}/{y}.png"></label>
@@ -518,21 +589,6 @@ function openSettings() {
 <button class="btn" id="set-reset">恢復預設設定</button>
 </fieldset>`;
   const save = () => { saveSettings(s); applySettings(s); };
-  body.querySelector('#set-fs').addEventListener('input', (e) => {
-    s.fontScale = Number(e.target.value);
-    body.querySelector('#set-fs-out').textContent = `${Math.round(s.fontScale * 100)}%`;
-    e.target.setAttribute('aria-valuetext', `${Math.round(s.fontScale * 100)}%`);
-    save();
-    const ui = $('#ui-size');
-    if (ui) { ui.value = String(s.fontScale); $('#ui-size-out').textContent = `${Math.round(s.fontScale * 100)}%`; }
-    updateLabels();
-  });
-  body.querySelector('#set-ui').addEventListener('change', (e) => { s.ui = e.target.value; save(); });
-  body.querySelector('#set-theme').addEventListener('change', (e) => { s.theme = e.target.value; save(); });
-  body.querySelector('#set-pal').addEventListener('change', (e) => { s.palette = e.target.value; save(); showLayer(S.layer.id, { keepFrame: true }); });
-  body.querySelector('#set-smooth').addEventListener('change', (e) => { s.smooth = e.target.checked; save(); showLayer(S.layer.id, { keepFrame: true }); });
-  body.querySelector('#set-bold').addEventListener('change', (e) => { s.boldText = e.target.checked; save(); });
-  body.querySelector('#set-motion').addEventListener('change', (e) => { s.reduceMotion = e.target.checked; save(); if (s.reduceMotion) stopAnimation(); });
   body.querySelector('#set-base').addEventListener('change', (e) => { s.basemap = e.target.value; save(); setBasemap(); });
   body.querySelector('#set-custom').addEventListener('change', (e) => {
     const v = e.target.value.trim();
@@ -548,10 +604,10 @@ function openSettings() {
   body.querySelector('#set-reset').addEventListener('click', () => {
     Object.assign(s, JSON.parse(JSON.stringify(DEFAULTS)));
     save(); setBasemap(); showLayer(s.layer); dlg.close();
-    [['lbl-size', 'labelScale'], ['ui-size', 'fontScale']].forEach(([id, k]) => {
-      $(`#${id}`).value = String(s[k]);
-      $(`#${id}-out`).textContent = `${Math.round(s[k] * 100)}%`;
-    });
+    $('#lbl-size').value = String(s.labelScale);
+    $('#lbl-size-out').textContent = `${Math.round(s.labelScale * 100)}%`;
+    buildUiOptions();
+    setLayerBar(s.layerBar);
     buildOverlayToggles();
     applyOverlayVisibility();
   });
@@ -719,10 +775,23 @@ async function main() {
   buildChips();
   buildOverlayToggles();
   bindSearch();
+  showTyphoonByDefault();
   buildOverlays();
   updateStatus();
   showLayer(S.settings.layer);
   document.body.classList.add('ready');
+}
+
+/** While a typhoon warning is in force, the typhoon layer is shown on start-up and the map frames Taiwan with the typhoon and its next 24 h. */
+function showTyphoonByDefault() {
+  const ty = S.typhoon?.active ? S.typhoon : null;
+  if (!ty) return;
+  S.settings.overlays.typhoon = true;
+  const pts = ty.cyclones.flatMap((c) => [c.past[c.past.length - 1], ...c.fcst.filter((f) => (f.h ?? 0) <= 24)]).filter(Boolean);
+  if (!pts.length) return;
+  const b = L.latLngBounds([[21.9, 119.3], [25.3, 122.0]]);
+  pts.forEach((p) => b.extend([p.lat, p.lon]));
+  S.map.fitBounds(b, { padding: [20, 20], maxZoom: 8, animate: false });
 }
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

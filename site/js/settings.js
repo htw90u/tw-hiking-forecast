@@ -4,6 +4,8 @@ const KEY = 'hikingwx.settings.v1';
 export const DEFAULTS = {
   fontScale: 1,          // 1 = 100 %, up to 2 = 200 %
   labelScale: 1.25,      // map name labels relative to the map text size
+  rainSpacing: 'auto',   // accumulated rain colour classes: auto | small (小間距) | big (大間距)
+  layerBar: true,        // bottom layer bar shown (false = collapsed for a larger map)
   theme: 'auto',         // auto | light | dark | contrast
   palette: 'cwa',        // cwa | cvd (color-vision-deficiency safe) | contrast
   basemap: 'topo',       // topo | emap | photo | osm | custom
