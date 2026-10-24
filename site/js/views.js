@@ -590,11 +590,15 @@ export function flyTo(lat, lon, zoom) {
 }
 
 // ------------------------------------------------------------------ earthquakes
-export function showQuakes() {
+export function showQuakes({ recentMs = 0 } = {}) {
   const list = S.quakes.slice(0, 40);
-  const body = html`<p class="muted">最近的有感地震報告（顯著與小區域）。點選查看震央附近的山區。</p>
-<ul class="list">${list.map((q) => html`<li><button class="link" data-quake="${q.time}"><strong>M${q.mag}</strong> ${q.loc}</button>
-<span class="meta">${fmtTime(q.time)}・深度 ${q.depth} km・最大震度 ${q.maxInt}${q.kind === 'local' ? '・小區域' : ''}</span></li>`)}</ul>`;
+  const isRecent = (q) => recentMs && Date.now() - new Date(q.time).getTime() < recentMs;
+  const item = (q) => html`<li><button class="link" data-quake="${q.time}"><strong>M${q.mag}</strong> ${q.loc}</button>
+<span class="meta">${fmtTime(q.time)}・深度 ${q.depth} km・最大震度 ${q.maxInt}${q.kind === 'local' ? '・小區域' : ''}</span></li>`;
+  const recent = list.filter(isRecent);
+  const body = html`${recent.length ? html`<section class="card warn"><h3>24 小時內地震（${recent.length} 起）</h3><ul class="list">${recent.map(item)}</ul></section>` : ''}
+<p class="muted">最近的有感地震報告（顯著與小區域）。點選查看震度分布與震央附近的山區。</p>
+<ul class="list">${list.filter((q) => !isRecent(q)).map(item)}</ul>`;
   openSheet('地震報告', body, { onRender: bindCommon });
 }
 
@@ -718,15 +722,13 @@ ${ty.tablesRestricted ? html`<section class="card"><h3>各地區風力、24 小�
 export function showAlerts() {
   const w = S.warnings || { counties: [], bulletins: [] };
   const withHz = w.counties.filter((c) => c.hazards.length);
-  const recentQ = S.quakes.filter((q) => Date.now() - new Date(q.time).getTime() < 3 * 864e5);
   const body = html`
 ${S.typhoon?.active ? html`<section class="card warn"><h3>🌀 颱風警報</h3><p>${S.typhoon.cyclones.map((c) => `${c.cname}（${c.name}）`).join('、')}</p><button class="btn" data-open="typhoon">颱風路徑與風雨預測</button></section>` : ''}
 <section class="card"><h3>各縣市警特報</h3>${withHz.length ? html`<table class="kv"><tbody>${withHz.map((c) => html`<tr><th scope="row">${c.county}</th><td>${c.hazards.map((h) => `${h.ph}${h.sig}`).join('、')}</td></tr>`)}</tbody></table>` : html`<p>目前沒有生效中的警特報。</p>`}</section>
 ${w.bulletins.map((b) => html`<section class="card"><h3>${b.title}</h3><p class="muted">發布 ${fmtTime(b.issue)}・至 ${fmtTime(b.end)}</p><details><summary>全文</summary><pre class="text">${b.text || ''}</pre></details></section>`)}
-<section class="card"><h3>近 3 天地震</h3>${recentQ.length ? html`<ul class="list">${recentQ.map((q) => html`<li><button class="link" data-quake="${q.time}">M${q.mag} ${q.loc}</button><span class="meta">${fmtTime(q.time)}・最大震度 ${q.maxInt}</span></li>`)}</ul>` : html`<p>無。</p>`}
-<button class="btn" id="btn-allq">所有地震報告</button></section>`;
+<p class="note">地震另有獨立的「地震」提示（24 小時內有地震時顯示）。<button class="link inline" id="btn-allq">查看所有地震報告</button></p>`;
   openSheet('警特報與災害', body, {
-    onRender: (root) => { bindCommon(root); root.querySelector('#btn-allq').addEventListener('click', showQuakes); },
+    onRender: (root) => { bindCommon(root); root.querySelector('#btn-allq').addEventListener('click', () => showQuakes()); },
   });
 }
 

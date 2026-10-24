@@ -5,7 +5,7 @@ import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $ } from './util.
 import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
 import {
-  showPoint, closeSheet, sheetBack, setSheetMini, showSources, showAlerts, showRecent, showAffected, showQuake, showTyphoon, search, flyTo,
+  showPoint, closeSheet, sheetBack, setSheetMini, showSources, showAlerts, showRecent, showAffected, showQuake, showQuakes, showTyphoon, search, flyTo,
 } from './views.js';
 import { clearAll } from './store.js';
 
@@ -304,6 +304,8 @@ function placeLegend() {
   document.documentElement.style.setProperty('--legend-top', `${Math.round(r.bottom + 6)}px`);
 }
 
+const QUAKE_RECENT_MS = 24 * 3600e3;
+
 function updateStatus() {
   const el = document.getElementById('status');
   const built = S.manifest?.built;
@@ -313,11 +315,22 @@ function updateStatus() {
   const tyNames = ty ? ty.cyclones.map((c) => c.cname || c.name).filter(Boolean).join('、') : '';
   const tyTitle = ty ? (ty.warnings || []).map((w) => w.title).filter(Boolean)[0] || '颱風警報' : '';
   const tyBanner = ty ? `<button class="ty-banner" id="ty-banner"><span aria-hidden="true">🌀</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}｜${esc(tyTitle)}</span><span class="ty-more">詳情 ›</span></button>` : '';
+  // Felt earthquakes in the last 24 hours get their own banner and tab (like a typhoon warning).
+  const recentQ = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < QUAKE_RECENT_MS);
+  const q0 = recentQ[0];
+  const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
+  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner"><span aria-hidden="true">〰</span><span>地震｜${esc(fmtTime(q0.time))} ${esc(qPlace)} 規模${esc(Number(q0.mag).toFixed(1))}・最大震度${esc(q0.maxInt)}級${recentQ.length > 1 ? `（24 小時內 ${recentQ.length} 起）` : ''}</span><span class="ty-more">詳情 ›</span></button>` : '';
   const baseNote = S.baseNotice ? `<span class="base-note">${esc(S.baseNotice)}</span> ` : '';
-  el.innerHTML = `${tyBanner}${baseNote}${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
+  el.innerHTML = `${tyBanner}${eqBanner}${baseNote}${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
   el.querySelector('#btn-sources').addEventListener('click', showSources);
   el.querySelector('#ty-banner')?.addEventListener('click', showTyphoon);
   placeLegend();
+  const openQuakes = () => (recentQ.length === 1 ? showQuake(q0) : showQuakes({ recentMs: QUAKE_RECENT_MS }));
+  el.querySelector('#eq-banner')?.addEventListener('click', openQuakes);
+  const eqBtn = document.getElementById('btn-quake');
+  eqBtn.hidden = !q0;
+  eqBtn.onclick = openQuakes;
+  if (q0) eqBtn.setAttribute('aria-label', `近期地震 ${recentQ.length} 起：查看地震報告`);
   const tyBtn = document.getElementById('btn-typhoon');
   tyBtn.hidden = !ty;
   if (ty) tyBtn.setAttribute('aria-label', `${tyNames}颱風${tyTitle}生效中：查看颱風資訊`);

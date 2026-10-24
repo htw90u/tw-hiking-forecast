@@ -452,6 +452,24 @@ function serve() {
     assert(!(await page.$('.base-note')), 'notice remains after switching back');
   });
 
+  await check('earthquake banner and tab only with a felt quake in the last 24 h; not in the alerts panel', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    const recent = await page.evaluate(async () => (await import('./js/state.js')).S.quakes.filter((q) => Date.now() - new Date(q.time).getTime() < 864e5).length);
+    assert((await page.$('#eq-banner')) !== null === recent > 0, 'banner presence does not match recent quakes');
+    assert((await page.getAttribute('#btn-quake', 'hidden')) === null === recent > 0, 'quake tab visibility does not match');
+    if (recent) {
+      await page.click('#eq-banner');
+      await page.waitForFunction(() => /地震/.test(document.getElementById('sheet-title')?.textContent || ''));
+      await page.click('#sheet-close');
+    }
+    await page.click('#btn-alerts');
+    await page.waitForSelector('#btn-allq');
+    assert(!(await page.textContent('#sheet-body')).includes('近 3 天地震'), 'quakes still listed in the alerts panel');
+    await page.click('#btn-allq');
+    await page.waitForFunction(() => document.getElementById('sheet-title')?.textContent === '地震報告');
+    await page.click('#sheet-close');
+  });
+
   await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {
     await page.click('#btn-settings');
     await page.waitForSelector('#set-ui');

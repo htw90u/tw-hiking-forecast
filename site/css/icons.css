@@ -13,6 +13,8 @@
 #btn-recent { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z'/%3E%3C/svg%3E"); }
 #btn-settings { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0'/%3E%3Ccircle cx='16' cy='6' r='2'/%3E%3Ccircle cx='10' cy='12' r='2'/%3E%3Ccircle cx='18' cy='18' r='2'/%3E%3C/svg%3E"); }
 
+#btn-quake { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h4l2-5 3 11 3-14 2.5 8H22'/%3E%3C/svg%3E"); }
+
 .tabbar { display: none; }
 [data-ui="icon"] body {
   grid-template-rows: auto auto 1fr auto auto;
@@ -80,3 +82,12 @@
 }
 .ty-banner .ty-more { margin-left: auto; font-weight: 400; white-space: nowrap; }
 [data-theme="contrast"] .ty-banner { background: #ff0; color: #000; }
+
+/* Earthquake: tab and banner only while a felt earthquake from the last 24 hours exists. */
+.eq-btn, [data-ui="icon"] .tabbar .icon-btn.eq-btn { color: var(--eq); }
+.eq-btn .ty-dot { background: var(--eq); }
+.ty-banner.eq-banner { background: var(--eq); }
+:root { --eq: #b4530a; }
+[data-theme="dark"] { --eq: #f0a050; }
+[data-theme="dark"] .ty-banner.eq-banner { color: #000; }
+[data-theme="contrast"] { --eq: #ff0; }
