@@ -7,7 +7,7 @@ import { scaleFor, colourFn, classLabel } from './palettes.js';
 export const LAYERS = [
   { id: 'radar', label: '雷達回波', kind: 'radar', unit: 'dBZ' },
   { id: 'qpe1h', label: '1小時雨量', kind: 'rain', unit: 'mm' },
-  { id: 'rainday', label: '今日累積雨量', kind: 'rain', unit: 'mm' },
+  { id: 'rainacc', label: '累積雨量', kind: 'rainacc', unit: 'mm' },
   { id: 'qpf1h', label: '未來1小時雨量', kind: 'rain', unit: 'mm' },
   { id: 'qpf', label: '定量降水預報', kind: 'rain', unit: 'mm/12h' },
   { id: 'temp', label: '溫度', kind: 'temp', unit: '°C' },
@@ -17,7 +17,9 @@ export const LAYERS = [
 ];
 
 // Interpolation fill for no-data cells per layer kind (temperature: ignore no-data).
-const FILL = { radar: -20, rain: 0, temp: NaN };
+const FILL = { radar: -20, rain: 0, rainacc: 0, temp: NaN };
+// Layers whose frames are selectable periods (S.layer.period) rather than animation frames.
+export const PERIOD_LAYERS = ['qpf', 'rainacc'];
 
 export function layerDef(id) { return LAYERS.find((l) => l.id === id) || LAYERS[0]; }
 
@@ -49,6 +51,7 @@ export function framesFor(id) {
     return fr.length ? fr.map((f) => f.meta) : ['grids/radar.json'];
   }
   if (id === 'qpf') return (L_.qpf?.periods || []).map((p) => p.meta);
+  if (id === 'rainacc') return (L_.rainacc?.periods || [{ meta: 'grids/rainday.json' }]).map((p) => p.meta);
   if (['qpe1h', 'rainday', 'qpf1h', 'temp'].includes(id)) return [`grids/${id}.json`];
   return [];
 }
@@ -69,7 +72,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   S.layer.id = id;
   if (!keepFrame) {
     S.layer.frame = Math.max(0, framesFor(id).length - 1);
-    S.layer.period = 0;
+    S.layer.period = id === 'rainacc' ? Math.max(0, (S.manifest?.layers?.rainacc?.periods || []).findIndex((p) => p.id === '24h')) : 0;
   }
   document.querySelectorAll('.chip[data-layer]').forEach((b) => {
     b.setAttribute('aria-checked', String(b.dataset.layer === id));
@@ -80,7 +83,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'sat') { await showSatellite(); return; }
     if (id === 'tyrain') { showTyphoonRain(); return; }
     const frames = framesFor(id);
-    const path = id === 'qpf' ? frames[S.layer.period] : frames[S.layer.frame];
+    const path = PERIOD_LAYERS.includes(id) ? frames[S.layer.period] : frames[S.layer.frame];
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
@@ -93,7 +96,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
       return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
         { opacity: S.settings.opacity, interactive: false, className: 'wx-grid' });
     }));
-    ov.addTo(S.map);
+    if (!S.layer.hidden) ov.addTo(S.map);
     clearOverlay();
     S.layer.overlay = ov;
     renderLegend(grid.meta);
@@ -154,6 +157,15 @@ function showTyphoonRain() {
   renderLegend({ label: tbl.name, unit: 'mm', time: tbl.issue, period: tbl.period, note: tbl.note, kindOverride: 'rain' });
 }
 
+/** Temporarily hide / restore the weather overlay (e.g. while the shakemap is shown). */
+export function setWeatherVisible(on) {
+  const ov = S.layer.overlay;
+  S.layer.hidden = !on;
+  if (!ov) return;
+  if (on && !S.map.hasLayer(ov)) ov.addTo(S.map);
+  if (!on && S.map.hasLayer(ov)) S.map.removeLayer(ov);
+}
+
 export function setOpacity(v) {
   S.settings.opacity = v;
   const ov = S.layer.overlay;
@@ -210,6 +222,9 @@ export function renderTimeControl(meta) {
 <label class="range"><span class="sr-only">雷達時間</span><input id="frame" type="range" min="0" max="${frames.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(frames[S.layer.frame]?.time))}"></label>
 <output id="frame-time">${esc(fmtTime(frames[S.layer.frame]?.time, { date: false }))}</output>`;
     }
+  } else if (id === 'rainacc') {
+    const periods = S.manifest?.layers?.rainacc?.periods || [];
+    h = '<div class="seg" role="radiogroup" aria-label="累積時段">' + periods.map((p, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-period="${i}">${esc(p.label)}</button>`).join('') + '</div>';
   } else if (id === 'qpf') {
     const periods = S.manifest?.layers?.qpf?.periods || [];
     h = '<div class="seg" role="radiogroup" aria-label="預報時段">' + periods.map((p, i) => {

@@ -1,7 +1,7 @@
 """Unit tests for the data pipeline, using trimmed real CWA files as fixtures."""
 import gzip
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -253,3 +253,55 @@ def test_typhoon_tables_only_when_enabled(tmp_path, monkeypatch, enabled):
         assert doc["tables"] == {} and doc["tablesRestricted"] is True
         assert doc["tablesLink"].startswith("https://www.cwa.gov.tw/")
     log.close()
+
+
+# ------------------------------------------------------------------ shakemap
+def test_shakemap_georeference_and_levels():
+    from pipeline import shakemap
+    topo = geo.load_topo(TOPO)
+    g = qpf.GRID
+    land = geo.land_mask(topo, g["lon0"], g["lat0"], g["res"], g["nx"], g["ny"])
+    r = shakemap.process((FIX / "shakemap.png").read_bytes(), topo, land)
+    assert len(r["legend"]) == 9 and r["legend"][2] == (255, 255, 0)  # 3級 yellow
+    assert r["cost"] < 2 and not r["refit"]
+    G = r["grid"]
+
+    def level(lon, lat):
+        return shakemap.LEVELS[int(G[round((lat - g["lat0"]) / g["res"]), round((lon - g["lon0"]) / g["res"])]) - 1]
+
+    # 2026-10-24 09:25 M4.0 Kaohsiung Taoyuan: 3級 core east of the epicentre, 0級 in Taipei
+    assert level(120.80, 23.10) == "3級"
+    assert level(121.5, 25.05) == "0級"
+    assert set(np.unique(G).tolist()) <= {0, 1, 2, 3, 4}
+
+
+def test_shakemap_identifier_stamp():
+    from pipeline import shakemap
+    assert shakemap.identifier_stamp({"identifier": "202610240925-EQ2026072-Shakemap"}) == "202610240925"
+
+
+# ------------------------------------------------------------------ accumulated rain
+def test_idw_grid_reproduces_gauges():
+    from pipeline import rainacc
+    g = {"lon0": 120.0, "lat0": 23.0, "res": 0.01, "nx": 50, "ny": 50}
+    land = np.ones((50, 50), bool)
+    lons, lats, vals = [120.1, 120.3, 120.2, 120.45], [23.1, 23.1, 23.3, 23.45], [10.0, 50.0, 30.0, 0.0]
+    a = rainacc.idw_grid(lons, lats, vals, land, g)
+    assert abs(a[10, 10] - 10.0) < 0.5 and abs(a[10, 30] - 50.0) < 0.5   # at gauges
+    assert 10 < a[10, 20] < 50                                             # between gauges
+    assert np.nanmin(a) >= 0 and np.nanmax(a) <= 50
+    far = rainacc.idw_grid([120.0], [23.0], [5.0], land, g)                 # < 3 gauges -> blank
+    assert np.isnan(far).all()
+
+
+def test_archive_totals_needs_coverage():
+    from pipeline import rainacc
+    now_ = datetime(2026, 10, 24, 10, 30, tzinfo=TZ)
+    rows = {}
+    for h in range(24):
+        hk = (now_.replace(minute=0) - timedelta(hours=h)).strftime("%Y-%m-%dT%H")
+        rows[(hk, "A")] = {"R1h": 1.0}
+        if h < 10:
+            rows[(hk, "B")] = {"R1h": 5.0}
+    tot = rainacc.archive_totals(rows, now_, 24)
+    assert tot == {"A": 24.0}  # B has only 10 of 24 hours

@@ -128,6 +128,19 @@ function serve() {
     assert(!errors.length, errors.join(' | '));
   });
 
+  await check('accumulated rainfall: selectable periods up to 7 days', async () => {
+    await page.click('.chip[data-layer="rainacc"]');
+    await page.waitForSelector('[data-period]');
+    const labels = await page.$$eval('[data-period]', (b) => b.map((x) => x.textContent.trim()));
+    for (const want of ['今日', '過去3小時', '過去24小時', '過去3天', '過去7天']) assert(labels.includes(want), `missing ${want} in ${labels}`);
+    const checked = await page.$eval('[data-period][aria-checked="true"]', (b) => b.textContent.trim());
+    assert(checked === '過去24小時', `default period ${checked}`);
+    await page.click(`[data-period="${labels.indexOf('過去7天')}"]`);
+    await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('7天'));
+    const top = await page.$eval('#legend .swatches li:first-child', (e) => e.textContent);
+    assert(top.includes('1000'), `legend top class ${top}`);
+  });
+
   await check('QPF periods (4) and georeferenced overlay', async () => {
     await page.click('.chip[data-layer="qpf"]');
     await page.waitForSelector('[data-period]');
@@ -215,15 +228,26 @@ function serve() {
     }
     await page.click('#btn-allq');
     await page.waitForSelector('[data-quake]');
-    await page.click('[data-quake] >> nth=0');
+    const withShake = await page.evaluate(async () => (await import('./js/state.js')).S.quakes.findIndex((q) => q.shake));
+    await page.click(`[data-quake] >> nth=${Math.max(0, withShake)}`);
     await page.waitForSelector('#sheet-title:has-text("地震")');
     const t = await page.textContent('#sheet-body');
     assert(t.includes('50 km'), 'quake detail missing radius list');
+    assert(await page.$('#sheet.peek'), 'quake sheet should be low (peek) so the map stays visible');
+    const vis = await page.evaluate(() => document.getElementById('sheet').getBoundingClientRect().top / window.innerHeight);
+    assert(vis > 0.5, `sheet covers too much: top at ${(vis * 100).toFixed(0)}%`);
+    assert((await page.$$('.int-mk')).length > 0, 'no station intensity markers');
+    if (withShake >= 0) await page.waitForSelector('img.shake', { timeout: 10000 });
+    assert(await page.evaluate(async () => (await import('./js/state.js')).S.quakeMode), 'quake mode not set');
+    assert((await page.$$('img.wx-grid:not(.shake)')).length === 0, 'weather layer should be hidden under the shakemap');
+    await page.screenshot({ path: path.join(SHOTS, 'quake-mobile.png') });
     await page.screenshot({ path: path.join(SHOTS, 'quake-mobile.png') });
   });
 
   await check('settings: font 200%, contrast theme, colour-blind palette persist', async () => {
     await page.click('#sheet-close');
+    assert(!(await page.evaluate(async () => (await import('./js/state.js')).S.quakeMode)), 'quake mode not cleared on close');
+    assert((await page.$$('img.wx-grid')).length > 0, 'weather layer not restored after closing the quake view');
     await page.click('#btn-settings');
     await page.waitForSelector('#set-fs');
     await page.$eval('#set-fs', (el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });

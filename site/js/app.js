@@ -2,7 +2,7 @@
 import { S } from './state.js';
 import { loadSettings, saveSettings, applySettings, DEFAULTS } from './settings.js';
 import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $ } from './util.js';
-import { LAYERS, showLayer, setOpacity, stopAnimation } from './layers.js';
+import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
 import {
   showPoint, closeSheet, sheetBack, showAlerts, showRecent, showAffected, showQuake, showTyphoon, search, flyTo,
@@ -100,7 +100,9 @@ function buildOverlays() {
 function applyOverlayVisibility() {
   const show = S.settings.overlays;
   Object.entries(S.overlays).forEach(([k, g]) => {
-    const on = show[k] && (k !== 'stations' || S.map.getZoom() >= 9) && (k !== 'spots' || S.map.getZoom() >= 9);
+    // In the earthquake view, ordinary station dots would be confused with intensity markers.
+    const hiddenByQuake = S.quakeMode && (k === 'stations' || k === 'spots' || k === 'quakes');
+    const on = show[k] && !hiddenByQuake && (k !== 'stations' || S.map.getZoom() >= 9) && (k !== 'spots' || S.map.getZoom() >= 9);
     if (on && !S.map.hasLayer(g)) g.addTo(S.map);
     if (!on && S.map.hasLayer(g)) S.map.removeLayer(g);
   });
@@ -324,6 +326,7 @@ async function main() {
 
   S.map = L.map('map', { zoomControl: true, preferCanvas: true, minZoom: 6, maxZoom: 18, keyboard: true })
     .setView([23.75, 121.0], 8);
+  S.map.createPane('shake').style.zIndex = 350; // below vector overlays (rings, markers)
   S.map.createPane('stations').style.zIndex = 610;
   S.map.createPane('spots').style.zIndex = 620;
   S.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
@@ -331,12 +334,18 @@ async function main() {
   setBasemap();
   S.map.on('click', (e) => showPoint(e.latlng.lat, e.latlng.lng));
   S.map.on('zoomend', applyOverlayVisibility);
+  document.addEventListener('quakemode', (e) => {
+    applyOverlayVisibility();
+    setWeatherVisible(!e.detail);
+    document.getElementById('legend').classList.toggle('quake-hide', e.detail);
+  });
 
   $('#sheet-close').addEventListener('click', closeSheet);
   $('#sheet-back').addEventListener('click', sheetBack);
   $('#sheet-toggle').addEventListener('click', () => {
     const sh = $('#sheet');
     const full = sh.classList.toggle('full');
+    if (full) sh.classList.remove('peek');
     document.body.classList.toggle('sheet-full', full);
     $('#sheet-toggle').setAttribute('aria-expanded', String(full));
     setTimeout(() => S.map.invalidateSize(), 50);

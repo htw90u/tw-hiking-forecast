@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import forecast, geo, grids, hazards, qpf, stations  # noqa: E402
+from . import forecast, geo, grids, hazards, qpf, rainacc, shakemap, stations  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "grids", "radar", "qpf", "spots", "towns", "quakes", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "towns", "quakes", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -137,6 +137,7 @@ class Builder:
             for recs in self.current_stations:
                 arc.add(recs)
         arc.save()
+        self.archive = arc
         n = arc.export_station_files(self.out / "hist", cur, days=self.args.hist_days_out)
         months = arc.months()
         adir = self.out / "archive"
@@ -146,6 +147,42 @@ class Builder:
         self.manifest["layers"]["history"] = {"time": cur.isoformat(), "stations": n, "months": months,
                                                "days": self.args.hist_days_out}
         return f"ingested {added} snapshots, {n} station series, months {months}"
+
+    def task_rainacc(self):
+        """Accumulated rainfall over 3 h .. 7 days interpolated from rain gauges."""
+        if not self.current_stations:
+            self.task_stations()
+        auto, manned, rain = self.current_stations
+        topo = geo.load_topo(TOPO)
+        g = qpf.GRID
+        land = geo.land_mask(topo, g["lon0"], g["lat0"], g["res"], g["nx"], g["ny"])
+        t = max((s.get("t") or "" for s in rain), default=None)
+        periods = [{"id": "day", "label": "今日", "meta": "grids/rainday.json"}]
+        done = []
+        for pid, field, label, hours in rainacc.PERIODS:
+            if field:
+                pts = [(s["lon"], s["lat"], s[field]) for s in rain if s.get(field) is not None]
+            else:
+                arc = getattr(self, "archive", None)
+                if arc is None:
+                    self.log.warn("rainacc 7d: history archive not loaded, skipped")
+                    continue
+                tot = rainacc.archive_totals(arc.rows, now(), hours)
+                loc = {s["id"]: (s["lon"], s["lat"]) for s in rain}
+                pts = [(*loc[sid], v) for sid, v in tot.items() if sid in loc]
+            if len(pts) < 50:
+                self.log.warn(f"rainacc {pid}: only {len(pts)} gauges, skipped")
+                continue
+            lons, lats, vals = zip(*pts)
+            arr = rainacc.idw_grid(lons, lats, vals, land)
+            name = f"acc_{pid}"
+            grids.write_layer(self.out / "grids", name, {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"], "res": g["res"]},
+                              0.1, 0.0, {"label": f"{label}累積雨量（雨量站內插）", "unit": "mm", "time": t,
+                                         "gauges": len(pts), "hours": hours, "src": "O-A0002-001"})
+            periods.append({"id": pid, "label": label, "meta": f"grids/{name}.json"})
+            done.append(f"{pid}({len(pts)})")
+        self.manifest["layers"]["rainacc"] = {"time": t, "periods": periods}
+        return "periods " + ", ".join(done)
 
     def task_grids(self):
         done = []
@@ -256,9 +293,41 @@ class Builder:
         big = hazards.read_quake_zip(self.f.get("Earthquake/E-A0015-001.zip"), "significant")
         small = hazards.read_quake_zip(self.f.get("Earthquake/E-A0016-001.zip"), "local")
         qs = hazards.merge_quakes(big, small)
+        shake_msg = self.attach_shakemap(qs)
         write_json(self.out / "quakes.json", {"quakes": qs})
         self.manifest["layers"]["quakes"] = {"time": qs[0]["time"] if qs else None, "count": len(qs)}
-        return f"{len(qs)} reports, latest {qs[0]['time'] if qs else '-'}"
+        return f"{len(qs)} reports, latest {qs[0]['time'] if qs else '-'}; shakemap: {shake_msg}"
+
+    def attach_shakemap(self, qs) -> str:
+        """Georeference the latest significant-earthquake shakemap and link it to its report."""
+        try:
+            meta = self.f.get_json("Earthquake/E-A0015-003.json")["cwaopendata"]
+            stamp = shakemap.identifier_stamp(meta)
+            q = next((q for q in qs if q.get("time") and re.sub(r"\D", "", q["time"])[:12] == stamp), None)
+            if q is None:
+                return f"no report matches {stamp}"
+            topo = geo.load_topo(TOPO)
+            g = qpf.GRID
+            land = geo.land_mask(topo, g["lon0"], g["lat0"], g["res"], g["nx"], g["ny"])
+            r = shakemap.process(self.f.get("Earthquake/E-A0015-003.png").read_bytes(), topo, land)
+            if r["refit"]:
+                self.log.warn(f"shakemap layout changed, re-fitted {np.round(r['fit'], 2).tolist()}")
+            arr = r["grid"].astype(np.float32)
+            arr[arr == 0] = np.nan
+            name = f"shake_{stamp}"
+            for old in (self.out / "grids").glob("shake_*.*"):
+                if not old.name.startswith(name):
+                    old.unlink()
+            classes = [{"lo": i, "hi": i + 1, "label": lv} for i, lv in enumerate(shakemap.LEVELS)]
+            grids.write_layer(self.out / "grids", name, {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"], "res": g["res"]},
+                              1, 0, {"label": "等震度圖", "unit": "", "kind": "class", "classes": classes, "time": q["time"],
+                                     "cwaColors": [list(c) for c in r["legend"]], "src": "E-A0015-003",
+                                     "fitCost": round(r["cost"], 2)})
+            q["shake"] = f"grids/{name}.json"
+            return f"{stamp} (fit cost {r['cost']:.2f})"
+        except Exception as e:  # noqa: BLE001
+            self.log.warn(f"shakemap: {e}")
+            return "failed"
 
     def task_typhoon(self):
         tcs = hazards.parse_cyclones(self.f.get_json("Warning/W-C0034-005.json"))

@@ -24,6 +24,7 @@ export function loadSettings() {
   const s = { ...clone(DEFAULTS), ...saved };
   s.overlays = { ...DEFAULTS.overlays, ...(saved.overlays || {}) };
   s.thresholds = { ...DEFAULTS.thresholds, ...(saved.thresholds || {}) };
+  if (s.layer === 'rainday') s.layer = 'rainacc'; // renamed layer
   if (!s.reduceMotion && saved.reduceMotion === undefined) {
     try { s.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { /* ignore */ }
   }

@@ -28,11 +28,28 @@ const CVD_TEMP = ['#08306b', '#08519c', '#2171b5', '#4292c6', '#6baed6', '#9ecae
 const CONTRAST_TEMP = ['#0000ff', '#0000ff', '#00a0ff', '#00a0ff', '#ffffff', '#ffffff', '#ffffff', '#ffff00',
   '#ffff00', '#ff8000', '#ff0000', '#ff0000'];
 
-function zip(bounds, colours) { return bounds.map((b, i) => [b, colours[i]]); }
+// Accumulated rainfall can exceed 1000 mm in typhoons: extend the rain scale.
+const ACC_BOUNDS = [...RAIN_BOUNDS, 400, 500, 600, 800, 1000];
+const CWA_ACC = [...CWA_RAIN, '#e88ee8', '#c24ac2', '#8f1f8f', '#5c0a5c', '#2e002e'];
+const VIRIDIS_ACC = [...VIRIDIS17, '#3b0f50', '#2c0a3d', '#1d062a', '#100318', '#000000'];
+const CONTRAST_ACC = [...CONTRAST_RAIN, '#000000', '#000000', '#000000', '#000000', '#000000'];
+
+// CWA seismic intensity scale; the third element is the legend label.
+const INT_LABELS = ['1級', '2級', '3級', '4級', '5弱', '5強', '6弱', '6強', '7級'];
+const CWA_INT = ['#d9ffd9', '#00ff00', '#ffff00', '#ff6600', '#ff0000', '#b31a1a', '#663333', '#801a80', '#9900cc'];
+const CVD_INT = ['#fde725', '#b5de2b', '#6ece58', '#35b779', '#1f9e89', '#26828e', '#31688e', '#3e4989', '#440154'];
+const CONTRAST_INT = ['#ffffff', '#ffff00', '#ffaa00', '#ff5500', '#ff0000', '#b00000', '#600060', '#300030', '#000000'];
+
+function zip(bounds, colours, labels) { return bounds.map((b, i) => (labels ? [b, colours[i], labels[i]] : [b, colours[i]])); }
+const INT_BOUNDS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export const SCALES = {
   rain: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   radar: { cwa: zip(RADAR_BOUNDS, CWA_RADAR), cvd: zip(RADAR_BOUNDS, VIRIDIS13), contrast: zip(RADAR_BOUNDS, CONTRAST_RADAR) },
+  rainacc: { cwa: zip(ACC_BOUNDS, CWA_ACC), cvd: zip(ACC_BOUNDS, VIRIDIS_ACC), contrast: zip(ACC_BOUNDS, CONTRAST_ACC) },
+  intensity: {
+    cwa: zip(INT_BOUNDS, CWA_INT, INT_LABELS), cvd: zip(INT_BOUNDS, CVD_INT, INT_LABELS), contrast: zip(INT_BOUNDS, CONTRAST_INT, INT_LABELS),
+  },
   temp: { cwa: zip(TEMP_BOUNDS, CWA_TEMP), cvd: zip(TEMP_BOUNDS, CVD_TEMP), contrast: zip(TEMP_BOUNDS, CONTRAST_TEMP) },
 };
 
@@ -67,6 +84,7 @@ export function colourFn(scale) {
 }
 
 export function classLabel(scale, i, unit) {
+  if (scale[i][2]) return scale[i][2];
   const lo = scale[i][0];
   const hi = i + 1 < scale.length ? scale[i + 1][0] : null;
   return hi === null ? `≥ ${lo} ${unit}` : `${lo}–${hi} ${unit}`;

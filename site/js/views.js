@@ -3,8 +3,9 @@ import { S } from './state.js';
 import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty,
 } from './util.js';
-import { getGrid, framesFor, layerDef, showLayer } from './layers.js';
-import { sample, classRange } from './grid.js';
+import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS } from './layers.js';
+import { sample, classRange, renderGrid } from './grid.js';
+import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
 import { assess, LEVELS } from './safety.js';
 import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId } from './store.js';
@@ -12,9 +13,13 @@ import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId } from '
 // ------------------------------------------------------------------ sheet
 const stack = [];
 
-export function openSheet(title, body, { replace = false, onRender } = {}) {
+export function openSheet(title, body, { replace = false, onRender, peek = false, quake = false } = {}) {
   const sheet = document.getElementById('sheet');
   const entry = { title, body, onRender };
+  // peek: a low sheet so the map above stays visible (earthquake view).
+  sheet.classList.toggle('peek', peek);
+  if (peek) { sheet.classList.remove('full'); document.body.classList.remove('sheet-full'); }
+  setQuakeMode(quake);
   if (replace && stack.length) stack[stack.length - 1] = entry; else stack.push(entry);
   renderTop();
   sheet.hidden = false;
@@ -38,7 +43,24 @@ export function sheetBack() {
   if (stack.length > 1) { stack.pop(); renderTop(); } else closeSheet();
 }
 
+function setQuakeMode(on) {
+  if (S.quakeMode === on) return;
+  S.quakeMode = on;
+  document.dispatchEvent(new CustomEvent('quakemode', { detail: on }));
+}
+
+/** Fit bounds into the part of the map not covered by the sheet. */
+function fitVisible(bounds) {
+  const sheet = document.getElementById('sheet');
+  const r = sheet.getBoundingClientRect();
+  const m = S.map.getContainer().getBoundingClientRect();
+  const side = r.left > m.left + 10; // side panel layout
+  const pad = side ? [Math.max(0, m.right - r.left) + 10, 10] : [10, Math.max(0, m.bottom - r.top) + 10];
+  S.map.fitBounds(bounds, { paddingTopLeft: [10, 10], paddingBottomRight: pad, animate: !S.settings.reduceMotion });
+}
+
 export function closeSheet() {
+  setQuakeMode(false);
   stack.length = 0;
   const sheet = document.getElementById('sheet');
   sheet.classList.remove('open');
@@ -279,6 +301,7 @@ async function sampleLayers(lat, lon) {
     ['radar', framesFor('radar').slice(-1)[0]], ['qpe1h', 'grids/qpe1h.json'], ['rainday', 'grids/rainday.json'],
     ['qpf1h', 'grids/qpf1h.json'], ['temp', 'grids/temp.json'],
     ...framesFor('qpf').map((p, i) => [`qpf${i}`, p]),
+    ...(S.manifest?.layers?.rainacc?.periods || []).filter((p) => p.id !== 'day').map((p) => [`acc_${p.id}`, p.meta]),
   ].filter(([, p]) => p);
   await Promise.all(jobs.map(async ([k, p]) => {
     try {
@@ -318,7 +341,7 @@ export async function showPoint(lat, lon, opts = {}) {
   const ty = S.typhoon?.active ? { active: true, name: S.typhoon.cyclones.map((c) => c.cname).join('、'), near: true } : null;
   const fcForCold = spotFc || townFc;
   const risk = assess({
-    rain1h: vals.qpe1h?.v ?? null, rainToday: vals.rainday?.v ?? null, qpfMax: qpfFirst, radar: vals.radar?.v ?? null,
+    rain1h: vals.qpe1h?.v ?? null, rainToday: Math.max(vals.rainday?.v ?? 0, vals.acc_24h?.v ?? 0) || null, qpfMax: qpfFirst, radar: vals.radar?.v ?? null,
     stations: stationsNear.map((x) => x.it), spotMinAT: minApparent(fcForCold),
     warnings: countyWarn?.hazards || [], typhoon: ty,
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: q.areas?.[0]?.int || `${q.maxInt}級` })),
@@ -335,6 +358,11 @@ export async function showPoint(lat, lon, opts = {}) {
     if (k === 'radar' && x.v !== null && x.v >= 10) txt += `（約 ${fmtNum(dbzToRate(x.v), 1)} mm/h）`;
     return `<tr><th scope="row">${label}</th><td>${txt}</td><td class="muted">${esc(fmtTime(x.meta.time))}</td></tr>`;
   };
+  const accRows = (S.manifest?.layers?.rainacc?.periods || []).map((p) => {
+    const x = p.id === 'day' ? vals.rainday : vals[`acc_${p.id}`];
+    if (!x) return '';
+    return `<tr><th scope="row">${esc(p.label)}</th><td>${x.v === null ? '無資料' : fmtNum(x.v, 1, 'mm')}</td></tr>`;
+  }).join('');
   const qpfRows = framesFor('qpf').map((_, i) => {
     const x = vals[`qpf${i}`];
     if (!x) return '';
@@ -367,8 +395,9 @@ ${risk.reasons.length ? html`<ul>${risk.reasons.map((r) => html`<li>${lvBadge(r.
 <p class="note">依門檻自動判斷，僅供參考；請以現場狀況與官方資訊為準。門檻可在「設定」調整。</p></section>
 ${warnHtml}${tyHtml}
 <section class="card" aria-labelledby="h-now"><h3 id="h-now">此處即時格點值</h3><table class="kv"><tbody>
-${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1小時雨量', 'qpe1h', 'mm'))}${raw(vrow('今日累積雨量', 'rainday', 'mm'))}${raw(vrow('未來1小時雨量', 'qpf1h', 'mm'))}${raw(vrow('溫度分析', 'temp', '°C'))}
+${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1小時雨量', 'qpe1h', 'mm'))}${raw(vrow('未來1小時雨量', 'qpf1h', 'mm'))}${raw(vrow('溫度分析', 'temp', '°C'))}
 </tbody></table></section>
+${accRows ? html`<section class="card" aria-labelledby="h-acc"><h3 id="h-acc">累積雨量（雨量站內插估計）</h3><table class="kv"><tbody>${raw(accRows)}</tbody></table></section>` : ''}
 ${qpfRows ? html`<section class="card" aria-labelledby="h-qpf"><h3 id="h-qpf">定量降水預報（每12小時）</h3><table class="kv"><tbody>${raw(qpfRows)}</tbody></table></section>` : ''}
 ${fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : ''}
 ${townHtml ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}
@@ -460,14 +489,31 @@ export function showQuakes() {
   openSheet('地震報告', body, { onRender: bindCommon });
 }
 
-export function showQuake(q) {
+function intensityIcon(iv, label) {
+  const scale = scaleFor('intensity', S.settings.palette);
+  // iv: 1..4, 5 (5弱), 5.5 (5強), 6 (6弱), 6.5 (6強), 7 -> legend index 0..8
+  const v = iv ?? 0;
+  const i = Math.max(0, Math.min(scale.length - 1, v < 5 ? Math.floor(v) - 1 : 4 + Math.round((v - 5) * 2)));
+  const colour = iv >= 1 ? scale[i][1] : '#ffffff';
+  const dark = ['#663333', '#801a80', '#9900cc', '#b31a1a', '#440154', '#3e4989', '#31688e', '#000000', '#300030', '#600060', '#b00000'].includes(colour);
+  return L.divIcon({ className: 'int-mk', html: `<span style="background:${colour};color:${dark ? '#fff' : '#000'}">${esc(label)}</span>`, iconSize: [26, 22] });
+}
+
+export async function showQuake(q) {
   if (!S.focus) S.focus = L.layerGroup().addTo(S.map);
   S.focus.clearLayers();
-  [10, 30, 50].forEach((km) => L.circle([q.lat, q.lon], { radius: km * 1000, color: '#c00', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(S.focus));
-  L.marker([q.lat, q.lon], { icon: L.divIcon({ className: 'epi', html: '✕', iconSize: [28, 28] }), title: `震央 M${q.mag}` }).addTo(S.focus);
-  (q.stations || []).forEach((s) => L.circleMarker([s.lat, s.lon], { radius: 6, weight: 1, color: '#000', fillColor: '#fff', fillOpacity: 1 })
-    .bindTooltip(`${s.n}：${s.int}`).addTo(S.focus));
-  S.map.fitBounds(L.latLng(q.lat, q.lon).toBounds(110000), { animate: !S.settings.reduceMotion });
+  // Distance rings (labelled) and epicentre.
+  [10, 30, 50].forEach((km) => {
+    L.circle([q.lat, q.lon], { radius: km * 1000, color: '#c00', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(S.focus);
+    L.marker([q.lat + km / 111.2, q.lon], { icon: L.divIcon({ className: 'ring-lbl', html: `${km} km`, iconSize: [48, 18] }), interactive: false, keyboard: false }).addTo(S.focus);
+  });
+  L.marker([q.lat, q.lon], { icon: L.divIcon({ className: 'epi', html: '✕', iconSize: [28, 28] }), title: `震央 M${q.mag}`, zIndexOffset: 1000 }).addTo(S.focus);
+  // Station intensities: coloured squares with the intensity number.
+  (q.stations || []).forEach((s) => {
+    const lbl = (s.int || '').replace('級', '').replace('弱', '-').replace('強', '+');
+    L.marker([s.lat, s.lon], { icon: intensityIcon(s.iv, lbl), title: `${s.n} 震度 ${s.int}`, zIndexOffset: 500 })
+      .bindTooltip(`${esc(s.n)}：${esc(s.int)}（距震央 ${s.d ?? '?'} km）`).addTo(S.focus);
+  });
   const near = nearest(S.spots, q.lat, q.lon, { limit: 60, maxKm: 50 });
   const mountains = near.filter((x) => x.it.c === 'mountain');
   const others = near.filter((x) => x.it.c !== 'mountain').slice(0, 15);
@@ -479,16 +525,37 @@ export function showQuake(q) {
     });
     return t.slice(0, 12);
   })();
+  const scale = scaleFor('intensity', S.settings.palette);
+  const legend = html`<ol class="swatches inline">${scale.map((x) => html`<li><span class="sw" style="background:${x[1]}"></span>${x[2]}</li>`)}</ol>`;
   const li = ({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${d.toFixed(1)} km</span></li>`;
-  const body = html`<p><strong>規模 ${q.mag}</strong>・深度 ${q.depth} km・${fmtTime(q.time)}</p>
-<p>${q.loc}</p><p class="muted">${q.text || ''}</p>
+  const body = html`<p><strong>規模 ${q.mag}</strong>・深度 ${q.depth} km・${fmtTime(q.time)}・最大震度 ${q.areas?.[0]?.int || q.maxInt}</p>
+<p>${q.loc}</p>
+<section class="card"><h3>地圖說明</h3>
+<p>${q.shake ? '彩色區塊：氣象署等震度圖（自動對位疊合）。' : '此筆地震沒有等震度圖（氣象署僅提供最新一筆顯著有感地震）。'}方塊數字：各測站實測震度。紅色虛線：距震央 10／30／50 km。</p>
+${legend}<p class="note">往下滑可收起面板查看完整地圖。</p></section>
 <section class="card"><h3>震央 50 km 內的山（${mountains.length}）</h3>${mountains.length ? html`<ul class="cols">${mountains.map(li)}</ul>` : html`<p>無登山預報點位。</p>`}</section>
 ${others.length ? html`<section class="card"><h3>其他景點</h3><ul class="cols">${others.map(li)}</ul></section>` : ''}
 ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內）</h3><p>${towns.join('、')}</p></section>` : ''}
 <section class="card"><h3>各地震度</h3><table class="kv"><tbody>${q.areas.map((a) => html`<tr><th scope="row">${a.area}</th><td>${a.int}</td></tr>`)}</tbody></table></section>
+<p class="muted">${q.text || ''}</p>
 <p><a href="${q.web}" target="_blank" rel="noopener">氣象署地震報告頁</a>${q.img ? html`・<a href="${q.img}" target="_blank" rel="noopener">報告圖</a>` : ''}</p>
 <p class="note">震度 4 級以上的山區請留意落石、坍方與步道受損。</p>`;
-  openSheet(`地震 M${q.mag}`, body, { onRender: bindCommon });
+  openSheet(`地震 M${q.mag}`, body, { onRender: bindCommon, peek: true, quake: true });
+  // Zoom to the felt area (stations with intensity >= 1, at least the 50 km ring) above the sheet.
+  const pts = (q.stations || []).filter((s) => (s.iv ?? 0) >= 1).map((s) => [s.lat, s.lon]);
+  const bounds = L.latLngBounds([[q.lat, q.lon], ...pts]).extend(L.latLng(q.lat, q.lon).toBounds(110000));
+  fitVisible(bounds);
+  if (q.shake) {
+    try {
+      const g = await getGrid(q.shake);
+      if (!S.quakeMode) return;
+      const [w, s, e, n] = g.bounds;
+      const img = renderGrid(g, colourFn(scale), { smooth: S.settings.smooth !== false, fill: 0 });
+      L.imageOverlay(img.toDataURL('image/png'), [[s, w], [n, e]], { opacity: Math.min(0.85, S.settings.opacity + 0.1), interactive: false, className: 'wx-grid shake', pane: 'shake' }).addTo(S.focus);
+    } catch (e) {
+      console.warn('shakemap', e);
+    }
+  }
 }
 
 // ------------------------------------------------------------------ typhoon
@@ -582,7 +649,7 @@ export async function showAffected() {
   const id = S.layer.id;
   const def = layerDef(id);
   const frames = framesFor(id);
-  const path = id === 'qpf' ? frames[S.layer.period] : frames[S.layer.frame] || frames[frames.length - 1];
+  const path = PERIOD_LAYERS.includes(id) ? frames[S.layer.period] : frames[S.layer.frame] || frames[frames.length - 1];
   if (!path) { openSheet('受影響山區', html`<p>請先選擇雷達、雨量、降水預報或溫度圖層。</p>`); return; }
   openSheet('受影響山區', loading);
   const grid = await getGrid(path);
