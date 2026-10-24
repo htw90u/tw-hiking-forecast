@@ -1,6 +1,6 @@
 // Weather map layers: grid overlays, satellite, typhoon rain choropleth; legend and time control.
 import { S } from './state.js';
-import { getJSON, fmtTime, esc, normCounty } from './util.js';
+import { getJSON, fmtTime, esc, normCounty, beaufort, haversineKm } from './util.js';
 import { loadGrid, renderGrid } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
 import { saveSettings } from './settings.js';
@@ -12,6 +12,8 @@ export const LAYERS = [
   { id: 'qpf1h', label: '未來1小時雨量', kind: 'rain', unit: 'mm' },
   { id: 'qpf', label: '定量降水預報', kind: 'rain', unit: 'mm/12h' },
   { id: 'temp', label: '溫度', kind: 'temp', unit: '°C' },
+  { id: 'wind', label: '風力', kind: 'wind' },
+  { id: 'lightning', label: '閃電', kind: 'ltage' },
   { id: 'sat', label: '衛星雲圖', kind: 'sat' },
   { id: 'tyrain', label: '颱風雨量預測', kind: 'rain', unit: 'mm', typhoonOnly: true },
   { id: 'none', label: '關閉圖層', kind: 'none' },
@@ -35,9 +37,8 @@ const SAT_MODES = [
 function satGrids() { return S.manifest?.layers?.satellite?.grids || {}; }
 
 /** Wide-interval (大間距) classes: chosen by the user, or automatically when totals exceed 400 mm (CWA's advice). */
-export function useBigSpacing(max) {
-  const s = S.settings.rainSpacing || 'auto';
-  return s === 'big' || (s === 'auto' && Number(max) > 400);
+export function useBigSpacing() {
+  return S.settings.rainSpacing === 'big';
 }
 // Layers whose colour classes can switch between 小間距 and 大間距.
 const SPACING_KINDS = ['rainacc', 'rainbig'];
@@ -120,13 +121,15 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (def.kind === 'none') { clearOverlay(); renderLegend(); return; }
     if (id === 'sat' && !satGrids().ir) { await showSatellite(); return; }
     if (id === 'tyrain') { showTyphoonRain(); return; }
+    if (id === 'wind') { await showWind(keepFrame); return; }
+    if (id === 'lightning') { await showLightning(); return; }
     const frames = framesFor(id);
     const path = PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
     let kind = layerKind(id);
-    if (kind === 'rainacc' && useBigSpacing(grid.meta.max)) kind = 'rainbig';
+    if (kind === 'rainacc' && useBigSpacing()) kind = 'rainbig';
     const colour = colourFn(scaleFor(kind, S.settings.palette));
     // Smooth rendering interpolates between cells; "no echo / no rain" counts as a low value
     // so that rain areas fade out at their edges instead of ending in square steps.
@@ -171,7 +174,7 @@ function showTyphoonRain() {
   const tbl = tyTable();
   if (!tbl || !S.counties.length) { clearOverlay(); renderLegend(null, '目前沒有颱風雨量預測'); return; }
   const tyMax = Math.max(0, ...tbl.areas.map((a) => a.hi ?? a.lo ?? 0));
-  const tyKind = useBigSpacing(tyMax) ? 'rainbig' : 'rain';
+  const tyKind = useBigSpacing() ? 'rainbig' : 'rain';
   const scale = scaleFor(tyKind, S.settings.palette);
   const col = colourFn(scale);
   const byCounty = {};
@@ -196,7 +199,123 @@ function showTyphoonRain() {
   ov.addTo(S.map);
   clearOverlay();
   S.layer.overlay = ov;
-  renderLegend({ label: tbl.name, unit: 'mm', time: tbl.issue, period: tbl.period, note: tbl.note, kindOverride: tyKind, spacing: true });
+  renderLegend({ label: tbl.name, unit: 'mm', time: tbl.issue, period: tbl.period, note: tbl.note, kindOverride: tyKind, spacing: true, tyMax });
+}
+
+// ---------------------------------------------------------------- wind
+export const WIND_DIRS = ['偏北風', '東北風', '偏東風', '東南風', '偏南風', '西南風', '偏西風', '西北風'];
+
+export async function loadWind() {
+  if (!S.wind) S.wind = await getJSON('wind.json', { optional: true });
+  return S.wind;
+}
+
+/** Forecast step nearest to now (the first one not yet ended). */
+function windNowIndex(times) {
+  const now = Date.now();
+  const i = times.findIndex((t) => new Date(t).getTime() + 3 * 3600e3 > now);
+  return i < 0 ? times.length - 1 : i;
+}
+
+/** Arrow pointing downwind (the wind comes from `fromDeg`), with the Beaufort number. */
+function windArrow(fromDeg, bf, colour, title) {
+  const html = `<span class="wa" style="--c:${colour}"><svg viewBox="0 0 24 24" style="transform:rotate(${fromDeg + 180}deg)" aria-hidden="true"><path d="M12 3v15M6.5 12.5 12 19l5.5-6.5"/></svg><b>${bf ?? ''}</b></span>`;
+  return L.divIcon({ className: 'wind-mk', html, iconSize: [30, 30] });
+}
+
+async function showWind(keepFrame) {
+  const mode = S.layer.windMode || 'fc';
+  const scale = scaleFor('wind', S.settings.palette);
+  const col = colourFn(scale);
+  const hex = (bf) => { const c = col(bf ?? 0); return c[3] ? `rgb(${c[0]},${c[1]},${c[2]})` : '#ffffff'; };
+  const ov = L.layerGroup();
+  if (mode === 'obs') {
+    const sts = S.stations.filter((s) => s.WS !== undefined && s.WD !== undefined && s.k !== 'rain');
+    sts.forEach((s) => {
+      const bf = beaufort(s.WS);
+      L.marker([s.lat, s.lon], { icon: windArrow(s.WD, bf, hex(bf), ''), keyboard: false, pane: 'stations' })
+        .bindTooltip(`${esc(s.n)}：${s.WS} m/s（${bf}級）${s.G !== undefined ? `・陣風 ${s.G} m/s（${beaufort(s.G)}級）` : ''}`).addTo(ov);
+    });
+    finishOverlay(ov);
+    renderLegend({ label: '風力觀測（測站）', time: S.manifest?.layers?.stations?.time, kindOverride: 'wind',
+      note: '箭頭指向風吹去的方向，數字為平均風蒲福風級；陣風見各測站說明。' });
+    renderTimeControl();
+    return;
+  }
+  const w = await loadWind();
+  if (S.layer.id !== 'wind') return;
+  if (!w || !w.times?.length) { clearOverlay(); renderLegend(null, '目前沒有風力預報資料'); return; }
+  if (!keepFrame || S.layer.frame >= w.times.length) S.layer.frame = windNowIndex(w.times);
+  const i = S.layer.frame;
+  const towns = L.geoJSON({ type: 'FeatureCollection', features: S.towns }, {
+    style: (f) => {
+      const r = w.towns[f.properties.TOWNCODE];
+      const bf = r?.[1]?.[i];
+      return { color: '#555', weight: 0.5, fillColor: hex(bf), fillOpacity: bf ? S.settings.opacity : 0 };
+    },
+    onEachFeature: (f, layer) => {
+      const r = w.towns[f.properties.TOWNCODE];
+      if (!r) return;
+      layer.bindTooltip(`${esc(normCounty(f.properties.COUNTYNAME))}${esc(f.properties.TOWNNAME)}：${WIND_DIRS[r[2][i]] || ''} ${r[0][i] ?? '—'} m/s（${r[1][i] ?? '—'}級）`, { sticky: true });
+    },
+  });
+  towns.addTo(ov);
+  // Mountain hiking forecasts: ridges are windier than the township centres. Strongest first, and
+  // arrows closer than 34 px to one already drawn are skipped (they reappear when zooming in).
+  const placed = [];
+  w.mountains.filter((m) => m.w[0][i] !== null && m.w[2][i] !== null).sort((a, b) => (b.w[1][i] ?? 0) - (a.w[1][i] ?? 0)).forEach((m) => {
+    const [ws, bf, wd] = [m.w[0][i], m.w[1][i], m.w[2][i]];
+    const pt = S.map.latLngToLayerPoint([m.lat, m.lon]);
+    if (placed.some((q) => q.distanceTo(pt) < 34)) return;
+    placed.push(pt);
+    L.marker([m.lat, m.lon], { icon: windArrow(wd * 45, bf, hex(bf)), keyboard: false, pane: 'spots', zIndexOffset: 200 })
+      .bindTooltip(`${esc(m.n)}（登山預報）：${WIND_DIRS[wd]} ${ws} m/s（${bf}級）`).addTo(ov);
+  });
+  finishOverlay(ov);
+  const t = w.times[i];
+  renderLegend({ label: '風力預報（蒲福風級）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: w.issue, kindOverride: 'wind',
+    note: '色塊為鄉鎮預報（平地），箭頭為登山預報點，指向風吹去的方向，數字為蒲福風級。6 級以上山區行走困難，8 級以上請避免稜線。' });
+  renderTimeControl();
+}
+
+function finishOverlay(ov) {
+  if (!S.layer.hidden) ov.addTo(S.map);
+  clearOverlay();
+  S.layer.overlay = ov;
+}
+
+// ---------------------------------------------------------------- lightning
+export async function loadLightning() {
+  if (!S.lightning) S.lightning = await getJSON('lightning.json', { optional: true });
+  return S.lightning;
+}
+
+/** Strikes within km of a point during the last hour: { n, nearest km }. */
+export function lightningNear(lat, lon, km = 15) {
+  const list = (S.lightning?.strikes || []).map((s) => haversineKm(lat, lon, s.lat, s.lon)).filter((d) => d <= km);
+  return { n: list.length, nearest: list.length ? Math.min(...list) : null };
+}
+
+async function showLightning() {
+  const lt = await loadLightning();
+  if (S.layer.id !== 'lightning') return;
+  if (!lt) { clearOverlay(); renderLegend(null, '目前沒有閃電資料'); return; }
+  const scale = scaleFor('ltage', S.settings.palette);
+  const col = colourFn(scale);
+  const end = new Date(lt.end || Date.now()).getTime();
+  const ov = L.layerGroup();
+  lt.strikes.forEach((s) => {
+    const age = s.t ? Math.max(0, (end - new Date(s.t).getTime()) / 60e3) : 59;
+    const c = col(age);
+    const icon = L.divIcon({ className: `lt-mk${s.cloud ? ' cloud' : ''}`, iconSize: [16, 16],
+      html: `<svg viewBox="0 0 16 16" style="--c:rgb(${c[0]},${c[1]},${c[2]})" aria-hidden="true"><path d="M9.5 1 3 9h4l-1 6 6.5-8.5H8.5z"/></svg>` });
+    L.marker([s.lat, s.lon], { icon, keyboard: false, pane: 'spots' })
+      .bindTooltip(`${s.cloud ? '雲間閃電' : '對地閃電'}${s.t ? `・${esc(fmtTime(s.t))}` : ''}${s.ka !== null ? `・${s.ka} kA` : ''}`).addTo(ov);
+  });
+  finishOverlay(ov);
+  renderLegend({ label: `閃電（過去 1 小時 ${lt.count} 次）`, start: lt.start, end: lt.end, kindOverride: 'ltage',
+    note: lt.count ? '實心為對地閃電、空心為雲間閃電。看到閃電或聽到雷聲應立即離開稜線、山頂與空曠處。' : '過去 1 小時臺灣附近沒有偵測到閃電。' });
+  renderTimeControl();
 }
 
 /** Temporarily hide / restore the weather overlay (e.g. while the shakemap is shown). */
@@ -244,17 +363,19 @@ export function renderLegend(meta, message) {
       const stops = scale.map((x, i) => `${x[1]} ${(i / (scale.length - 1) * 100).toFixed(1)}%`).join(',');
       const lo = scale[0][0]; const hi = scale[scale.length - 1][0];
       const fmt = (v) => (kind === 'vis' ? `${Math.round(v * 100)}%` : `${v}${unit}`);
-      strip = `<span class="lg-strip"><span class="grad" style="background:linear-gradient(90deg,${stops})"></span><span class="grad-lbl"><span>${esc(fmt(lo))}</span><span>${esc(fmt((lo + hi) / 2))}</span><span>${esc(fmt(hi))}</span></span></span>`;
+      strip = `<span class="lg-strip grad-v"><span class="grad" style="background:linear-gradient(0deg,${stops})"></span><span class="ticks"><span style="bottom:0">${esc(fmt(lo))}</span><span style="bottom:50%">${esc(fmt((lo + hi) / 2))}</span><span style="bottom:100%">${esc(fmt(hi))}</span></span></span>`;
       body = (kind === 'vis' ? '<p class="note">可見光僅白天可用（夜間為黑色）。</p>' : '<p class="note">越白（或越鮮豔）代表雲頂越高、越冷，常伴隨強對流。</p>');
     } else {
       body = '<ol class="swatches">' + scale.map((x, i) => `<li><span class="sw" style="background:${x[1]}"></span>${esc(classLabel(scale, i, unit))}</li>`).reverse().join('') + '</ol>';
       strip = colourStrip(scale, kind);
     }
     if (SPACING_KINDS.includes(kind) || meta.spacing) {
-      const cur = S.settings.rainSpacing || 'auto';
-      body = `<div class="seg lg-spacing" role="radiogroup" aria-label="色階間距">${[['auto', '自動'], ['small', '小間距'], ['big', '大間距']]
+      const cur = S.settings.rainSpacing === 'big' ? 'big' : 'small';
+      const over = kind !== 'rainbig' && Number(meta.max ?? meta.tyMax) > 400;
+      body = `<div class="seg lg-spacing" role="radiogroup" aria-label="色階間距">${[['small', '小間距'], ['big', '大間距']]
         .map(([k, l]) => `<button type="button" class="seg-btn" role="radio" data-spacing="${k}" aria-checked="${k === cur}">${l}</button>`).join('')}</div>
-<p class="note">${kind === 'rainbig' ? '目前為大間距色階（10、20、60、100…1500 mm）。' : '目前為小間距色階。'}自動：最大值超過 400 mm 時改用大間距（同氣象署建議）。</p>${body}`;
+<p class="note">${kind === 'rainbig' ? '目前為大間距色階（10、20、60、100…1500 mm）。' : '目前為小間距色階（1、2、6、10…300 mm 以上）。'}</p>
+${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm 超過 400 mm，氣象署建議改看大間距。</p>` : ''}${body}`;
     }
   }
   let when = '';
@@ -276,18 +397,16 @@ export function renderLegend(meta, message) {
 
 /** Always-visible colour bar (like the CWA maps): one cell per class, boundary values underneath. */
 function colourStrip(scale, kind) {
+  // Vertical bar like the CWA maps: highest class on top, each label at its class's lower edge.
   const n = scale.length;
-  // Label every step-th class, including the first and the last (at most about 6 labels fit).
-  let step = 1;
-  while ((n - 1) / step > 6 || (n - 1) % step) step += 1;
-  if (step > (n - 1) / 2 && n > 3) step = Math.ceil((n - 1) / 5);
-  const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).join('');
+  const step = n > 13 ? 2 : 1;
+  const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).reverse().join('');
   const lbls = scale.map((x, i) => {
-    if (i % step && i !== n - 1) return '';
+    if (i % step) return '';
     const text = x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0]));
-    return `<span style="left:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
+    return `<span style="bottom:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
   }).join('');
-  return `<span class="lg-strip"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
+  return `<span class="lg-strip" style="--n:${n};--ch:${n > 13 ? 9.5 : 12.5}px"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
 }
 
 /** Attribution block (顯名聲明); derived products carry the full statement and a disclaimer. */
@@ -343,6 +462,16 @@ export function renderTimeControl(meta) {
     h = '<div class="seg" role="radiogroup" aria-label="雨量預測種類">'
       + (t.rain24 ? `<button class="seg-btn" role="radio" aria-checked="${S.layer.period === 0}" data-period="0">24小時雨量</button>` : '')
       + (t.rainTotal ? `<button class="seg-btn" role="radio" aria-checked="${S.layer.period === 1}" data-period="1">總雨量</button>` : '') + '</div>';
+  } else if (id === 'wind') {
+    const mode = S.layer.windMode || 'fc';
+    const times = S.wind?.times || [];
+    h = '<div class="seg" role="radiogroup" aria-label="風力資料">' + [['fc', '預報'], ['obs', '測站觀測']]
+      .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-windmode="${k}">${l}</button>`).join('') + '</div>';
+    if (mode === 'fc' && times.length) {
+      const t = times[S.layer.frame] || times[0];
+      h += `<label class="range"><span class="sr-only">預報時間</span><input id="wind-frame" type="range" min="0" max="${times.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+<output id="wind-time">${esc(fmtTime(t))}</output>`;
+    }
   } else if (meta?.time) {
     h = `<span class="muted">資料時間 ${esc(fmtTime(meta.time))}</span>`;
   }
@@ -354,6 +483,15 @@ export function renderTimeControl(meta) {
       S.layer.frame = Number(frame.value);
       showLayer('radar', { keepFrame: true });
     });
+  }
+  el.querySelectorAll('[data-windmode]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.windMode = b.dataset.windmode;
+    showLayer('wind', { keepFrame: true });
+  }));
+  const wf = el.querySelector('#wind-frame');
+  if (wf) {
+    wf.addEventListener('input', () => { el.querySelector('#wind-time').textContent = fmtTime(S.wind.times[Number(wf.value)]); });
+    wf.addEventListener('change', () => { S.layer.frame = Number(wf.value); showLayer('wind', { keepFrame: true }); });
   }
   el.querySelectorAll('[data-qpfmode]').forEach((b) => b.addEventListener('click', () => {
     if (b.getAttribute('aria-disabled') === 'true') {

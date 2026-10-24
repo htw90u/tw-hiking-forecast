@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import forecast, geo, grids, hazards, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations  # noqa: E402
+from . import forecast, geo, grids, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "quakes", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "wind", "quakes", "lightning", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -442,6 +442,17 @@ class Builder:
         r = forecast.build_towns(self.f.get_json, self.out, self.log)
         self.manifest["layers"]["towns"] = {"time": r["issue"], "count": r["count"]}
         return f"{r['count']} townships"
+
+    def task_wind(self):
+        r = wind.build(self.out)
+        self.manifest["layers"]["wind"] = {"time": r["issue"], "start": r["start"], "end": r["end"], "steps": r["times"]}
+        return f"{r['towns']} townships, {r['mountains']} mountains x {r['times']} steps"
+
+    def task_lightning(self):
+        r = lightning.parse_kmz(self.f.get("Observation/O-A0039-001.kmz").read_bytes())
+        write_json(self.out / "lightning.json", r)
+        self.manifest["layers"]["lightning"] = {"time": r["end"], "start": r["start"], "count": r["count"]}
+        return f"{r['count']} strikes {r['start']} ~ {r['end']}"
 
     def task_quakes(self):
         big = hazards.read_quake_zip(self.f.get("Earthquake/E-A0015-001.zip"), "significant")

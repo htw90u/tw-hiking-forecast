@@ -3,7 +3,7 @@ import { S } from './state.js';
 import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty, intText, isStrongQuake,
 } from './util.js';
-import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL } from './layers.js';
+import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL, lightningNear, loadWind, WIND_DIRS } from './layers.js';
 import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
@@ -167,8 +167,8 @@ function mountainsCard(lat, lon, maxKm = 20, excludeKey = null) {
   const list = [...cwa, ...osm].map((x) => ({ ...x, d: haversineKm(lat, lon, x.it.lat, x.it.lon) }))
     .filter((x) => x.d <= maxKm && x.it.k !== excludeKey).sort((a, b) => a.d - b.d).slice(0, 12);
   const btn = ({ it, kind, d }) => (kind === 'cwa'
-    ? html`<button class="seg-btn mtn" data-spot="${it.k}" title="氣象署登山預報點"><span aria-hidden="true">▲</span> ${it.n} <small>${d.toFixed(1)} km・有登山預報</small></button>`
-    : html`<button class="seg-btn mtn osm" data-peak="${it.k}"><span aria-hidden="true">▲</span> ${it.n} <small>${it.ele ? `${it.ele} m・` : ''}${it.area ? `${it.area}・` : ''}${d.toFixed(1)} km</small></button>`);
+    ? html`<button class="seg-btn mtn" data-spot="${it.k}" title="氣象署登山預報點"><span class="pin-mtn tog-ic" aria-hidden="true"><svg viewBox="0 0 18 18"><path d="M9 2 17 16H1z"/></svg></span>${it.n} <small>${d.toFixed(1)} km・有登山預報</small></button>`
+    : html`<button class="seg-btn mtn osm" data-peak="${it.k}"><span class="pin-peak tog-ic" aria-hidden="true"><svg viewBox="0 0 14 14"><path d="M7 2.2 12.6 12H1.4z"/></svg></span>${it.n} <small>${it.ele ? `${it.ele} m・` : ''}${it.area ? `${it.area}・` : ''}${d.toFixed(1)} km</small></button>`);
   return html`<section class="card" aria-labelledby="h-mtn"><h3 id="h-mtn">鄰近山域（${maxKm} km 內）</h3>
 ${list.length ? html`<div class="mtns">${list.map(btn)}</div>
 <p class="note">點山名可查看預報與安全評估。標示「有登山預報」的是氣象署登山預報點，其他山頭顯示鄰近鄉鎮預報。山頭資料 © OpenStreetMap contributors。</p>` : html`<p>${maxKm} km 內沒有已知山頭。</p>`}</section>`;
@@ -227,6 +227,16 @@ function minApparent(fc) {
   if (!e) return null;
   const vals = (e.v.MinApparentTemperature || []).slice(0, 4).filter((v) => typeof v === 'number');
   return vals.length ? Math.min(...vals) : null;
+}
+
+/** Highest Beaufort number in the next 24 h of a 3-hourly forecast. */
+function maxWindBf(fc) {
+  const e = el(fc?.d3, '風速');
+  if (!e) return null;
+  const now = Date.now();
+  const vals = e.t.map((t, i) => [new Date(t).getTime(), Number(e.v.BeaufortScale?.[i])])
+    .filter(([t, b]) => t + 3 * 3600e3 > now && t < now + 24 * 3600e3 && Number.isFinite(b)).map(([, b]) => b);
+  return vals.length ? Math.max(...vals) : null;
 }
 
 // ------------------------------------------------------------------ history
@@ -422,6 +432,7 @@ export async function showPoint(lat, lon, opts = {}) {
     stations: stationsNear.map((x) => x.it), spotMinAT: minApparent(fcForCold),
     warnings: countyWarn?.hazards || [], typhoon: ty,
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
+    lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc),
   }, S.settings.thresholds);
 
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
@@ -782,6 +793,7 @@ export function showSnapshot(entry) {
 export async function showAffected() {
   const id = S.layer.id;
   const def = layerDef(id);
+  if (id === 'wind' || id === 'lightning') { await showAffectedPoints(id); return; }
   const frames = framesFor(id);
   const path = PERIOD_LAYERS.includes(id) ? frames[S.layer.period] : frames[S.layer.frame] || frames[frames.length - 1];
   if (!path) { openSheet('受影響山區', html`<p>請先選擇雷達、雨量、降水預報或溫度圖層。</p>`); return; }
@@ -814,6 +826,27 @@ export async function showAffected() {
     },
   });
   draw();
+}
+
+/** Affected mountains for the point layers: hiking-forecast wind (Beaufort ≥ threshold) or lightning within 10 km. */
+async function showAffectedPoints(id) {
+  let items = [];
+  let head = '';
+  if (id === 'wind') {
+    const w = await loadWind();
+    const i = Math.min(S.layer.frame, (w?.times.length || 1) - 1);
+    const thr = 6;
+    items = (w?.mountains || []).filter((m) => (m.w[1][i] ?? 0) >= thr).sort((a, b) => b.w[1][i] - a.w[1][i])
+      .map((m) => ({ k: m.k, n: m.n, meta: `${WIND_DIRS[m.w[2][i]] || ''} ${m.w[0][i]} m/s・${m.w[1][i]}級` }));
+    head = `登山預報風力 ≥ ${thr} 級（${w ? fmtTime(w.times[i]) : ''} 起 3 小時）`;
+  } else {
+    items = S.spots.filter((p) => p.c === 'mountain').map((p) => ({ p, lt: lightningNear(p.lat, p.lon, 10) }))
+      .filter((x) => x.lt.n).sort((a, b) => a.lt.nearest - b.lt.nearest)
+      .map(({ p, lt }) => ({ k: p.k, n: p.n, meta: `${lt.n} 次・最近 ${lt.nearest.toFixed(1)} km` }));
+    head = '過去 1 小時 10 km 內有閃電的山';
+  }
+  openSheet('受影響山區', html`<p>${head}</p><p class="muted">共 ${items.length} 處</p>
+<ul class="list">${items.map((x) => html`<li><button class="link" data-spot="${x.k}">${x.n}</button> <span class="meta">${x.meta}</span></li>`)}</ul>`, { onRender: bindCommon });
 }
 
 // ------------------------------------------------------------------ search
@@ -852,7 +885,7 @@ export function search(q) {
 // ------------------------------------------------------------------ sources & licence
 const DATASETS = [
   ['O-A0001-001', '自動氣象站－氣象觀測資料'], ['O-A0002-001', '自動雨量站－雨量觀測資料'], ['O-A0003-001', '現在天氣觀測報告'],
-  ['O-A0059-001', '雷達整合回波格點資料'], ['O-B0045-001', '雷達定量降水估計（QPESUMS）'], ['F-B0046-001', '雷達定量降水預報（未來1小時）'],
+  ['O-A0059-001', '雷達整合回波格點資料'], ['O-A0039-001', '閃電即時觀測'], ['O-B0045-001', '雷達定量降水估計（QPESUMS）'], ['F-B0046-001', '雷達定量降水預報（未來1小時）'],
   ['O-A0040-004', '日累積雨量格點資料'], ['O-A0038-003', '溫度分析格點資料'],
   ['F-C0035-015／017／023／024', '定量降水預報圖（I～IV，逐12小時）'], ['F-C0041-001～008', '定量降水格點預報（颱風警報期間，逐6小時）'],
   ['F-B0053-xxx', '育樂天氣預報（登山、國家公園、森林遊樂區、農場、水庫等14類）'], ['F-D0047-xxx', '鄉鎮天氣預報'],

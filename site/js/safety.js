@@ -9,7 +9,8 @@ export const LEVELS = [
 
 /**
  * ctx: { rain1h, rainToday, qpfMax:[lo,hi]|null, radar, temp, stations:[{G,WS,T,R1h,R24h,d}],
- *        spotMinAT, warnings:[{ph,sig}], typhoon:{active, inForecastCone}, quakes:[{iv, d, time}] }
+ *        spotMinAT, warnings:[{ph,sig}], typhoon:{active, inForecastCone}, quakes:[{iv, d, time}],
+ *        lightning:{n, nearest km}|null, windBf: max Beaufort in the next 24 h of the hiking forecast }
  */
 export function assess(ctx, th) {
   const reasons = [];
@@ -43,6 +44,10 @@ export function assess(ctx, th) {
     if (q.iv >= 5) add(2, `${q.d.toFixed(0)} km 內地震，最大震度 ${q.int}（落石、坍方風險）`);
     else if (q.iv >= 4) add(1, `${q.d.toFixed(0)} km 內地震，最大震度 ${q.int}（注意落石）`);
   });
+  const lt = ctx.lightning;
+  if (lt && lt.n) add(lt.nearest <= 10 ? 2 : 1, `過去 1 小時 ${lt.n} 次閃電，最近 ${lt.nearest.toFixed(1)} km（雷擊風險，遠離稜線與空曠處）`);
+  if (ctx.windBf >= 8) add(2, `未來 24 小時登山預報風力 ${ctx.windBf} 級（稜線行走危險）`);
+  else if (ctx.windBf >= 6) add(1, `未來 24 小時登山預報風力 ${ctx.windBf} 級（強風，注意保暖與失足）`);
   const level = reasons.reduce((m, r) => Math.max(m, r.lv), 0);
   reasons.sort((a, b) => b.lv - a.lv);
   return { level, reasons };

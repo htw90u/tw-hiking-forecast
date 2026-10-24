@@ -4,7 +4,7 @@ const KEY = 'hikingwx.settings.v1';
 export const DEFAULTS = {
   fontScale: 1,          // 1 = 100 %, up to 2 = 200 %
   labelScale: 1.25,      // map name labels relative to the map text size
-  rainSpacing: 'auto',   // accumulated rain colour classes: auto | small (小間距) | big (大間距)
+  rainSpacing: 'small',  // accumulated rain colour classes: small (小間距) | big (大間距); chosen by the user only
   layerBar: true,        // bottom layer bar shown (false = collapsed for a larger map)
   theme: 'auto',         // auto | light | dark | contrast
   palette: 'cwa',        // cwa | cvd (color-vision-deficiency safe) | contrast
@@ -35,6 +35,8 @@ export function loadSettings() {
   s.labelsVer = DEFAULTS.labelsVer;
   s.thresholds = { ...DEFAULTS.thresholds, ...(saved.thresholds || {}) };
   if (s.layer === 'rainday') s.layer = 'rainacc'; // renamed layer
+  if (s.rainSpacing !== 'big') s.rainSpacing = 'small'; // the former 'auto' switched scales by itself
+  if (s.layer === 'none') s.layer = 'radar'; // the 關閉圖層 chip was removed (tap the active chip instead)
   if (!s.reduceMotion && saved.reduceMotion === undefined) {
     try { s.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { /* ignore */ }
   }

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import forecast, geo, grids, hazards, peaks, qpf, qpfweb, stations
+from pipeline import forecast, geo, grids, hazards, lightning, peaks, qpf, qpfweb, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -435,3 +435,40 @@ def test_peaks_area_and_list_tags(tmp_path):
     peaks.build(out, log, now + timedelta(hours=2), fetch=boom, lists_dir=lists)
     assert json.loads((out / "peaks.json").read_text(encoding="utf-8"))["peaks"][0][5]
     log.close()
+
+
+def _fc(t, ws, bf, wd):
+    return {"風速": {"t": t, "v": {"WindSpeed": ws, "BeaufortScale": bf}}, "風向": {"t": t, "v": {"WindDirection": wd}}}
+
+
+def test_wind_summary(tmp_path):
+    (tmp_path / "towns").mkdir()
+    (tmp_path / "spots" / "f").mkdir(parents=True)
+    t = ["2026-10-24T12:00:00+08:00", "2026-10-24T15:00:00+08:00"]
+    (tmp_path / "towns" / "10014020.json").write_text(json.dumps(
+        {"g": "10014020", "n": "成功鎮", "issue3d": "2026-10-24T11:00:00+08:00", "d3": _fc(t, ["6", "11"], ["4", "6"], ["東北風", "偏北風"])}), encoding="utf-8")
+    (tmp_path / "spots" / "f" / "mountain-D001.json").write_text(json.dumps(
+        {"k": "mountain-D001", "n": "玉山", "lat": 23.47, "lon": 120.957, "d3": _fc(t[1:], [14], [7], ["西南風"])}), encoding="utf-8")
+    r = wind.build(tmp_path)
+    assert (r["times"], r["towns"], r["mountains"]) == (2, 1, 1)
+    d = json.loads((tmp_path / "wind.json").read_text(encoding="utf-8"))
+    assert d["towns"]["10014020"] == [[6, 11], [4, 6], [1, 0]]          # ws, Beaufort, direction index
+    assert d["mountains"][0]["w"] == [[None, 14], [None, 7], [None, 5]]  # missing first step stays empty
+
+
+def test_lightning_kmz(tmp_path):
+    import io
+    import zipfile
+    kml = """<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<name>中央氣象署閃電資料: 2026-10-24 14:15 ~ 2026-10-24 15:15</name><Folder><name>閃電資料 (2筆)</name>
+<Placemark><name>2026-10-24 15:01:02</name><description>強度: -23.5 kA</description><styleUrl>#m_valid_pos-pushpin0</styleUrl><Point><coordinates>121.10,23.50,0</coordinates></Point></Placemark>
+<Placemark><description>時間 2026/10/24 14:40:00</description><styleUrl>#m_valid_cloud-pushpin0</styleUrl><Point><coordinates>120.9,23.4,0</coordinates></Point></Placemark>
+</Folder></Document></kml>"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("doc.kml", kml)
+    r = lightning.parse_kmz(buf.getvalue())
+    assert r["count"] == 2 and r["start"] == "2026-10-24T14:15:00+08:00" and r["end"] == "2026-10-24T15:15:00+08:00"
+    first, second = r["strikes"]
+    assert first == {"lat": 23.5, "lon": 121.1, "t": "2026-10-24T15:01:02+08:00", "cloud": False, "ka": -23.5}
+    assert second["cloud"] and second["t"] == "2026-10-24T14:40:00+08:00" and second["ka"] is None

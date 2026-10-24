@@ -12,13 +12,15 @@ export const S = {
   peakLists: {},          // list tag id -> label (百岳, 小百岳, ...)     // OSM named peaks {k, n, lat, lon, ele} (not CWA forecast spots)
   quakes: [],
   typhoon: null,
+  wind: null,            // wind.json (loaded with the wind layer)
+  lightning: null,       // lightning.json (last hour of strikes)
   warnings: null,
   sat: [],
   towns: [],     // GeoJSON features with bbox
   counties: [],  // GeoJSON features
   grids: new Map(),   // meta path -> Promise<grid>
   metas: new Map(),   // meta path -> Promise<meta>
-  layer: { id: null, overlay: null, frame: 0, period: 0, timer: null, qpfMode: '12' },
+  layer: { id: null, overlay: null, frame: 0, period: 0, timer: null, qpfMode: '12', windMode: 'fc' },
   overlays: {},
   focus: null,   // L.LayerGroup for point / quake highlight
 };

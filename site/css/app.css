@@ -81,10 +81,14 @@ a { color: var(--accent); }
 #map { width: 100%; height: 100%; min-height: 0; background: #cfd8d4; }
 .leaflet-container { font: inherit; font-size: calc(var(--u) * .9); }
 .wx-grid { image-rendering: auto; }
-.pin-mtn, .pin-spot { color: #5b3a1a; text-shadow: 0 0 2px #fff, 0 0 2px #fff; font-size: 16px; line-height: 18px; text-align: center; }
-.pin-spot { color: #00577a; font-size: 13px; }
-.pin-peak { color: #8a6a4a; font-size: 12px; line-height: 14px; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
-[data-theme="contrast"] .pin-peak { color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+.pin-spot { color: #00577a; text-shadow: 0 0 2px #fff, 0 0 2px #fff; font-size: 13px; line-height: 18px; text-align: center; }
+/* Mountains with a CWA forecast: solid dark triangle; other OSM peaks: outlined, lighter, smaller. */
+.pin-mtn svg, .pin-peak svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.pin-mtn svg path { fill: #5b3a1a; stroke: #fff; stroke-width: 1.6; stroke-linejoin: round; }
+.pin-peak svg path { fill: rgba(255, 255, 255, .85); stroke: #8a5a2b; stroke-width: 1.8; stroke-linejoin: round; }
+[data-theme="contrast"] .pin-mtn svg path { fill: #ff0; stroke: #000; }
+[data-theme="contrast"] .pin-peak svg path { fill: #000; stroke: #ff0; }
+.tog-ic { display: inline-block; width: 1em; height: 1em; vertical-align: -.1em; margin-right: .2em; }
 [data-theme="contrast"] .pin-mtn, [data-theme="contrast"] .pin-spot { color: #ff0; text-shadow: 0 0 2px #000, 0 0 2px #000; }
 .epi { color: #c00; font-size: 26px; font-weight: 900; text-align: center; line-height: 28px; text-shadow: 0 0 3px #fff; }
 .ty-icon { font-size: 26px; line-height: 30px; text-align: center; }
@@ -119,8 +123,8 @@ a { color: var(--accent); }
 
 /* ---------- legend (collapsible <details>) */
 .legend {
-  position: fixed; right: calc(var(--u) * .5); top: var(--legend-top, calc(var(--u) * 6.2)); z-index: 1001; background: var(--card); color: var(--fg); border: 1px solid var(--line);
-  border-radius: calc(var(--u) * .5); max-height: 55vh; overflow: auto; max-width: min(calc(var(--u) * 16), 70vw); box-shadow: var(--shadow); font-size: calc(var(--u) * .8);
+  position: fixed; right: var(--legend-right, calc(var(--u) * .5)); top: auto; bottom: var(--legend-bottom, 9rem); z-index: 1001; background: var(--card); color: var(--fg); border: 1px solid var(--line);
+  border-radius: calc(var(--u) * .5); max-height: var(--legend-max-h, 55vh); overflow: auto; max-width: min(calc(var(--u) * 16), 70vw); box-shadow: var(--shadow); font-size: calc(var(--u) * .8);
 }
 .legend summary { cursor: pointer; padding: calc(var(--u) * .35) calc(var(--u) * .6); font-weight: 700; list-style-position: inside; min-height: calc(var(--u) * 2.75); }
 .legend summary .when { font-weight: 400; display: block; color: var(--muted); }
@@ -172,15 +176,13 @@ body.opts-open .legend { display: none !important; }
   .sheet-grab { display: none; }
   body.sheet-open #map, body.sheet-open .controls, body.sheet-open .status, body.sheet-open .topbar { margin-right: min(26rem, 55vw); }
   .toggles { font-size: calc(var(--u) * .85); }
-  .legend { top: var(--legend-top, calc(var(--u) * 5)); max-height: 60vh; }
+
 }
 @media (min-width: 900px) {
   .sheet { left: auto; top: 3.6rem; width: min(30rem, 42vw); height: auto; border-radius: 0; border-left: 1px solid var(--line); }
   .sheet.full { width: min(48rem, 70vw); height: auto; }
   body.sheet-open #map, body.sheet-open .controls, body.sheet-open .status { margin-right: min(30rem, 42vw); }
   body.sheet-open.sheet-full #map, body.sheet-open.sheet-full .controls, body.sheet-open.sheet-full .status { margin-right: min(48rem, 70vw); }
-  .legend { right: calc(var(--u) * .5); }
-  body.sheet-open .legend { right: calc(min(30rem, 42vw) + .5rem); }
   body.sheet-open .legend { display: block; }
 }
 .place { margin: .2rem 0 .5rem; color: var(--muted); }
@@ -285,7 +287,6 @@ summary::-webkit-details-marker { display: none; }
 @media (min-width: 900px) {
   .sheet.mini { bottom: auto; }
   body.sheet-open.sheet-mini #map, body.sheet-open.sheet-mini .controls, body.sheet-open.sheet-mini .status { margin-right: 0; }
-  body.sheet-open.sheet-mini .legend { right: .5rem; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
   /* keep the top bar buttons reachable: park the minimised header bottom-right */
@@ -344,30 +345,50 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .tog-all { font-size: calc(var(--u) * .85); min-height: calc(var(--u) * 2); }
 .cat-legend { width: 100%; margin-top: calc(var(--u) * .3); }
 .cat-legend summary { cursor: pointer; color: var(--muted); min-height: calc(var(--u) * 2); }
-.cat-legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 8), 1fr)); gap: calc(var(--u) * .3); }
+.cat-legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--u) * .3); }
 .cat-legend li { display: flex; align-items: center; gap: calc(var(--u) * .35); }
 .tog-all { display: inline-flex; gap: calc(var(--u) * .8); }
 .tog-all .link:disabled { color: var(--muted); text-decoration: none; cursor: default; opacity: .6; }
-.opts-sec { width: 100%; border-top: 1px solid var(--line); margin-top: calc(var(--u) * .4); padding-top: calc(var(--u) * .3); }
-.opts-sec > summary { cursor: pointer; font-weight: 700; min-height: calc(var(--u) * 2.4); display: flex; align-items: center; }
-.opts-sec .field { display: flex; flex-direction: column; gap: calc(var(--u) * .2); margin: calc(var(--u) * .4) 0; }
-.opts-sec .field select { font: inherit; min-height: calc(var(--u) * 2.4); }
-.opts-sec .note { font-size: calc(var(--u) * .8); color: var(--muted); margin: calc(var(--u) * .2) 0; }
-.opts-sec .tog { display: flex; }
 /* Collapsible layer bar */
 .controls[hidden] { display: none !important; }
 .tools .bar-hide { margin-left: auto; }
 .bar-show[hidden] { display: none !important; }
 .bar-show { font-size: var(--u); margin-bottom: calc(var(--u) * 1.6) !important; max-width: 70vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Always-visible colour bar in the legend header */
-.lg-strip { display: block; margin-top: calc(var(--u) * .3); font-weight: 400; }
-.lg-strip .cells { display: flex; height: calc(var(--u) * .75); border: 1px solid rgba(0, 0, 0, .45); }
+/* Always-visible vertical colour bar in the legend (highest class on top) */
+.lg-strip { position: relative; display: flex; gap: 4px; margin-top: calc(var(--u) * .3); font-weight: 400; }
+.lg-strip .cells { display: flex; flex-direction: column; width: 14px; height: calc(var(--n, 12) * var(--ch, 12px)); border: 1px solid rgba(0, 0, 0, .45); }
 .lg-strip .cells > span { flex: 1; }
-.lg-strip .ticks { position: relative; display: block; height: max(calc(var(--u) * 1.05), 16px); font-size: max(calc(var(--u) * .65), 12px); color: var(--fg); }
-.lg-strip .ticks > span { position: absolute; top: 0; transform: translateX(-2px); white-space: nowrap; }
-.lg-strip .grad { display: block; }
-.lg-strip .grad-lbl { display: flex; }
-.legend { min-width: min(calc(var(--u) * 13), 60vw); }
+.lg-strip .ticks { position: relative; display: block; min-width: 3.2em; height: calc(var(--n, 12) * var(--ch, 12px)); font-size: 12px; line-height: 1; color: var(--fg); }
+.lg-strip .ticks > span { position: absolute; left: 0; transform: translateY(50%); white-space: nowrap; }
+.lg-strip.grad-v .grad { display: block; width: 14px; height: 132px; border: 1px solid rgba(0, 0, 0, .45); margin: 0; }
+.lg-strip.grad-v .ticks { height: 132px; }
+.legend[open] .lg-strip { display: none; }
+.legend:not([open]) { max-width: 9.5em; }
+.legend:not([open]) summary .when { font-size: 12px; }
 .lg-spacing { margin: calc(var(--u) * .3) 0; }
 #q-results .sub { display: block; font-size: .8rem; color: var(--muted); margin-top: .1rem; }
+/* Panel contents never widen the options panel. */
+.map-opts .more > * { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.map-opts .toggles { width: 100%; }
+.cat-legend li { min-width: 0; overflow-wrap: anywhere; }
+.map-opts .more { flex-wrap: nowrap; }
+.map-opts .more > * { flex: none; }
+
+/* Wind arrows (downwind) with the Beaufort number */
+.wind-mk .wa { position: relative; display: block; width: 30px; height: 30px; }
+.wind-mk svg { position: absolute; inset: 0; width: 30px; height: 30px; fill: none; stroke: var(--c); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000); }
+.wind-mk b { position: absolute; right: -6px; bottom: -4px; min-width: 15px; height: 15px; padding: 0 2px; box-sizing: border-box; border-radius: 8px;
+  background: #fff; color: #000; border: 1px solid #333; font: 700 11px/13px system-ui, sans-serif; text-align: center; }
+/* Lightning strikes coloured by age; in-cloud strikes outlined */
+.lt-mk svg { width: 16px; height: 16px; fill: var(--c); stroke: #000; stroke-width: .8; stroke-linejoin: round; }
+.lt-mk.cloud svg { fill: #fff; stroke: var(--c); stroke-width: 1.6; }
+.opts-ui { display: flex; align-items: center; gap: calc(var(--u) * .6); width: 100%; margin-top: calc(var(--u) * .3); }
+.opts-ui .seg-btn { min-height: calc(var(--u) * 2.4); }
+/* My position: white dot with a blue ring */
+.my-loc span { display: block; width: 20px; height: 20px; box-sizing: border-box; border-radius: 50%; background: #fff; border: 4px solid #1a73e8; box-shadow: 0 0 0 2px #fff, 0 1px 5px rgba(0, 0, 0, .5); }
+[data-theme="contrast"] .my-loc span { border-color: #ff0; box-shadow: 0 0 0 2px #000; }
+.legend[open] summary { position: sticky; top: 0; background: var(--card); z-index: 1; }
+/* An opened legend may grow over the options button when the map is short (large text, small screens). */
+.legend[open] { max-height: var(--legend-open-max-h, 60vh); }

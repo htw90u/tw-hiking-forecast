@@ -30,17 +30,22 @@ function log(level, msg) {
   fs.appendFileSync(logFile, line + '\n');
   console.log(color ? line.replace(level, `${C[level] || ''}${level}\x1b[0m`) : line);
 }
+let currentPage = null; // screenshot target when a check fails
 async function check(name, fn) {
-  try { await fn(); log('PASS', name); } catch (e) { failures += 1; log('FAIL', `${name}: ${e.message.split('\n')[0]}`); }
+  try { await fn(); log('PASS', name); } catch (e) {
+    failures += 1;
+    const shot = path.join(SHOTS, `FAIL-${failures}.png`);
+    if (currentPage) await currentPage.screenshot({ path: shot }).catch(() => {});
+    log('FAIL', `${name}: ${e.message.split('\n')[0]} (screenshot ${shot})`);
+  }
 }
 const PNG1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 function assert(c, m) { if (!c) throw new Error(m || 'assertion failed'); }
 // Layer chips toggle: tapping the active one turns the layer off, so only tap when not selected.
-// Interface settings live in the map options panel (選項 → 介面與顯示).
-async function openUiOptions(page) {
+// The text / icon switch is in the map options panel; other display settings in 設定.
+async function openOptions(page) {
   if (!(await page.isVisible('#more'))) await page.click('#btn-more');
-  if (!(await page.getAttribute('#opts-ui', 'open') !== null)) await page.click('#opts-ui > summary');
-  await page.waitForSelector('#set-fs', { state: 'visible' });
+  await page.waitForSelector('#opts-ui [data-ui]', { state: 'visible' });
 }
 async function selectLayerOn(page, sel) {
   if ((await page.getAttribute(sel, 'aria-checked')) !== 'true') await page.click(sel);
@@ -79,6 +84,7 @@ function serve() {
   // External map tiles are not needed for the tests; answer them locally.
   await ctx.route(/opentopomap|nlsc\.gov\.tw|openstreetmap|windy\.com/, (r) => r.fulfill({ status: 204, body: '' }));
   const page = await ctx.newPage();
+  currentPage = page;
   const selectLayer = (sel) => selectLayerOn(page, sel);
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -348,11 +354,12 @@ function serve() {
     await page.click('#sheet-close');
     assert(!(await page.evaluate(async () => (await import('./js/state.js')).S.quakeMode)), 'quake mode not cleared on close');
     assert((await page.$$('img.wx-grid')).length > 0, 'weather layer not restored after closing the quake view');
-    await openUiOptions(page);
-    await page.$eval('#set-fs', (el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page.click('#btn-settings');
+    await page.waitForSelector('#set-fs');
+    await page.$eval('#set-fs', (el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.selectOption('#set-theme', 'contrast');
     await page.selectOption('#set-pal', 'cvd');
-    await page.click('#btn-more');
+    await page.keyboard.press('Escape');
     const fs_ = await page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
     assert(fs_ === '32px', `font-size ${fs_}`);
     assert((await page.getAttribute('html', 'data-theme')) === 'contrast', 'theme');
@@ -398,7 +405,8 @@ function serve() {
     await selectLayer('.chip[data-layer="radar"]');
     await page.waitForFunction(() => document.querySelector('.chip[data-layer="radar"]')?.getAttribute('aria-checked') === 'true');
     await page.click('.chip[data-layer="radar"]');
-    await page.waitForFunction(() => document.querySelector('.chip[data-layer="none"]')?.getAttribute('aria-checked') === 'true');
+    await page.waitForFunction(() => !document.querySelector('.chip[aria-checked="true"]'));
+    assert(!(await page.$('.chip[data-layer="none"]')), 'the 關閉圖層 chip should be gone');
     assert((await page.$$('img.wx-grid')).length === 0, 'weather overlay still shown after toggling off');
     await page.click('.chip[data-layer="radar"]');
     await page.waitForFunction(() => document.querySelector('.chip[data-layer="radar"]')?.getAttribute('aria-checked') === 'true');
@@ -428,7 +436,10 @@ function serve() {
     assert(btn.y >= map.y && btn.y < map.y + 60 && btn.x + btn.width > map.x + map.width - 60, `button not at the map top-right ${JSON.stringify(btn)}`);
     assert(!(await page.locator('#controls #btn-more').count()), 'options button still in the bottom controls');
     const lg = await page.locator('#legend').boundingBox();
-    if (lg) assert(lg.y >= btn.y + btn.height, 'legend overlaps the options button');
+    if (lg) {
+      assert(lg.y >= btn.y + btn.height, 'legend overlaps the options button');
+      assert(lg.y + lg.height <= map.y + map.height && lg.x + lg.width <= map.x + map.width + 1, `legend not at the map's bottom-right ${JSON.stringify(lg)}`);
+    }
     await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.47, 120.96], 11, { animate: false }); });
     await page.click('#btn-more');
     await page.check('[data-lbl="mountains"]');
@@ -492,13 +503,14 @@ function serve() {
     assert(n === 13, `radar bar has ${n} cells`);
     await selectLayer('.chip[data-layer="rainacc"]');
     await page.waitForSelector('#legend [data-spacing]', { state: 'attached' });
+    assert((await page.getAttribute('#legend [data-spacing="small"]', 'aria-checked')) === 'true', 'large totals must not switch to 大間距 by themselves');
     await page.click('#legend summary');
     await page.click('#legend [data-spacing="big"]');
     await page.waitForFunction(() => [...document.querySelectorAll('#legend summary .ticks > span')].some((t) => t.textContent === '1500'));
     assert(await page.evaluate(async () => (await import('./js/state.js')).S.settings.rainSpacing === 'big'), 'spacing not saved');
     await page.screenshot({ path: path.join(SHOTS, 'legend-big.png') });
-    await page.click('#legend [data-spacing="auto"]');
-    await page.waitForFunction(() => document.querySelector('#legend [data-spacing="auto"]')?.getAttribute('aria-checked') === 'true');
+    await page.click('#legend [data-spacing="small"]');
+    await page.waitForFunction(() => document.querySelector('#legend [data-spacing="small"]')?.getAttribute('aria-checked') === 'true');
     await page.click('#legend summary');
     await selectLayer('.chip[data-layer="radar"]');
   });
@@ -516,11 +528,78 @@ function serve() {
     const r = await page.evaluate(async () => {
       const { S } = await import('./js/state.js');
       const c = S.typhoon.cyclones[0]; const cur = c.past[c.past.length - 1];
-      return { on: S.map.hasLayer(S.overlays.typhoon), inView: S.map.getBounds().contains([cur.lat, cur.lon]) };
+      const c0 = S.map.getCenter();
+      return { on: S.map.hasLayer(S.overlays.typhoon), inView: S.map.getBounds().contains([cur.lat, cur.lon]), centre: [c0.lat, c0.lng] };
     });
     assert(r.on, 'typhoon overlay not shown at start-up');
-    assert(r.inView, 'typhoon position not in the initial view');
+    assert(Math.abs(r.centre[0] - 23.75) < 0.05 && Math.abs(r.centre[1] - 121.0) < 0.05, `Taiwan not centred: ${r.centre}`);
     await page.screenshot({ path: path.join(SHOTS, 'typhoon-default.png') });
+  });
+
+  await check('wind layer: township Beaufort colours, mountain arrows, time slider, station observations', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="wind"]');
+    await page.waitForSelector('.wind-mk');
+    const st = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      let filled = 0;
+      S.layer.overlay.eachLayer((l) => { if (l.eachLayer) l.eachLayer((p) => { if (p.options.fillOpacity > 0) filled += 1; }); });
+      return { filled, arrows: document.querySelectorAll('.wind-mk').length, steps: S.wind.times.length };
+    });
+    assert(st.filled > 300 && st.arrows >= 5, `wind layer ${JSON.stringify(st)}`);
+    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 12, 'Beaufort colour bar');
+    const before = await page.textContent('#legend summary .when');
+    await page.$eval('#wind-frame', (i) => { i.value = String(Number(i.max)); i.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page.waitForFunction((b) => document.querySelector('#legend summary .when')?.textContent !== b, before);
+    await page.screenshot({ path: path.join(SHOTS, 'wind.png') });
+    await page.click('[data-windmode="obs"]');
+    await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('測站'));
+    assert((await page.$$('.wind-mk')).length > 50, 'station wind arrows missing');
+    await page.click('[data-windmode="fc"]');
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
+  await check('lightning layer: strikes by age; nearby strikes raise the hiking risk', async () => {
+    const now = Date.now();
+    const iso = (m) => new Date(now - m * 60e3).toISOString();
+    const lt = { start: iso(60), end: iso(0), count: 2, strikes: [
+      { lat: 23.48, lon: 120.95, t: iso(3), cloud: false, ka: -31.2 }, { lat: 23.6, lon: 121.1, t: iso(45), cloud: true, ka: null }] };
+    await ctx.route(/data\/lightning\.json/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(lt) }));
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    await selectLayer('.chip[data-layer="lightning"]');
+    await page.waitForSelector('.lt-mk');
+    assert((await page.$$('.lt-mk')).length === 2 && (await page.$$('.lt-mk.cloud')).length === 1, 'strike markers');
+    assert((await page.textContent('#legend summary')).includes('2 次'), 'legend count');
+    await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.47, 120.957); });
+    await page.waitForSelector('#sheet.open #h-risk');
+    assert((await page.textContent('#sheet-body')).includes('閃電'), 'lightning not in the risk reasons');
+    await page.click('#sheet-close');
+    await ctx.unroute(/data\/lightning\.json/);
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
+  await check('Taiwan centred after a reload; my position shown as a white dot', async () => {
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    await page.waitForTimeout(800);
+    const c = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const m = document.getElementById('map').getBoundingClientRect();
+      const p = S.map.latLngToContainerPoint([23.75, 121.0]);
+      return { dx: Math.abs(p.x - m.width / 2), dy: Math.abs(p.y - m.height / 2) };
+    });
+    assert(c.dx < 3 && c.dy < 3, `Taiwan not in the middle of the map: ${JSON.stringify(c)}`);
+    await ctx.grantPermissions(['geolocation']);
+    await ctx.setGeolocation({ latitude: 24.38, longitude: 121.23, accuracy: 30 });
+    await page.click('#btn-locate');
+    await page.waitForSelector('.my-loc span');
+    await page.waitForSelector('#sheet.open #h-risk');
+    const bg = await page.$eval('.my-loc span', (e) => getComputedStyle(e).backgroundColor);
+    assert(bg === 'rgb(255, 255, 255)', `dot colour ${bg}`);
+    await page.click('#sheet-close').catch(() => {});
   });
 
   await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {
@@ -601,8 +680,9 @@ function serve() {
   });
 
   await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {
-    await openUiOptions(page);
-    await page.selectOption('#set-ui', 'icon');
+    await openOptions(page);
+    assert(!(await page.$('#more #set-theme')), 'full display settings should stay in 設定');
+    await page.click('#opts-ui [data-ui="icon"]');
     await page.click('#btn-more');
     assert((await page.getAttribute('html', 'data-ui')) === 'icon', 'data-ui not icon');
     assert(await page.$('#tabbar .actions-top #btn-settings'), 'actions not moved to the tab bar');
@@ -613,8 +693,8 @@ function serve() {
     await page.reload();
     await page.waitForSelector('body.ready');
     assert((await page.getAttribute('html', 'data-ui')) === 'icon', 'icon UI not persisted');
-    await openUiOptions(page);
-    await page.selectOption('#set-ui', 'text');
+    await openOptions(page);
+    await page.click('#opts-ui [data-ui="text"]');
     await page.click('#btn-more');
     assert(await page.$('.topbar > .actions-top #btn-settings'), 'actions not back in the top bar');
     assert(!(await page.isVisible('#tabbar')), 'tab bar visible in text UI');
