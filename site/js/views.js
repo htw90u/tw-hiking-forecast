@@ -8,7 +8,7 @@ import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
 import { assess, LEVELS } from './safety.js';
-import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId } from './store.js';
+import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRecent, deleteRecent, deleteFav } from './store.js';
 
 // ------------------------------------------------------------------ sheet
 const stack = [];
@@ -676,20 +676,34 @@ ${w.bulletins.map((b) => html`<section class="card"><h3>${b.title}</h3><p class=
 }
 
 // ------------------------------------------------------------------ recent & favourites
-export async function showRecent() {
+export async function showRecent({ replace = false } = {}) {
   const [rec, fav] = await Promise.all([listRecent(), listFav()]);
-  const item = (x, kind) => html`<li><button class="link" data-rid="${x.id}" data-kind="${kind}">${x.title}</button>
-<span class="meta">${kind === 'recent' ? `查詢於 ${fmtTime(x.savedAt)}` : `${x.lat.toFixed(3)}, ${x.lon.toFixed(3)}`}</span></li>`;
+  const item = (x, kind) => html`<li class="row-del"><span class="grow"><button class="link" data-rid="${x.id}" data-kind="${kind}">${x.title}</button>
+<span class="meta">${kind === 'recent' ? `查詢於 ${fmtTime(x.savedAt)}` : `${x.lat.toFixed(3)}, ${x.lon.toFixed(3)}`}</span></span>
+<button class="icon-btn del" data-del="${x.id}" data-kind="${kind}" aria-label="${kind === 'recent' ? '刪除這筆查詢紀錄' : '取消收藏'}：${x.title}" title="${kind === 'recent' ? '刪除' : '取消收藏'}"><span aria-hidden="true">✕</span></button></li>`;
   const body = html`<section class="card"><h3>收藏地點</h3>${fav.length ? html`<ul class="list">${fav.map((x) => item(x, 'fav'))}</ul>` : html`<p>尚無收藏。查詢地點後按「☆ 收藏」。</p>`}</section>
-<section class="card"><h3>最近查詢（可離線瀏覽）</h3>${rec.length ? html`<ul class="list">${rec.map((x) => item(x, 'recent'))}</ul>` : html`<p>尚無紀錄。</p>`}</section>
-<p class="note">最近 40 筆查詢會保存在此裝置，沒有網路時仍可開啟當時的資料快照。</p>`;
+<section class="card"><h3>最近查詢（可離線瀏覽）</h3>${rec.length ? html`<ul class="list">${rec.map((x) => item(x, 'recent'))}</ul>
+<button class="btn" id="btn-clear-recent">清空最近查詢（${rec.length} 筆）</button>` : html`<p>尚無紀錄。</p>`}</section>
+<p class="note">最近 40 筆查詢會保存在此裝置，沒有網路時仍可開啟當時的資料快照。清空最近查詢不會影響收藏。</p>`;
   openSheet('收藏與最近查詢', body, {
-    onRender: (root) => root.querySelectorAll('[data-rid]').forEach((b) => b.addEventListener('click', async () => {
-      const entry = b.dataset.kind === 'recent' ? await getRecent(b.dataset.rid) : fav.find((f) => f.id === b.dataset.rid);
-      if (!entry) return;
-      if (navigator.onLine || !entry.html) { flyTo(entry.lat, entry.lon); showPoint(entry.lat, entry.lon, { label: entry.title }); return; }
-      showSnapshot(entry);
-    })),
+    replace,
+    onRender: (root) => {
+      root.querySelectorAll('[data-rid]').forEach((b) => b.addEventListener('click', async () => {
+        const entry = b.dataset.kind === 'recent' ? await getRecent(b.dataset.rid) : fav.find((f) => f.id === b.dataset.rid);
+        if (!entry) return;
+        if (navigator.onLine || !entry.html) { flyTo(entry.lat, entry.lon); showPoint(entry.lat, entry.lon, { label: entry.title }); return; }
+        showSnapshot(entry);
+      }));
+      root.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+        if (b.dataset.kind === 'recent') await deleteRecent(b.dataset.del); else await deleteFav(b.dataset.del);
+        showRecent({ replace: true });
+      }));
+      root.querySelector('#btn-clear-recent')?.addEventListener('click', async () => {
+        if (!window.confirm(`確定要清空 ${rec.length} 筆最近查詢紀錄嗎？收藏地點會保留。`)) return;
+        await clearRecent();
+        showRecent({ replace: true });
+      });
+    },
   });
 }
 

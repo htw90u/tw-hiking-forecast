@@ -369,6 +369,32 @@ function serve() {
     await ctx.setOffline(false);
   });
 
+  await check('recent queries: delete one, clear all (confirmed), favourites kept', async () => {
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    // make one favourite from a fresh point query
+    const box = await page.locator('#map').boundingBox();
+    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.35);
+    await page.waitForSelector('#sheet.open #btn-fav');
+    await page.click('#btn-fav');
+    await page.waitForFunction(() => document.querySelector('#btn-fav').textContent.includes('已收藏'));
+    await page.click('#sheet-close');
+    await page.click('#btn-recent');
+    await page.waitForSelector('[data-kind="recent"][data-del]');
+    const n0 = await page.$$eval('[data-kind="recent"][data-del]', (b) => b.length);
+    await page.click('[data-kind="recent"][data-del] >> nth=0');
+    await page.waitForFunction((n) => document.querySelectorAll('[data-kind="recent"][data-del]').length === n - 1, n0);
+    let asked = '';
+    page.once('dialog', (d) => { asked = d.message(); d.accept(); });
+    if (n0 > 1) {
+      await page.click('#btn-clear-recent');
+      await page.waitForFunction(() => !document.querySelector('[data-kind="recent"][data-del]'));
+      assert(asked.includes('收藏地點會保留'), `confirm text: ${asked}`);
+    }
+    assert((await page.$$('[data-kind="fav"][data-del]')).length >= 1, 'favourite was removed by clearing recents');
+    await page.click('#sheet-close');
+  });
+
   await check('desktop layout screenshot', async () => {
     const p2 = await ctx.newPage();
     await p2.setViewportSize({ width: 1366, height: 860 });

@@ -78,6 +78,18 @@ export async function listFav() {
   try { return (await all('fav')).sort((a, b) => b.savedAt.localeCompare(a.savedAt)); } catch { return []; }
 }
 
+export async function clearRecent() {
+  await tx('recent', 'readwrite', (s) => s.clear());
+}
+
+export async function deleteRecent(id) {
+  await tx('recent', 'readwrite', (s) => s.delete(id));
+}
+
+export async function deleteFav(id) {
+  await tx('fav', 'readwrite', (s) => s.delete(id));
+}
+
 export async function clearAll() {
   await tx('recent', 'readwrite', (s) => s.clear());
   await tx('fav', 'readwrite', (s) => s.clear());

@@ -277,3 +277,6 @@ summary::-webkit-details-marker { display: none; }
 .grad-lbl { display: flex; justify-content: space-between; font-size: .75rem; }
 .attr { border-top: 1px solid var(--line); margin-top: .4rem; padding-top: .3rem; font-size: .8rem; }
 .attr p { margin: .2rem 0; }
+ul.list li.row-del { flex-direction: row; align-items: center; gap: .3rem; }
+li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.icon-btn.del { flex: none; color: var(--muted); font-size: 1rem; }
