@@ -42,6 +42,57 @@ def _km(lat1, lon1, lat2, lon2):
     return math.hypot(dx, dy)
 
 
+# CWA hiking-forecast coordinates can be a few km from the summit: an OSM peak with the same
+# name within this distance is taken as that mountain's true position.
+MATCH_KM = 5.0
+
+
+def norm_name(n):
+    """'奇萊主峰' / '奇萊主山' -> '奇萊': CWA and OSM differ in how they name main summits."""
+    return re.sub(r"(主峰|主山)$", "", (n or "").strip())
+
+
+def same_name(a, b):
+    return a == b or norm_name(a) == norm_name(b)
+
+
+def match_cwa(data, cwa_spots):
+    """{spot key: [lat, lon, ele, osm id]} — the nearest same-name OSM peak within MATCH_KM of each CWA mountain."""
+    nodes = []
+    for el in data.get("elements", []):
+        if el.get("type") == "node" and "lat" in el:
+            name = pick_name(el.get("tags", {}))
+            if name:
+                nodes.append((name, el["lat"], el["lon"], parse_ele(el.get("tags", {}).get("ele")), el.get("id")))
+    out = {}
+    for k, n, lat, lon in cwa_spots:
+        cands = [(d, x) for x in nodes if same_name(n, x[0]) and (d := _km(lat, lon, x[1], x[2])) <= MATCH_KM]
+        if cands:
+            _, (_, la, lo, ele, osm) = min(cands)
+            out[k] = [round(la, 5), round(lo, 5), ele, osm]
+    return out
+
+
+def annotate_spots(out_dir, matches, locator):
+    """Add the township ('a') to every spot and the OSM summit position ('plat', 'plon', 'ele') to matched mountains."""
+    idx = out_dir / "spots" / "index.json"
+    if not idx.exists():
+        return 0
+    doc = json.loads(idx.read_text(encoding="utf-8"))
+    for s in doc.get("spots", []):
+        m = matches.get(s["k"]) if s.get("c") == "mountain" else None
+        if m:
+            s["plat"], s["plon"], s["ele"] = m[0], m[1], m[2]
+        else:
+            for f in ("plat", "plon", "ele"):
+                s.pop(f, None)
+        s["a"] = geo.area_names(locator.locate_all(s.get("plat", s["lat"]), s.get("plon", s["lon"])))
+    tmp = idx.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(idx)
+    return sum(1 for s in doc.get("spots", []) if "plat" in s)
+
+
 def parse_ele(v):
     """'3952', '3952 m', '3,952.5' -> float metres; None when missing or implausible for Taiwan."""
     if v is None:
@@ -65,7 +116,7 @@ def parse(data, cwa_mountains=()):
     """Overpass JSON -> [[name, lat, lon, ele, osm_id], ...], highest first.
 
     cwa_mountains: iterable of (name, lat, lon) for CWA hiking spots; a peak with the
-    same name within 2 km is dropped. Same-name peaks closer than 200 m are merged.
+    same name (see same_name) within MATCH_KM is dropped: the map shows the forecast mountain. Same-name peaks closer than 200 m are merged.
     """
     cwa = list(cwa_mountains)
     out = []
@@ -79,7 +130,7 @@ def parse(data, cwa_mountains=()):
         lat, lon = el["lat"], el["lon"]
         if not (BBOX[0] <= lat <= BBOX[2] and BBOX[1] <= lon <= BBOX[3]):
             continue
-        if any(n == name and _km(lat, lon, la, lo) <= 2 for n, la, lo in cwa):
+        if any(same_name(n, name) and _km(lat, lon, la, lo) <= MATCH_KM for n, la, lo in cwa):
             continue
         if any(p[0] == name and _km(lat, lon, p[1], p[2]) < 0.2 for p in out):
             continue
@@ -143,27 +194,30 @@ def enrich(rows, locator, lists):
     return out
 
 
-def _write(dest, now, rows, lists):
+def _write(dest, now, rows, lists, matches):
     obj = {"time": now.isoformat(), "source": "OpenStreetMap (natural=peak)", "license": "ODbL-1.0",
            "areaSource": "內政部行政區界（taiwan-atlas）", "fields": FIELDS, "listsVersion": lists_version(lists),
-           "lists": [{"id": x["id"], "label": x.get("label", x["id"])} for x in lists], "peaks": rows}
+           "lists": [{"id": x["id"], "label": x.get("label", x["id"])} for x in lists], "cwaMatch": matches, "peaks": rows}
     tmp = dest.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     tmp.replace(dest)
 
 
 def build(out_dir, log, now, fetch=None, force=False, topo_path=TOPO, lists_dir=LISTS_DIR):
-    """Write peaks.json; returns (count, refreshed?)."""
+    """Write peaks.json and annotate spots/index.json; returns (count, refreshed?)."""
     dest = out_dir / "peaks.json"
     lists = load_lists(lists_dir)
-    locator = None
+    locator = geo.TownLocator(geo.load_topo(topo_path))
     prev = None
     if dest.exists():
         try:
             prev = json.loads(dest.read_text(encoding="utf-8"))
         except ValueError:
             prev = None
-    if prev and not force:
+    idx = out_dir / "spots" / "index.json"
+    spots = json.loads(idx.read_text(encoding="utf-8")).get("spots", []) if idx.exists() else []
+    cwa = [(s["k"], s["n"], s["lat"], s["lon"]) for s in spots if s.get("c") == "mountain"]
+    if prev and not force and "cwaMatch" in prev:
         try:
             age = now - datetime.fromisoformat(prev["time"])
         except (KeyError, ValueError):
@@ -171,25 +225,23 @@ def build(out_dir, log, now, fetch=None, force=False, topo_path=TOPO, lists_dir=
         if age < MAX_AGE:
             # Same OSM download, but older format or changed peak lists: add area / tags without refetching.
             if prev.get("fields") != FIELDS or prev.get("listsVersion") != lists_version(lists):
-                locator = geo.TownLocator(geo.load_topo(topo_path))
                 rows = enrich(prev.get("peaks", []), locator, lists)
-                _write(dest, datetime.fromisoformat(prev["time"]), rows, lists)
+                _write(dest, datetime.fromisoformat(prev["time"]), rows, lists, prev["cwaMatch"])
+            annotate_spots(out_dir, prev["cwaMatch"], locator)
             return len(prev.get("peaks", [])), False
-    cwa = []
-    idx = out_dir / "spots" / "index.json"
-    if idx.exists():
-        spots = json.loads(idx.read_text(encoding="utf-8")).get("spots", [])
-        cwa = [(s["n"], s["lat"], s["lon"]) for s in spots if s.get("c") == "mountain"]
     try:
         data = (fetch or fetch_overpass)(log)
     except FetchError:
         if prev:
             log.warn("peaks: Overpass unavailable, keeping the previous list")
+            annotate_spots(out_dir, prev.get("cwaMatch", {}), locator)
             return len(prev.get("peaks", [])), False
+        annotate_spots(out_dir, {}, locator)  # townships for the spots even without OSM data
         raise
-    peaks = parse(data, cwa)
+    peaks = parse(data, [(n, la, lo) for _, n, la, lo in cwa])
     if not peaks:
         raise FetchError("Overpass returned no named peaks")
-    locator = locator or geo.TownLocator(geo.load_topo(topo_path))
-    _write(dest, now, enrich(peaks, locator, lists), lists)
+    matches = match_cwa(data, cwa)
+    _write(dest, now, enrich(peaks, locator, lists), lists, matches)
+    annotate_spots(out_dir, matches, locator)
     return len(peaks), True

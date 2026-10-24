@@ -141,9 +141,15 @@ function buildOverlays() {
   o.peaks = L.layerGroup([], { attribution: '山頭 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)' });
 
   o.quakes = L.layerGroup();
-  S.quakes.filter((q) => Date.now() - new Date(q.time).getTime() < 7 * 864e5).forEach((q) => {
-    const m = L.circleMarker([q.lat, q.lon], { radius: 4 + q.mag * 2, color: '#b00020', weight: 2, fillColor: '#ff5a5f', fillOpacity: 0.35, pane: 'spots' });
-    m.bindTooltip(`地震 M${q.mag}<br>${esc(fmtTime(q.time))}・最大震度 ${intText(q.maxInt)}`);
+  // Strong quakes of the last 3 days get the separate warning icon instead (buildStrongQuakes).
+  S.quakes.filter((q) => Date.now() - new Date(q.time).getTime() < 7 * 864e5)
+    .filter((q) => !(isStrongQuake(q) && Date.now() - new Date(q.time).getTime() < STRONG_QUAKE_MS)).forEach((q) => {
+    // Badge with the magnitude; size grows with magnitude, last 24 h drawn darker.
+    const size = Math.round(20 + Math.max(0, q.mag - 3) * 6);
+    const recent = Date.now() - new Date(q.time).getTime() < 864e5;
+    const icon = L.divIcon({ className: `eq-mk${recent ? ' recent' : ''}`, iconSize: [size, size], html: `<span>${esc(Number(q.mag).toFixed(1))}</span>` });
+    const m = L.marker([q.lat, q.lon], { icon, pane: 'spots', title: `地震 規模${q.mag}`, alt: `地震 規模${q.mag}`, keyboard: true });
+    m.bindTooltip(`地震 規模 ${q.mag}<br>${esc(fmtTime(q.time))}・最大震度 ${intText(q.maxInt)}`);
     m.on('click', (e) => { L.DomEvent.stop(e); showQuake(q); });
     o.quakes.addLayer(m);
   });
@@ -341,16 +347,25 @@ function buildChips() {
 
 function buildOverlayToggles() {
   const MK = (cls, svg) => `<span class="${cls} tog-ic" aria-hidden="true">${svg}</span>`;
-  const items = [['stations', '測站'], ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['peaks', `${MK('pin-peak', PEAK_SVG)}其他山頭`], ['spots', '景點'], ['quakes', '地震'], ['typhoon', '颱風']];
+  // Rows: observations and hazards / forecast mountains and spots / all peaks ('|' starts a new row).
+  const items = [['stations', '觀測站'], ['quakes', '地震'], ['typhoon', '颱風'], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', '景點'], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
   const box = document.getElementById('toggles');
-  const names = [['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['peaks', `${MK('pin-peak', PEAK_SVG)}其他山頭`], ['spots', '景點'], ['stations', '測站']];
+  const names = [['stations', '觀測站'], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', '景點'], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
   const group = (id, title, attr, list, state) => `<div class="tog-group" role="group" aria-labelledby="${id}-t">
 <div class="tog-head"><span class="tog-lbl" id="${id}-t">${title}</span><span class="tog-all"><button type="button" class="link" data-all="${attr}" data-on="1">全選</button><button type="button" class="link" data-all="${attr}" data-on="0">全部取消</button></span></div>
-${list.map(([k, label]) => `<label class="tog"><input type="checkbox" data-${attr}="${k}"${state[k] ? ' checked' : ''}> ${label}</label>`).join('')}</div>`;
+${list.map((x) => (x === '|' ? '<span class="tog-row" aria-hidden="true"></span>' : `<label class="tog"><input type="checkbox" data-${attr}="${x[0]}"${state[x[0]] ? ' checked' : ''}> ${x[1]}</label>`)).join('')}</div>`;
   const cats = S.spotCats.filter((c) => c.id !== 'mountain' && S.spots.some((p) => p.c === c.id));
   box.innerHTML = group('tg-ov', '地圖標記', 'ov', items, S.settings.overlays)
     + group('tg-lbl', '顯示名稱', 'lbl', names, S.settings.labels)
-    + `<details class="cat-legend"><summary>景點圖示說明</summary><ul>${cats.map((c) => `<li><span class="pin-cat cat-${c.id}" aria-hidden="true">${spotIcon(c.id)}</span>${esc(c.label)}</li>`).join('')}</ul></details>`;
+    + `<details class="cat-legend"><summary>圖示說明</summary><ul>
+<li><span class="lg-dot" style="background:#fff" aria-hidden="true"></span>氣象站（溫度、風、雨量）</li>
+<li><span class="lg-dot" style="background:#9ec5ff" aria-hidden="true"></span>雨量站（只有雨量）</li>
+<li>${MK('pin-mtn', MTN_SVG)}有氣象署登山預報的山</li>
+<li>${MK('pin-peak', PEAK_SVG)}山頭（OSM，無預報）</li>
+<li><span class="eq-mk lg-eq" aria-hidden="true"><span>4.5</span></span>地震（數字為規模，7 天內）</li>
+<li><span class="lg-strong" aria-hidden="true"><span class="eq-core">震</span></span>強震（震度 5 弱以上或規模 6 以上）</li>
+<li><span class="my-loc lg-me" aria-hidden="true"><span></span></span>我的位置</li>
+${cats.map((c) => `<li><span class="pin-cat cat-${c.id}" aria-hidden="true">${spotIcon(c.id)}</span>${esc(c.label)}</li>`).join('')}</ul></details>`;
   const apply = { ov: applyOverlayVisibility, lbl: updateLabels };
   const store = { ov: S.settings.overlays, lbl: S.settings.labels };
   // 全選 is disabled when everything is on, 全部取消 when everything is off.
@@ -713,7 +728,12 @@ async function loadData() {
   S.peaks = (peaks?.peaks || []).map(([n, lat, lon, ele, osm, area, tags]) => ({ k: `osm-${osm}`, n, lat, lon, ele, area: area || '', tags: tags || [] }));
   S.stations = st?.stations || [];
   S.stationsTime = st?.time;
-  S.spots = spots?.spots || [];
+  // Mountain forecast points snapped to their OSM summit by the pipeline (CWA coordinates can be km off).
+  S.spots = (spots?.spots || []).map((p) => (p.plat ? { ...p, cwaLat: p.lat, cwaLon: p.lon, lat: p.plat, lon: p.plon } : p));
+  // A peak that is a forecast mountain is shown only once, as the forecast mountain.
+  const normName = (n) => n.replace(/(主峰|主山)$/, '');
+  const mtns = S.spots.filter((p) => p.c === 'mountain');
+  S.peaks = S.peaks.filter((pk) => !mtns.some((m) => normName(m.n) === normName(pk.n) && Math.abs(m.lat - pk.lat) < 0.05 && Math.abs(m.lon - pk.lon) < 0.05));
   S.spotCats = spots?.categories || [];
   S.quakes = quakes?.quakes || [];
   S.typhoon = typhoon;

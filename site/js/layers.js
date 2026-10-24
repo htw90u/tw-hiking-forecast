@@ -263,12 +263,14 @@ async function showWind(keepFrame) {
   // Mountain hiking forecasts: ridges are windier than the township centres. Strongest first, and
   // arrows closer than 34 px to one already drawn are skipped (they reappear when zooming in).
   const placed = [];
+  const spotPos = Object.fromEntries(S.spots.map((p) => [p.k, p]));
   w.mountains.filter((m) => m.w[0][i] !== null && m.w[2][i] !== null).sort((a, b) => (b.w[1][i] ?? 0) - (a.w[1][i] ?? 0)).forEach((m) => {
     const [bf, wd] = [m.w[1][i], m.w[2][i]];
-    const pt = S.map.latLngToLayerPoint([m.lat, m.lon]);
+    const sp = spotPos[m.k] || m; // snapped summit position when available
+    const pt = S.map.latLngToLayerPoint([sp.lat, sp.lon]);
     if (placed.some((q) => q.distanceTo(pt) < 34)) return;
     placed.push(pt);
-    L.marker([m.lat, m.lon], { icon: windArrow(wd * 45, bf, hex(bf)), keyboard: false, pane: 'spots', zIndexOffset: 200 })
+    L.marker([sp.lat, sp.lon], { icon: windArrow(wd * 45, bf, hex(bf)), keyboard: false, pane: 'spots', zIndexOffset: 200 })
       .bindTooltip(`${esc(m.n)}（登山預報）：${windText(m.w, i)}`).addTo(ov);
   });
   finishOverlay(ov);
@@ -398,14 +400,26 @@ ${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm
   const title = meta.title ? `<img class="qpf-title" src="data/${esc(meta.title)}" alt="氣象署原圖標題（含發布與有效時間）">` : '';
   const note = meta.note ? `<p class="note">${esc(meta.note)}</p>` : '';
   const qpfNote = meta.kind === 'class' ? '<p class="note">由氣象署定量降水預報圖自動對位轉換；時間以原圖標題為準。</p>' : '';
-  el.innerHTML = `<summary>${esc(meta.label || def.label)}<span class="when">${esc(when)}</span>${strip}</summary>
-<div class="lg-body">${title}${body}${note}${qpfNote}${attribution(meta)}</div>`;
+  // Collapsed, the legend shows only the unit, time and colour bar; the layer name is inside.
+  const name = (meta.label || def.label).replace(/（雨量站內插）/, '');
+  el.innerHTML = `<summary><span class="lg-unit">${esc(legendUnit(kind, meta.unit || def.unit))}</span><span class="when">${esc(when)}</span>${strip}</summary>
+<div class="lg-body"><p class="lg-name"><strong>${esc(name)}</strong></p>${title}${body}${note}${qpfNote}${attribution(meta)}</div>`;
   el.querySelectorAll('[data-spacing]').forEach((b) => b.addEventListener('click', () => {
     S.settings.rainSpacing = b.dataset.spacing;
     saveSettings(S.settings);
     showLayer(S.layer.id, { keepFrame: true });
   }));
   el.hidden = false;
+}
+
+/** Short unit line for the collapsed legend. */
+function legendUnit(kind, unit) {
+  if (kind === 'wind') return '蒲福風級';
+  if (kind === 'ltage') return '閃電・發生時間';
+  if (kind === 'intensity') return '震度';
+  if (kind === 'vis') return '反照率';
+  if (kind === 'irgray' || kind === 'irenh') return '單位 °C（雲頂）';
+  return unit ? `單位 ${unit}` : '';
 }
 
 /** Always-visible colour bar (like the CWA maps): one cell per class, boundary values underneath. */

@@ -503,3 +503,22 @@ def test_lightning_kmz(tmp_path):
     first, second = r["strikes"]
     assert first == {"lat": 23.5, "lon": 121.1, "t": "2026-10-24T15:01:02+08:00", "cloud": False, "ka": -23.5}
     assert second["cloud"] and second["t"] == "2026-10-24T14:40:00+08:00" and second["ka"] is None
+
+
+def test_cwa_mountain_snapped_to_osm_summit(tmp_path):
+    log = Log("t", tmp_path)
+    (tmp_path / "spots").mkdir()
+    spots = [{"k": "mountain-D001", "n": "雪山主峰", "c": "mountain", "lat": 24.40, "lon": 121.25},   # ~2.6 km off
+             {"k": "mountain-D002", "n": "測試峰", "c": "mountain", "lat": 23.0, "lon": 121.0},
+             {"k": "park-A1", "n": "成功", "c": "park", "lat": 23.1, "lon": 121.37}]
+    (tmp_path / "spots" / "index.json").write_text(json.dumps({"spots": spots}, ensure_ascii=False), encoding="utf-8")
+    now = datetime(2026, 10, 24, 12, tzinfo=TZ)
+    peaks.build(tmp_path, log, now, fetch=lambda _log: OVERPASS_SAMPLE, lists_dir=tmp_path / "none")
+    saved = json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))
+    assert "雪山" not in [p[0] for p in saved["peaks"]]                  # shown once, as the forecast mountain
+    assert abs(saved["cwaMatch"]["mountain-D001"][0] - 24.383) < 0.001  # "雪山" matches "雪山主峰"
+    idx = {s["k"]: s for s in json.loads((tmp_path / "spots" / "index.json").read_text(encoding="utf-8"))["spots"]}
+    assert abs(idx["mountain-D001"]["plat"] - 24.383) < 0.001 and idx["mountain-D001"]["ele"] == 3886
+    assert "plat" not in idx["mountain-D002"]
+    assert idx["mountain-D001"]["a"].startswith("臺中市和平區") and idx["park-A1"]["a"] == "臺東縣成功鎮"
+    log.close()

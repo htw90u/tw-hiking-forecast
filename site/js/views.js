@@ -883,7 +883,7 @@ export function search(q) {
   const s = q.trim();
   if (!s) return [];
   const res = [];
-  S.spots.forEach((x) => { if (x.n.includes(s)) res.push({ type: x.c === 'mountain' ? '山' : '景點', label: x.n, lat: x.lat, lon: x.lon, spot: x.k }); });
+  S.spots.forEach((x) => { if (x.n.includes(s)) res.push({ type: x.c === 'mountain' ? '山' : '景點', label: `${x.n}${x.ele ? `（${x.ele} m）` : ''}`, sub: [x.a, x.c === 'mountain' ? '有登山預報' : S.spotCats.find((c) => c.id === x.c)?.label].filter(Boolean).join('・'), lat: x.lat, lon: x.lon, spot: x.k }); });
   S.peaks.forEach((x) => { if (x.n.includes(s)) res.push({ type: '山', label: `${x.n}${x.ele ? `（${x.ele} m）` : ''}`, sub: peakSub(x), lat: x.lat, lon: x.lon, peak: x }); });
   S.stations.forEach((x) => { if (x.n && x.n.includes(s)) res.push({ type: '測站', label: `${x.n}（${x.county || ''}${x.town || ''}）`, lat: x.lat, lon: x.lon, station: x.id }); });
   S.towns.forEach((f) => {

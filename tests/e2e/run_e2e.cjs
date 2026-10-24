@@ -103,7 +103,8 @@ function serve() {
     await page.waitForSelector('img.wx-grid', { timeout: 15000 });
     assert(await page.isVisible('#legend'), 'legend hidden');
     const t = await page.textContent('#legend summary');
-    assert(t.includes('雷達'), `legend title ${t}`);
+    assert(t.includes('單位 dBZ') && !t.includes('雷達'), `collapsed legend should show the unit only: ${t}`);
+    assert((await page.textContent('#legend .lg-name')).includes('雷達'), 'layer name missing inside the legend');
   });
 
   await check('grid PNG decodes exactly (browser vs pipeline encoding)', async () => {
@@ -157,7 +158,7 @@ function serve() {
     const checked = await page.$eval('[data-period][aria-checked="true"]', (b) => b.textContent.trim());
     assert(checked === '過去24小時', `default period ${checked}`);
     await page.click(`[data-period="${labels.indexOf('過去7天')}"]`);
-    await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('7天'));
+    await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('7天'));
     const top = await page.$eval('#legend .swatches li:first-child', (e) => e.textContent);
     assert(top.includes('1000') || top.includes('1500'), `legend top class ${top}`);
   });
@@ -182,7 +183,7 @@ function serve() {
     if (has6) {
       await page.click('[data-qpfmode="6"]');
       await page.waitForFunction(() => document.querySelectorAll('[data-period]').length >= 4);
-      await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('6小時'));
+      await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('6小時'));
       const lbl = await page.$$eval('[data-period]', (b) => b.map((x) => x.textContent));
       assert(lbl.every((t) => t.includes('–')), `6h period labels lack an interval: ${lbl.slice(0, 2)}`);
       await page.screenshot({ path: path.join(SHOTS, 'qpf6-mobile.png') });
@@ -192,7 +193,7 @@ function serve() {
     await page.click('[data-qpfmode="acc"]');
     await page.waitForFunction(() => [...document.querySelectorAll('[data-period]')].map((b) => b.textContent).join() === '未來24小時,未來48小時');
     await page.click('[data-period="1"]');
-    await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('48'));
+    await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('48'));
     const lg = await page.textContent('#legend');
     for (const want of ['非中央氣象署發布之預報', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0035-015']) assert(lg.includes(want), `legend lacks ${want}`);
     await page.click('[data-qpfmode="12"]');
@@ -553,7 +554,7 @@ function serve() {
     await page.waitForFunction((b) => document.querySelector('#legend summary .when')?.textContent !== b, before);
     await page.screenshot({ path: path.join(SHOTS, 'wind.png') });
     await page.click('[data-windmode="obs"]');
-    await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('測站'));
+    await page.waitForFunction(() => document.querySelector('#legend .lg-name')?.textContent.includes('測站'));
     assert((await page.$$('.wind-mk')).length > 50, 'station wind arrows missing');
     await page.click('[data-windmode="fc"]');
     await selectLayer('.chip[data-layer="radar"]');
@@ -606,7 +607,7 @@ function serve() {
     await selectLayer('.chip[data-layer="lightning"]');
     await page.waitForSelector('.lt-mk');
     assert((await page.$$('.lt-mk')).length === 2 && (await page.$$('.lt-mk.cloud')).length === 1, 'strike markers');
-    assert((await page.textContent('#legend summary')).includes('2 次'), 'legend count');
+    assert((await page.textContent('#legend .lg-name')).includes('2 次'), 'legend count');
     await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.47, 120.957); });
     await page.waitForSelector('#sheet.open #h-risk');
     assert((await page.textContent('#sheet-body')).includes('閃電'), 'lightning not in the risk reasons');
@@ -636,6 +637,27 @@ function serve() {
     const bg = await page.$eval('.my-loc span', (e) => getComputedStyle(e).backgroundColor);
     assert(bg === 'rgb(255, 255, 255)', `dot colour ${bg}`);
     await page.click('#sheet-close').catch(() => {});
+  });
+
+  await check('quake badges, mountains snapped/deduplicated, spot township in search, marker toggle order', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    const st = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const v = await import('./js/views.js');
+      const sp = S.spots.find((p) => p.c === 'mountain' && p.a);
+      const r = sp ? v.search(sp.n).find((x) => x.spot === sp.k) : null;
+      const recentQ = S.quakes.filter((q) => Date.now() - new Date(q.time).getTime() < 7 * 864e5).length;
+      return { sub: r?.sub || '', name: sp?.n, recentQ, badges: document.querySelectorAll('.eq-mk').length };
+    });
+    assert(st.sub.includes('縣') || st.sub.includes('市'), `spot search result without township: ${JSON.stringify(st)}`);
+    assert(st.recentQ === 0 || st.badges > 0, 'earthquake badges missing');
+    const order = await page.$$eval('[data-ov]', (e) => e.map((x) => x.dataset.ov));
+    assert(order.join() === 'stations,quakes,typhoon,mountains,spots,peaks', `toggle order ${order}`);
+    if (!(await page.isVisible('#toggles'))) await page.click('#btn-more');
+    await page.click('.cat-legend summary');
+    await page.screenshot({ path: path.join(SHOTS, 'icon-legend.png') });
+    await page.click('.cat-legend summary');
+    await page.click('#btn-more');
   });
 
   await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {

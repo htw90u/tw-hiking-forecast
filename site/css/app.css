@@ -380,7 +380,7 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .wind-mk svg { position: absolute; inset: 0; width: 30px; height: 30px; fill: none; stroke: var(--c); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
   filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000); }
 .wind-mk b { position: absolute; right: -6px; bottom: -4px; min-width: 15px; height: 15px; padding: 0 2px; box-sizing: border-box; border-radius: 8px;
-  background: #fff; color: #000; border: 1px solid #333; font: 700 11px/13px system-ui, sans-serif; text-align: center; }
+  background: #fff; color: #000; border: 1px solid #333; font: 700 12px/13px system-ui, sans-serif; text-align: center; }
 /* Lightning strikes coloured by age; in-cloud strikes outlined */
 .lt-mk svg { width: 16px; height: 16px; fill: var(--c); stroke: #000; stroke-width: .8; stroke-linejoin: round; }
 .lt-mk.cloud svg { fill: #fff; stroke: var(--c); stroke-width: 1.6; }
@@ -392,3 +392,15 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .legend[open] summary { position: sticky; top: 0; background: var(--card); z-index: 1; }
 /* An opened legend may grow over the options button when the map is short (large text, small screens). */
 .legend[open] { max-height: var(--legend-open-max-h, 60vh); }
+/* Earthquake badges: magnitude inside, darker in the last 24 h */
+.eq-mk > span { display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box; border-radius: 50%;
+  background: rgba(255, 140, 0, .85); color: #000; border: 2px solid #7a3d00; font: 700 12px/1 system-ui, sans-serif; box-shadow: 0 1px 3px rgba(0, 0, 0, .4); letter-spacing: -.3px; }
+.eq-mk.recent > span { background: #e65100; color: #fff; border-color: #fff; }
+[data-theme="contrast"] .eq-mk > span { background: #000; color: #ff0; border-color: #ff0; }
+.tog-row { flex-basis: 100%; height: 0; }
+.legend summary .lg-unit { display: block; }
+.lg-name { margin-top: 0 !important; }
+.lg-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #222; margin: 0 .3em 0 .2em; vertical-align: middle; }
+.cat-legend .lg-eq, .cat-legend .lg-strong, .cat-legend .lg-me { position: relative; display: inline-block; width: 22px; height: 22px; margin-right: .3em; vertical-align: middle; flex: none; }
+.cat-legend .lg-strong .eq-core { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; background: #c62828; color: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px #c62828; font: 700 12px/1 system-ui, sans-serif; }
+.cat-legend .lg-me span { width: 16px; height: 16px; border-width: 3px; margin: 3px; }
