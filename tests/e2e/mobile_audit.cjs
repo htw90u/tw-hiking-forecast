@@ -89,9 +89,8 @@ async function audit(page, where) {
     log(a.nSmall ? 'FAIL' : 'PASS', `${tag} main: touch targets >= ${MIN_TARGET}px${a.nSmall ? ` (${a.nSmall} too small: ${a.small.join(' | ')})` : ''}`);
     log(a.tiny.length ? 'FAIL' : 'PASS', `${tag} main: text >= ${MIN_FONT}px${a.tiny.length ? ` (${a.tiny.join(' | ')})` : ''}`);
     await page.screenshot({ path: path.join(SHOTS, `${vp.name}-main.png`) });
-    // point panel
-    const box = await page.locator('#map').boundingBox();
-    await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.4);
+    // point panel: opened directly (a tap can land on a mountain marker, which opens that spot instead)
+    await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.62, 120.93); });
     await page.waitForSelector('#sheet.open #h-risk', { timeout: 20000 });
     await page.waitForSelector('#hist-out figure, #hist-out p', { timeout: 20000 });
     a = await audit(page, '#sheet');

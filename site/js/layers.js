@@ -222,7 +222,7 @@ export function renderLegend(meta, message) {
   const def = layerDef(S.layer.id);
   if (!S.legendInit) {
     // Expanded by default on wide screens, collapsed on phones; remembers the user's choice.
-    el.open = window.innerWidth >= 700;
+    el.open = window.innerWidth >= 700 && window.innerHeight >= 600;
     el.addEventListener('toggle', () => { S.legendOpen = el.open; });
     S.legendInit = true;
   }

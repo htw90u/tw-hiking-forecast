@@ -404,3 +404,34 @@ def test_peaks_build_cache_and_fallback(tmp_path):
     with pytest.raises(FetchError):
         peaks.build(tmp_path / "empty", log, now, fetch=boom)
     log.close()
+
+
+def test_peaks_area_and_list_tags(tmp_path):
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 24, 12, tzinfo=TZ)
+    lists = tmp_path / "lists"
+    lists.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
+    n, _ = peaks.build(out, log, now, fetch=lambda _log: OVERPASS_SAMPLE, lists_dir=lists)
+    saved = json.loads((out / "peaks.json").read_text(encoding="utf-8"))
+    assert saved["fields"] == peaks.FIELDS
+    rows = {r[0]: r for r in saved["peaks"]}
+    assert rows["雪山"][5] == "臺中市和平區／苗栗縣泰安鄉" and rows["雪山"][6] == []   # MOI townships (on a boundary), official 臺
+    # A new list re-tags the cached download without fetching again.
+    (lists / "baiyue.json").write_text(json.dumps({"id": "baiyue", "label": "百岳", "peaks": [
+        {"n": "雪山", "lat": 24.3835, "lon": 121.2315}, {"n": "七星山", "min_ele": 3000}]}, ensure_ascii=False), encoding="utf-8")
+
+    def boom(_log):
+        raise AssertionError("should not download")
+    assert peaks.build(out, log, now + timedelta(hours=1), fetch=boom, lists_dir=lists) == (n, False)
+    saved = json.loads((out / "peaks.json").read_text(encoding="utf-8"))
+    rows = {r[0]: r for r in saved["peaks"]}
+    assert rows["雪山"][6] == ["baiyue"] and rows["七星山"][6] == []    # no elevation -> no match
+    assert saved["lists"] == [{"id": "baiyue", "label": "百岳"}]
+    # Old-format file (no area) is upgraded in place.
+    old = dict(saved, fields=["n", "lat", "lon", "ele", "osm"], peaks=[r[:5] for r in saved["peaks"]])
+    (out / "peaks.json").write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+    peaks.build(out, log, now + timedelta(hours=2), fetch=boom, lists_dir=lists)
+    assert json.loads((out / "peaks.json").read_text(encoding="utf-8"))["peaks"][0][5]
+    log.close()

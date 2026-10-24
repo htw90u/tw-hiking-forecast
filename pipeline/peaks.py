@@ -1,17 +1,23 @@
 """Named mountain peaks in Taiwan from OpenStreetMap (natural=peak) via the Overpass API.
 
+Each peak also gets its county and township (MOI boundaries) so same-name peaks can be
+told apart, and optional list tags (百岳, 小百岳, ...) from pipeline/data/peak_lists/*.json.
+
 Data © OpenStreetMap contributors, Open Database License 1.0. Peaks change slowly,
 so the list is refreshed weekly and the previous file is kept when Overpass is
 unreachable. Peaks that are already CWA hiking forecast spots are left out so the
 map shows each mountain once.
 """
+import hashlib
 import json
 import math
 import re
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
+from pathlib import Path
 
+from . import geo
 from .fetch import SSL_CTX, USER_AGENT, FetchError
 
 OVERPASS = [
@@ -24,6 +30,10 @@ BBOX = (21.85, 118.1, 26.4, 122.1)
 QUERY = '[out:json][timeout:180];node["natural"="peak"]["name"]({},{},{},{});out body;'.format(*BBOX)
 MAX_AGE = timedelta(days=7)
 NAME_KEYS = ("name:zh-Hant", "name:zh_TW", "name:zh-TW", "name:zh", "name")
+FIELDS = ["n", "lat", "lon", "ele", "osm", "area", "tags"]
+ROOT = Path(__file__).resolve().parent.parent
+TOPO = ROOT / "site" / "geo" / "towns-10t.json"
+LISTS_DIR = Path(__file__).resolve().parent / "data" / "peak_lists"
 
 
 def _km(lat1, lon1, lat2, lon2):
@@ -92,9 +102,61 @@ def fetch_overpass(log, timeout=240):
     raise FetchError("all Overpass mirrors failed: " + " | ".join(errors))
 
 
-def build(out_dir, log, now, fetch=None, force=False):
+def load_lists(lists_dir=LISTS_DIR):
+    """Peak lists for tags: [{"id", "label", "match_km", "peaks": [{"n", "lat"?, "lon"?, "min_ele"?}]}]."""
+    out = []
+    for f in sorted(Path(lists_dir).glob("*.json")) if Path(lists_dir).is_dir() else []:
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if d.get("peaks"):
+            out.append(d)
+    return out
+
+
+def lists_version(lists) -> str:
+    return hashlib.sha1(json.dumps(lists, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def match_tags(name, lat, lon, ele, lists):
+    """List ids whose entries match by name and position (or, without coordinates, a minimum elevation)."""
+    tags = []
+    for lst in lists:
+        km = lst.get("match_km", 1.5)
+        for e in lst["peaks"]:
+            if e["n"] != name:
+                continue
+            if "lat" in e and "lon" in e:
+                ok = _km(lat, lon, e["lat"], e["lon"]) <= km
+            else:
+                ok = ele is not None and ele >= e.get("min_ele", 0)
+            if ok:
+                tags.append(lst["id"])
+                break
+    return tags
+
+
+def enrich(rows, locator, lists):
+    """[[n, lat, lon, ele, osm], ...] -> rows with area ('新竹縣關西鎮', or two joined by ／ on a boundary) and tags appended."""
+    out = []
+    for r in rows:
+        n, lat, lon, ele, osm = r[:5]
+        out.append([n, lat, lon, ele, osm, geo.area_names(locator.locate_all(lat, lon)), match_tags(n, lat, lon, ele, lists)])
+    return out
+
+
+def _write(dest, now, rows, lists):
+    obj = {"time": now.isoformat(), "source": "OpenStreetMap (natural=peak)", "license": "ODbL-1.0",
+           "areaSource": "內政部行政區界（taiwan-atlas）", "fields": FIELDS, "listsVersion": lists_version(lists),
+           "lists": [{"id": x["id"], "label": x.get("label", x["id"])} for x in lists], "peaks": rows}
+    tmp = dest.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(dest)
+
+
+def build(out_dir, log, now, fetch=None, force=False, topo_path=TOPO, lists_dir=LISTS_DIR):
     """Write peaks.json; returns (count, refreshed?)."""
     dest = out_dir / "peaks.json"
+    lists = load_lists(lists_dir)
+    locator = None
     prev = None
     if dest.exists():
         try:
@@ -107,6 +169,11 @@ def build(out_dir, log, now, fetch=None, force=False):
         except (KeyError, ValueError):
             age = MAX_AGE
         if age < MAX_AGE:
+            # Same OSM download, but older format or changed peak lists: add area / tags without refetching.
+            if prev.get("fields") != FIELDS or prev.get("listsVersion") != lists_version(lists):
+                locator = geo.TownLocator(geo.load_topo(topo_path))
+                rows = enrich(prev.get("peaks", []), locator, lists)
+                _write(dest, datetime.fromisoformat(prev["time"]), rows, lists)
             return len(prev.get("peaks", [])), False
     cwa = []
     idx = out_dir / "spots" / "index.json"
@@ -123,9 +190,6 @@ def build(out_dir, log, now, fetch=None, force=False):
     peaks = parse(data, cwa)
     if not peaks:
         raise FetchError("Overpass returned no named peaks")
-    obj = {"time": now.isoformat(), "source": "OpenStreetMap (natural=peak)", "license": "ODbL-1.0",
-           "fields": ["n", "lat", "lon", "ele", "osm"], "peaks": peaks}
-    tmp = dest.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(dest)
+    locator = locator or geo.TownLocator(geo.load_topo(topo_path))
+    _write(dest, now, enrich(peaks, locator, lists), lists)
     return len(peaks), True

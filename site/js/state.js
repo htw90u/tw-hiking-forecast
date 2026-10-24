@@ -8,7 +8,8 @@ export const S = {
   stationsTime: null,
   spots: [],
   spotCats: [],
-  peaks: [],     // OSM named peaks {k, n, lat, lon, ele} (not CWA forecast spots)
+  peaks: [],
+  peakLists: {},          // list tag id -> label (百岳, 小百岳, ...)     // OSM named peaks {k, n, lat, lon, ele} (not CWA forecast spots)
   quakes: [],
   typhoon: null,
   warnings: null,

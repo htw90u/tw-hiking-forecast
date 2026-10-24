@@ -168,7 +168,7 @@ function mountainsCard(lat, lon, maxKm = 20, excludeKey = null) {
     .filter((x) => x.d <= maxKm && x.it.k !== excludeKey).sort((a, b) => a.d - b.d).slice(0, 12);
   const btn = ({ it, kind, d }) => (kind === 'cwa'
     ? html`<button class="seg-btn mtn" data-spot="${it.k}" title="氣象署登山預報點"><span aria-hidden="true">▲</span> ${it.n} <small>${d.toFixed(1)} km・有登山預報</small></button>`
-    : html`<button class="seg-btn mtn osm" data-peak="${it.k}"><span aria-hidden="true">▲</span> ${it.n} <small>${it.ele ? `${it.ele} m・` : ''}${d.toFixed(1)} km</small></button>`);
+    : html`<button class="seg-btn mtn osm" data-peak="${it.k}"><span aria-hidden="true">▲</span> ${it.n} <small>${it.ele ? `${it.ele} m・` : ''}${it.area ? `${it.area}・` : ''}${d.toFixed(1)} km</small></button>`);
   return html`<section class="card" aria-labelledby="h-mtn"><h3 id="h-mtn">鄰近山域（${maxKm} km 內）</h3>
 ${list.length ? html`<div class="mtns">${list.map(btn)}</div>
 <p class="note">點山名可查看預報與安全評估。標示「有登山預報」的是氣象署登山預報點，其他山頭顯示鄰近鄉鎮預報。山頭資料 © OpenStreetMap contributors。</p>` : html`<p>${maxKm} km 內沒有已知山頭。</p>`}</section>`;
@@ -425,7 +425,7 @@ export async function showPoint(lat, lon, opts = {}) {
   }, S.settings.thresholds);
 
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
-  const placeLine = [peak?.ele ? `海拔 ${peak.ele} m` : null, town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
+  const placeLine = [peak?.tags?.length ? peak.tags.map((t) => S.peakLists[t] || t).join('・') : null, peak?.ele ? `海拔 ${peak.ele} m` : null, town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
   const near = spotsNear.slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
 
   const vrow = (label, k, unit, digits = 1, empty = '無資料') => {
@@ -817,12 +817,17 @@ export async function showAffected() {
 }
 
 // ------------------------------------------------------------------ search
+/** Peak subtitle in search results: township (same-name peaks are common) and list tags. */
+function peakSub(p) {
+  return [p.area, ...(p.tags || []).map((t) => S.peakLists[t] || t)].filter(Boolean).join('・');
+}
+
 export function search(q) {
   const s = q.trim();
   if (!s) return [];
   const res = [];
   S.spots.forEach((x) => { if (x.n.includes(s)) res.push({ type: x.c === 'mountain' ? '山' : '景點', label: x.n, lat: x.lat, lon: x.lon, spot: x.k }); });
-  S.peaks.forEach((x) => { if (x.n.includes(s)) res.push({ type: '山', label: `${x.n}${x.ele ? `（${x.ele} m）` : ''}`, lat: x.lat, lon: x.lon, peak: x }); });
+  S.peaks.forEach((x) => { if (x.n.includes(s)) res.push({ type: '山', label: `${x.n}${x.ele ? `（${x.ele} m）` : ''}`, sub: peakSub(x), lat: x.lat, lon: x.lon, peak: x }); });
   S.stations.forEach((x) => { if (x.n && x.n.includes(s)) res.push({ type: '測站', label: `${x.n}（${x.county || ''}${x.town || ''}）`, lat: x.lat, lon: x.lon, station: x.id }); });
   S.towns.forEach((f) => {
     const p = f.properties;

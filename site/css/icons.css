@@ -77,7 +77,7 @@
 .topbar .ty-btn { display: none !important; } /* text UI: the banner under the top bar carries the warning */
 @keyframes ty-pulse { 50% { transform: scale(1.5); opacity: .55; } }
 .ty-banner {
-  display: flex; align-items: center; gap: .4em; width: 100%; margin: .15em 0; padding: .3em .6em; min-height: 2.5em; text-align: left;
+  display: flex; align-items: center; gap: .4em; width: 100%; margin: .15em 0; padding: .3em .6em; min-height: max(2.5em, 44px); text-align: left;
   border: 0; border-radius: .5em; background: var(--lv2); color: #fff; font-weight: 700; cursor: pointer; line-height: 1.3;
 }
 .ty-banner .ty-more { margin-left: auto; font-weight: 400; white-space: nowrap; }
@@ -111,3 +111,18 @@
 [data-theme="contrast"] .eq-strong .eq-core, [data-theme="contrast"] .eq-strong .eq-tag { background: #000; color: #ff0; border-color: #ff0; }
 [data-theme="contrast"] .eq-strong .eq-pulse { border-color: #ff0; }
 img.eq-report { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+/* Phones held sideways: warning banners share one row and stay on one line. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .status { display: flex; flex-wrap: wrap; align-items: center; column-gap: .4em; }
+  .status .ty-banner { width: auto; flex: 1 1 40%; min-width: 0; margin: .1em 0; min-height: 44px; padding: .15em .5em; }
+  .status .ty-banner > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* Phones held sideways: layer chips and time controls share one row. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .controls:not([hidden]) { display: flex; align-items: center; gap: .5em; }
+  .controls .chips { flex: 1 1 auto; min-width: 0; padding-bottom: 0; }
+  .controls .tools { flex: 0 0 auto; max-width: 62%; flex-wrap: nowrap; }
+  .controls .time-ctl { flex-wrap: nowrap; min-width: 0; overflow-x: auto; }
+  .controls .tools .btn, .controls .tools .seg-btn { white-space: nowrap; flex: none; }
+  .controls .time-ctl input[type=range] { width: 7em; min-width: 4em; }
+}

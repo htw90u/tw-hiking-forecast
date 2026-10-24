@@ -60,7 +60,7 @@ a { color: var(--accent); }
 .search { flex: 1; position: relative; min-width: 0; }
 .search input { width: 100%; min-height: calc(var(--u) * 2.75); padding: calc(var(--u) * .45) calc(var(--u) * .7); border-radius: calc(var(--u) * .5); border: 2px solid transparent; background: var(--card); color: var(--fg); }
 #q-results {
-  position: absolute; left: 0; right: 0; top: 100%; margin: .2rem 0 0; padding: 0; list-style: none;
+  position: absolute; left: 0; right: auto; width: max(100%, min(24rem, calc(100vw - 1.5rem))); top: 100%; margin: .2rem 0 0; padding: 0; list-style: none;
   background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: .5rem; max-height: 60vh; overflow: auto; box-shadow: var(--shadow); z-index: 1200;
 }
 #q-results li { padding: .55rem .7rem; cursor: pointer; border-bottom: 1px solid var(--line); }
@@ -364,9 +364,10 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .lg-strip { display: block; margin-top: calc(var(--u) * .3); font-weight: 400; }
 .lg-strip .cells { display: flex; height: calc(var(--u) * .75); border: 1px solid rgba(0, 0, 0, .45); }
 .lg-strip .cells > span { flex: 1; }
-.lg-strip .ticks { position: relative; display: block; height: calc(var(--u) * 1.05); font-size: calc(var(--u) * .65); color: var(--fg); }
+.lg-strip .ticks { position: relative; display: block; height: max(calc(var(--u) * 1.05), 16px); font-size: max(calc(var(--u) * .65), 12px); color: var(--fg); }
 .lg-strip .ticks > span { position: absolute; top: 0; transform: translateX(-2px); white-space: nowrap; }
 .lg-strip .grad { display: block; }
 .lg-strip .grad-lbl { display: flex; }
 .legend { min-width: min(calc(var(--u) * 13), 60vw); }
 .lg-spacing { margin: calc(var(--u) * .3) 0; }
+#q-results .sub { display: block; font-size: .8rem; color: var(--muted); margin-top: .1rem; }

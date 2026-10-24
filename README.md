@@ -75,5 +75,6 @@ eslint site/js site/sw.js tests/e2e          # 前端 lint
 * 颱風各地區風力／24 小時雨量／總雨量預測表附有氣象署著作權聲明（未經書面授權不得向公眾提供），因此**預設不輸出**，網站改提供[氣象署颱風消息](https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html)連結。個人使用可執行 `python -m pipeline.build --typhoon-tables`；取得授權後在 GitHub Actions Variables 設定 `TYPHOON_TABLES=1` 即可在網站顯示。申請進度見 [docs/TODO.md](docs/TODO.md)。
 * 行政區界：[taiwan-atlas](https://github.com/dkaoster/taiwan-atlas)（MIT，資料來源內政部）。
 * 地圖：Leaflet（BSD-2）、OpenTopoMap（CC-BY-SA）、OpenStreetMap、內政部國土測繪中心；OpenCycleMap／Landscape／Outdoors（Maps © Thunderforest，需 API key：在 Actions Variables 設定 `THUNDERFOREST_KEY`，或在網站「設定 → 底圖」填入個人 key；未設定時改用等高線地形圖）。
-* 山頭：© OpenStreetMap contributors（ODbL），建置時由 Overpass API 取得 `natural=peak`，每週更新；與氣象署登山預報點同名且 2 km 內者不重複顯示。
+* 山頭：© OpenStreetMap contributors（ODbL），建置時由 Overpass API 取得 `natural=peak`，每週更新；與氣象署登山預報點同名且 2 km 內者不重複顯示。每座山頭附所在縣市鄉鎮（內政部行政區界，經 taiwan-atlas；位於界線 0.4 km 內的山同時列出兩邊，例如「臺中市和平區／苗栗縣泰安鄉」），搜尋結果與面板都會顯示，方便分辨同名山。
+* 山頭分類（百岳、小百岳等）：在 `pipeline/data/peak_lists/` 放清單 JSON 即會在建置時標記，格式見該資料夾 README；更新清單不需重新下載 OSM。
 * 本工具的安全評估為自動規則判斷，僅供參考，請以現場狀況與官方資訊為準。

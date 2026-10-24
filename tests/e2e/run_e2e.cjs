@@ -557,8 +557,13 @@ function serve() {
     assert(!(await page.$('#h-fc')), 'a CWA spot forecast should not be shown for an OSM peak');
     const attr = await page.textContent('.leaflet-control-attribution');
     assert(attr.includes('ODbL'), 'OSM peak attribution missing');
-    const res = await page.evaluate(async () => (await import('./js/views.js')).search('鹿林').map((r) => r.type));
-    assert(res.includes('山'), 'peak not found by search');
+    const res = await page.evaluate(async () => (await import('./js/views.js')).search('鹿林').map((r) => ({ type: r.type, sub: r.sub || '' })));
+    assert(res.some((r) => r.type === '山'), 'peak not found by search');
+    assert(res.some((r) => r.sub.includes('阿里山鄉') && r.sub.includes('測試清單')), `peak township / list tag missing: ${JSON.stringify(res)}`);
+    await page.fill('#q', '鹿林山');
+    await page.waitForSelector('#q-results .sub');
+    await page.screenshot({ path: path.join(SHOTS, 'search-peak-area.png') });
+    await page.fill('#q', '');
     await page.click('#sheet-close');
   });
 

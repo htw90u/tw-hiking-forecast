@@ -243,7 +243,8 @@ function updatePeaks() {
   list.forEach((p) => {
     const icon = L.divIcon({ className: 'pin-peak', html: '▲', iconSize: [14, 14] });
     const m = L.marker([p.lat, p.lon], { icon, title: p.n, alt: p.n, keyboard: false, pane: 'spots' });
-    m.bindTooltip(`${esc(p.n)}${p.ele ? ` ${p.ele} m` : ''}`, { direction: 'top', offset: [0, -6] });
+    const tags = p.tags.map((t) => S.peakLists[t] || t).join('・');
+    m.bindTooltip(`${esc(p.n)}${p.ele ? ` ${p.ele} m` : ''}${p.area || tags ? `<br><small>${esc([p.area, tags].filter(Boolean).join('・'))}</small>` : ''}`, { direction: 'top', offset: [0, -6] });
     m.on('click', () => showPoint(p.lat, p.lon, { peak: p }));
     g.addLayer(m);
   });
@@ -533,7 +534,7 @@ function bindSearch() {
   };
   input.addEventListener('input', () => {
     results = search(input.value);
-    list.innerHTML = results.map((r, i) => `<li role="option" id="qr-${i}" tabindex="-1" data-i="${i}"><span class="tag">${esc(r.type)}</span>${esc(r.label)}</li>`).join('');
+    list.innerHTML = results.map((r, i) => `<li role="option" id="qr-${i}" tabindex="-1" data-i="${i}"><span class="tag">${esc(r.type)}</span>${esc(r.label)}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}</li>`).join('');
     list.hidden = !results.length;
     input.setAttribute('aria-expanded', String(!list.hidden));
   });
@@ -676,7 +677,9 @@ async function loadData() {
     fetch('geo/towns-10t.json').then((r) => r.json()),
   ]);
   const peaks = await getJSON('peaks.json', { optional: true });
-  S.peaks = (peaks?.peaks || []).map(([n, lat, lon, ele, osm]) => ({ k: `osm-${osm}`, n, lat, lon, ele }));
+  // [name, lat, lon, ele, osm id, area ('新竹縣關西鎮'), list tags]; older files lack the last two.
+  S.peakLists = Object.fromEntries((peaks?.lists || []).map((l) => [l.id, l.label]));
+  S.peaks = (peaks?.peaks || []).map(([n, lat, lon, ele, osm, area, tags]) => ({ k: `osm-${osm}`, n, lat, lon, ele, area: area || '', tags: tags || [] }));
   S.stations = st?.stations || [];
   S.stationsTime = st?.time;
   S.spots = spots?.spots || [];
