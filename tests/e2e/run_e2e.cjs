@@ -170,7 +170,7 @@ function serve() {
     await page.click(`[data-period="${labels.indexOf('過去7天')}"]`);
     await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('7天'));
     const top = await page.$eval('#legend .swatches li:first-child', (e) => e.textContent);
-    assert(top.includes('1000') || top.includes('1500'), `legend top class ${top}`);
+    assert(top.includes('300'), `small-interval top class should be CWA's 300 mm+: ${top}`);
   });
 
   await check('QPF periods (4) and georeferenced overlay', async () => {
@@ -517,8 +517,25 @@ function serve() {
     assert((await page.getAttribute('#legend [data-spacing="small"]', 'aria-checked')) === 'true', 'large totals must not switch to 大間距 by themselves');
     await page.click('#legend summary');
     await page.click('#legend [data-spacing="big"]');
-    await page.waitForFunction(() => [...document.querySelectorAll('#legend summary .ticks > span')].some((t) => t.textContent === '1500'));
+    await page.waitForFunction(() => [...document.querySelectorAll('#legend summary .ticks > span')].some((t) => t.textContent === '2000'));
     assert(await page.evaluate(async () => (await import('./js/state.js')).S.settings.rainSpacing === 'big'), 'spacing not saved');
+    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 20, 'big-interval bar should have 20 classes');
+    const q = await page.evaluate(async () => {
+      const { scaleFor } = await import('./js/palettes.js');
+      const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+      const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      const out = {};
+      for (const pal of ['cwa', 'cvd']) {
+        const sc = scaleFor('rainbig', pal).map((x) => rgb(x[1]));
+        out[pal] = { distinct: new Set(sc.map(String)).size, minStep: Math.min(...sc.slice(1).map((c, i) => Math.hypot(...c.map((v, k) => v - sc[i][k])))),
+          lumMonotone: sc.slice(1).every((c, i) => lum(c) <= lum(sc[i]) + 1) };
+      }
+      const small = scaleFor('rainacc', 'cwa').map((x) => x[1]).join();
+      return { ...out, sameAsCwa: small === scaleFor('rain', 'cwa').map((x) => x[1]).join() };
+    });
+    assert(q.cwa.distinct === 20 && q.cwa.minStep > 45, `big-interval colours too close: ${JSON.stringify(q.cwa)}`);
+    assert(q.cvd.distinct === 20 && q.cvd.lumMonotone, `colour-blind big-interval ramp not ordered by lightness: ${JSON.stringify(q.cvd)}`);
+    assert(q.sameAsCwa, 'default accumulated-rain scale must be the CWA original');
     await page.screenshot({ path: path.join(SHOTS, 'legend-big.png') });
     await page.click('#legend [data-spacing="small"]');
     await page.waitForFunction(() => document.querySelector('#legend [data-spacing="small"]')?.getAttribute('aria-checked') === 'true');

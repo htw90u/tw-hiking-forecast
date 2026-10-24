@@ -387,11 +387,11 @@ export function renderLegend(meta, message) {
     }
     if (SPACING_KINDS.includes(kind) || meta.spacing) {
       const cur = S.settings.rainSpacing === 'big' ? 'big' : 'small';
-      const over = kind !== 'rainbig' && Number(meta.max ?? meta.tyMax) > 400;
+      const over = kind !== 'rainbig' && Number(meta.max ?? meta.tyMax) > 300;
       body = `<div class="seg lg-spacing" role="radiogroup" aria-label="色階間距">${[['small', '小間距'], ['big', '大間距']]
         .map(([k, l]) => `<button type="button" class="seg-btn" role="radio" data-spacing="${k}" aria-checked="${k === cur}">${l}</button>`).join('')}</div>
-<p class="note">${kind === 'rainbig' ? '目前為大間距色階（10、20、60、100…1500 mm）。' : '目前為小間距色階（1、2、6、10…300 mm 以上）。'}</p>
-${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm 超過 400 mm，氣象署建議改看大間距。</p>` : ''}${body}`;
+<p class="note">${kind === 'rainbig' ? '目前為大間距色階（1、10、20、60、100…2000 mm，色系依雨量換色）。' : '目前為小間距色階（氣象署原色，1、2、6、10…300 mm 以上）。'}</p>
+${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm 超過小間距最高級距（300 mm），可改選大間距看出差異。</p>` : ''}${body}`;
     }
   }
   let when = '';
@@ -439,11 +439,11 @@ function colourStrip(scale, kind) {
   const step = n > 13 ? 2 : 1;
   const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).reverse().join('');
   const lbls = scale.map((x, i) => {
-    if (i % step) return '';
+    if ((n - 1 - i) % step) return ''; // count down from the top class so the highest value is always labelled
     const text = kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
     return `<span style="bottom:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
   }).join('');
-  return `<span class="lg-strip" style="--n:${n};--ch:${n > 13 ? 9.5 : 12.5}px"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
+  return `<span class="lg-strip" style="--n:${n};--ch:${n > 16 ? 8 : n > 13 ? 9.5 : 12.5}px"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
 }
 
 /** Attribution block (顯名聲明); derived products carry the full statement and a disclaimer. */

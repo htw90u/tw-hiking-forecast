@@ -28,11 +28,6 @@ const CVD_TEMP = ['#08306b', '#08519c', '#2171b5', '#4292c6', '#6baed6', '#9ecae
 const CONTRAST_TEMP = ['#0000ff', '#0000ff', '#00a0ff', '#00a0ff', '#ffffff', '#ffffff', '#ffffff', '#ffff00',
   '#ffff00', '#ff8000', '#ff0000', '#ff0000'];
 
-// Accumulated rainfall can exceed 1000 mm in typhoons: extend the rain scale.
-const ACC_BOUNDS = [...RAIN_BOUNDS, 400, 500, 600, 800, 1000];
-const CWA_ACC = [...CWA_RAIN, '#e88ee8', '#c24ac2', '#8f1f8f', '#5c0a5c', '#2e002e'];
-const VIRIDIS_ACC = [...VIRIDIS17, '#3b0f50', '#2c0a3d', '#1d062a', '#100318', '#000000'];
-const CONTRAST_ACC = [...CONTRAST_RAIN, '#000000', '#000000', '#000000', '#000000', '#000000'];
 
 // Beaufort scale (wind forecast by township / mountain): value = Beaufort number.
 const BF_BOUNDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -46,8 +41,28 @@ const LT_LABELS = ['10 分鐘內', '10–20 分鐘前', '20–40 分鐘前', '40
 const CWA_LT = ['#ff1744', '#ff9100', '#ffd600', '#9e9e9e'];
 const CVD_LT = ['#440154', '#31688e', '#35b779', '#bdbdbd'];
 
-// CWA "大間距" (wide-interval) rainfall classes for large totals (CWA advises it above 400 mm).
-const BIG_BOUNDS = [1, 10, 20, 60, 100, 150, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1500];
+// "大間距" (wide-interval) rainfall classes for large totals, up to 2000 mm. Chosen by the user only; the default
+// is CWA's original small-interval scale above. This ramp changes hue family every few classes (blue -> green ->
+// yellow/orange -> red -> purple -> magenta -> lilac -> blue-grey -> near black) so that classes above 300 mm
+// are not confused with the 150-300 mm magenta of the original scale.
+const BIG_BOUNDS = [1, 10, 20, 60, 100, 150, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000];
+const BIG_RAIN = ['#9cfcff', '#03c8ff', '#059bff', '#0363ff', '#1b7f1b', '#2fd02f', '#d4d400', '#f0a000', '#ff5a00', '#d00000',
+  '#7a0000', '#8b1a8b', '#e020e0', '#f0b4f0', '#9a63c0', '#5b2d8e', '#8e9bb0', '#5d6a82', '#3d4a5f', '#1c2430'];
+// Colour-blind safe: viridis resampled to the same number of classes (lightness falls steadily with the amount).
+const BIG_CVD = resample(VIRIDIS17, BIG_BOUNDS.length);
+const BIG_CONTRAST = ['#ffffff', '#ffffff', '#ffff00', '#ffff00', '#ffaa00', '#ffaa00', '#ff5500', '#ff5500', '#ff0000', '#ff0000',
+  '#b00000', '#b00000', '#600060', '#600060', '#300030', '#300030', '#000000', '#000000', '#000000', '#000000'];
+
+/** n colours sampled evenly along a list of hex colours (linear in RGB). */
+function resample(colours, n) {
+  const rgb = colours.map((c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)));
+  return Array.from({ length: n }, (_, k) => {
+    const x = (k / (n - 1)) * (rgb.length - 1);
+    const i = Math.min(Math.floor(x), rgb.length - 2);
+    const t = x - i;
+    return `#${rgb[i].map((v, j) => Math.round(v + (rgb[i + 1][j] - v) * t).toString(16).padStart(2, '0')).join('')}`;
+  });
+}
 
 // CWA seismic intensity scale; the third element is the legend label.
 const INT_LABELS = ['1級', '2級', '3級', '4級', '5弱', '5強', '6弱', '6強', '7級'];
@@ -87,10 +102,11 @@ const VIS_GRAY = ramp([[0, [10, 10, 10]], [0.15, [90, 90, 90]], [0.4, [180, 180,
 export const SCALES = {
   rain: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   radar: { cwa: zip(RADAR_BOUNDS, CWA_RADAR), cvd: zip(RADAR_BOUNDS, VIRIDIS13), contrast: zip(RADAR_BOUNDS, CONTRAST_RADAR) },
-  rainacc: { cwa: zip(ACC_BOUNDS, CWA_ACC), cvd: zip(ACC_BOUNDS, VIRIDIS_ACC), contrast: zip(ACC_BOUNDS, CONTRAST_ACC) },
+  // Accumulated rain uses CWA's small-interval scale by default (top class: 300 mm and above).
+  rainacc: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   wind: { cwa: zip(BF_BOUNDS, CWA_BF, BF_LABELS), cvd: zip(BF_BOUNDS, CVD_BF, BF_LABELS), contrast: zip(BF_BOUNDS, CONTRAST_BF, BF_LABELS) },
   ltage: { cwa: zip(LT_BOUNDS, CWA_LT, LT_LABELS), cvd: zip(LT_BOUNDS, CVD_LT, LT_LABELS), contrast: zip(LT_BOUNDS, CWA_LT, LT_LABELS) },
-  rainbig: { cwa: zip(BIG_BOUNDS, CWA_RAIN), cvd: zip(BIG_BOUNDS, VIRIDIS17), contrast: zip(BIG_BOUNDS, CONTRAST_RAIN) },
+  rainbig: { cwa: zip(BIG_BOUNDS, BIG_RAIN), cvd: zip(BIG_BOUNDS, BIG_CVD), contrast: zip(BIG_BOUNDS, BIG_CONTRAST) },
   intensity: {
     cwa: zip(INT_BOUNDS, CWA_INT, INT_LABELS), cvd: zip(INT_BOUNDS, CVD_INT, INT_LABELS), contrast: zip(INT_BOUNDS, CONTRAST_INT, INT_LABELS),
   },
