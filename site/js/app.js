@@ -5,7 +5,7 @@ import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $ } from './util.
 import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
 import {
-  showPoint, closeSheet, sheetBack, showAlerts, showRecent, showAffected, showQuake, showTyphoon, search, flyTo,
+  showPoint, closeSheet, sheetBack, setSheetMini, showAlerts, showRecent, showAffected, showQuake, showTyphoon, search, flyTo,
 } from './views.js';
 import { clearAll } from './store.js';
 
@@ -116,6 +116,8 @@ function buildChips() {
   const items = LAYERS.filter((l) => !l.typhoonOnly || (S.typhoon?.active && (tyTables.rain24 || tyTables.rainTotal)));
   box.innerHTML = items.map((l) => `<button class="chip" role="radio" data-layer="${l.id}" aria-checked="${l.id === S.settings.layer}">${esc(l.label)}</button>`).join('');
   box.querySelectorAll('[data-layer]').forEach((b) => b.addEventListener('click', () => {
+    // Choosing a weather layer during the earthquake view shows it again.
+    if (S.layer.hidden) { setWeatherVisible(true); document.getElementById('legend').classList.remove('quake-hide'); }
     S.settings.layer = b.dataset.layer;
     saveSettings(S.settings);
     showLayer(b.dataset.layer);
@@ -288,11 +290,19 @@ function bindSheetSwipe() {
     if (y0 === null) return;
     const dy = e.changedTouches[0].clientY - y0;
     y0 = null;
-    if (getComputedStyle($('.sheet-grab')).display === 'none' || Math.abs(dy) < 50) return;
+    if (Math.abs(dy) < 50) return;
     const sh = $('#sheet');
-    if (dy < 0 && !sh.classList.contains('full')) $('#sheet-toggle').click();
-    else if (dy > 0 && sh.classList.contains('full')) $('#sheet-toggle').click();
-    else if (dy > 0) closeSheet();
+    const mini = sh.classList.contains('mini');
+    const full = sh.classList.contains('full');
+    // Down: full -> normal -> minimised (never closes; the close button does that).
+    if (dy > 0) {
+      if (full) $('#sheet-toggle').click();
+      else if (!mini) setSheetMini(true);
+    } else if (mini) {
+      setSheetMini(false);
+    } else if (!full && getComputedStyle($('.sheet-grab')).display !== 'none') {
+      $('#sheet-toggle').click();
+    }
   });
 }
 
@@ -342,8 +352,11 @@ async function main() {
 
   $('#sheet-close').addEventListener('click', closeSheet);
   $('#sheet-back').addEventListener('click', sheetBack);
+  $('#sheet-min').addEventListener('click', () => setSheetMini(!$('#sheet').classList.contains('mini')));
+  $('#sheet-title').addEventListener('click', () => { if ($('#sheet').classList.contains('mini')) setSheetMini(false); });
   $('#sheet-toggle').addEventListener('click', () => {
     const sh = $('#sheet');
+    if (sh.classList.contains('mini')) setSheetMini(false, { refit: false });
     const full = sh.classList.toggle('full');
     if (full) sh.classList.remove('peek');
     document.body.classList.toggle('sheet-full', full);

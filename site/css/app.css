@@ -254,3 +254,18 @@ summary::-webkit-details-marker { display: none; }
 .ring-lbl { color: #b00000; font-weight: 700; font-size: 12px; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff; white-space: nowrap; }
 .swatches.inline { display: flex; flex-wrap: wrap; gap: .2rem .7rem; }
 .legend.quake-hide { display: none !important; }
+
+/* Minimised sheet: header bar only, map highlights stay visible */
+.sheet.mini { height: auto !important; bottom: 0; }
+.sheet.mini .sheet-body { display: none; }
+.sheet.mini #sheet-title { cursor: pointer; }
+@media (min-width: 900px) {
+  .sheet.mini { bottom: auto; }
+  body.sheet-open.sheet-mini #map, body.sheet-open.sheet-mini .controls, body.sheet-open.sheet-mini .status { margin-right: 0; }
+  body.sheet-open.sheet-mini .legend { right: .5rem; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  /* keep the top bar buttons reachable: park the minimised header bottom-right */
+  .sheet.mini { top: auto; bottom: 0; width: min(20rem, 50vw); box-shadow: var(--shadow); }
+  body.sheet-open.sheet-mini #map, body.sheet-open.sheet-mini .controls, body.sheet-open.sheet-mini .status, body.sheet-open.sheet-mini .topbar { margin-right: 0; }
+}

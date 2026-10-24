@@ -241,6 +241,25 @@ function serve() {
     assert(await page.evaluate(async () => (await import('./js/state.js')).S.quakeMode), 'quake mode not set');
     assert((await page.$$('img.wx-grid:not(.shake)')).length === 0, 'weather layer should be hidden under the shakemap');
     await page.screenshot({ path: path.join(SHOTS, 'quake-mobile.png') });
+    // Minimise: header bar only, rings / intensity markers / shakemap stay on the map.
+    await page.click('#sheet-min');
+    await page.waitForTimeout(900);
+    const st = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const sh = document.getElementById('sheet').getBoundingClientRect();
+      const map = S.map.getBounds();
+      const ring = S.focusBounds;
+      return { h: sh.height, focus: S.focus.getLayers().length, quake: S.quakeMode,
+        labels: document.querySelectorAll('.ring-lbl').length, ringInView: map.contains(ring) };
+    });
+    assert(st.h < 90, `minimised sheet still ${st.h}px tall`);
+    assert(st.quake && st.focus > 0 && st.labels === 3, `highlights removed on minimise ${JSON.stringify(st)}`);
+    assert(st.ringInView, 'felt area / 50 km ring not fully in view after minimising');
+    assert(await page.$('img.shake'), 'shakemap removed on minimise');
+    await page.screenshot({ path: path.join(SHOTS, 'quake-minimised.png') });
+    await page.click('#sheet-min');
+    await page.waitForTimeout(300);
+    assert((await page.evaluate(() => document.getElementById('sheet').getBoundingClientRect().height)) > 200, 'sheet did not restore');
     await page.screenshot({ path: path.join(SHOTS, 'quake-mobile.png') });
   });
 

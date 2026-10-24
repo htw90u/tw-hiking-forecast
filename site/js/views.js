@@ -18,6 +18,8 @@ export function openSheet(title, body, { replace = false, onRender, peek = false
   const entry = { title, body, onRender };
   // peek: a low sheet so the map above stays visible (earthquake view).
   sheet.classList.toggle('peek', peek);
+  setSheetMini(false, { refit: false });
+  S.focusBounds = null;
   if (peek) { sheet.classList.remove('full'); document.body.classList.remove('sheet-full'); }
   setQuakeMode(quake);
   if (replace && stack.length) stack[stack.length - 1] = entry; else stack.push(entry);
@@ -55,11 +57,40 @@ function fitVisible(bounds) {
   const r = sheet.getBoundingClientRect();
   const m = S.map.getContainer().getBoundingClientRect();
   const side = r.left > m.left + 10; // side panel layout
-  const pad = side ? [Math.max(0, m.right - r.left) + 10, 10] : [10, Math.max(0, m.bottom - r.top) + 10];
-  S.map.fitBounds(bounds, { paddingTopLeft: [10, 10], paddingBottomRight: pad, animate: !S.settings.reduceMotion });
+  let tl = [10, 10];
+  let br = side ? [Math.max(0, m.right - r.left) + 10, 10] : [10, Math.max(0, m.bottom - r.top) + 10];
+  if (sheet.classList.contains('mini') && side && r.top > m.top + 10) {
+    // Minimised header parked at the bottom-right (phone landscape): nothing to avoid on the map.
+    br = [10, 10];
+  } else if (sheet.classList.contains('mini') && side) {
+    // Minimised side panel is only a header box in the top-right corner.
+    tl = [10, Math.max(10, r.bottom - m.top + 10)];
+    br = [10, 10];
+  }
+  S.map.fitBounds(bounds, { paddingTopLeft: tl, paddingBottomRight: br, animate: !S.settings.reduceMotion });
+}
+
+/**
+ * Minimise the sheet to its header bar. The map highlights (earthquake rings,
+ * intensity markers, shakemap, focus point) stay on the map.
+ */
+export function setSheetMini(on, { refit = true } = {}) {
+  const sheet = document.getElementById('sheet');
+  sheet.classList.toggle('mini', on);
+  document.body.classList.toggle('sheet-mini', on);
+  if (on) { sheet.classList.remove('full'); document.body.classList.remove('sheet-full'); }
+  const b = document.getElementById('sheet-min');
+  if (b) {
+    b.setAttribute('aria-expanded', String(!on));
+    b.setAttribute('aria-label', on ? '展開面板' : '縮小面板（保留地圖上的標示）');
+    b.firstElementChild.textContent = on ? '▴' : '▾';
+  }
+  if (refit && S.focusBounds) setTimeout(() => { S.map.invalidateSize(); fitVisible(S.focusBounds); }, 60);
 }
 
 export function closeSheet() {
+  setSheetMini(false, { refit: false });
+  S.focusBounds = null;
   setQuakeMode(false);
   stack.length = 0;
   const sheet = document.getElementById('sheet');
@@ -532,7 +563,7 @@ export async function showQuake(q) {
 <p>${q.loc}</p>
 <section class="card"><h3>地圖說明</h3>
 <p>${q.shake ? '彩色區塊：氣象署等震度圖（自動對位疊合）。' : '此筆地震沒有等震度圖（氣象署僅提供最新一筆顯著有感地震）。'}方塊數字：各測站實測震度。紅色虛線：距震央 10／30／50 km。</p>
-${legend}<p class="note">往下滑可收起面板查看完整地圖。</p></section>
+${legend}<p class="note">按標題列的 ▾ 或往下滑可縮小面板，地圖上的距離圈與震度仍會保留；按 ✕ 才會清除。</p></section>
 <section class="card"><h3>震央 50 km 內的山（${mountains.length}）</h3>${mountains.length ? html`<ul class="cols">${mountains.map(li)}</ul>` : html`<p>無登山預報點位。</p>`}</section>
 ${others.length ? html`<section class="card"><h3>其他景點</h3><ul class="cols">${others.map(li)}</ul></section>` : ''}
 ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內）</h3><p>${towns.join('、')}</p></section>` : ''}
@@ -544,6 +575,7 @@ ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內�
   // Zoom to the felt area (stations with intensity >= 1, at least the 50 km ring) above the sheet.
   const pts = (q.stations || []).filter((s) => (s.iv ?? 0) >= 1).map((s) => [s.lat, s.lon]);
   const bounds = L.latLngBounds([[q.lat, q.lon], ...pts]).extend(L.latLng(q.lat, q.lon).toBounds(110000));
+  S.focusBounds = bounds;
   fitVisible(bounds);
   if (q.shake) {
     try {
