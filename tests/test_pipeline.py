@@ -208,3 +208,48 @@ def test_log_reproduce_and_color(tmp_path):
     text = log.path.read_text()
     assert text.startswith("# Reproduce: cd ") and "pipeline.build --only qpf" in text
     assert "\033[32mPASS" in colorize("PASS") and "\033[31mFAIL" in colorize("x FAIL")
+
+
+# ------------------------------------------------------------------ typhoon table gating
+class _StubFetcher:
+    """Serves fixtures in place of the S3 fetcher."""
+
+    files = {
+        "Warning/W-C0034-005.json": "typhoon.json",
+        "Forecast/WindTable.xml": "wind.xml",
+        "Forecast/24hPrecipTable.xml": "precip24.xml",
+        "Forecast/AllPrecipTable.xml": "precip24.xml",
+    }
+    warning = {"cwaopendata": {"dataset": [{
+        "datasetInfo": {"datasetDescription": "測試颱風警報", "issueTime": "2026-01-01T10:00:00+08:00",
+                        "validTime": {"startTime": "2026-01-01T10:00:00+08:00", "endTime": "2026-01-01T16:00:00+08:00"}},
+        "contents": {"content": {"contentText": "測試"}},
+        "hazardConditions": {"hazards": {"hazard": {"info": {"phenomena": "颱風", "significance": "警報"}}}},
+    }]}}
+
+    def get_json(self, key):
+        if key == "Warning/W-C0033-002.json":
+            return self.warning
+        return load(self.files[key])
+
+    def get(self, key):
+        return FIX / self.files[key]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_typhoon_tables_only_when_enabled(tmp_path, monkeypatch, enabled):
+    import argparse
+    from pipeline import build
+    monkeypatch.setattr(build, "now", lambda: datetime.fromisoformat("2026-01-01T12:00:00+08:00"))
+    args = argparse.Namespace(out=str(tmp_path / "data"), cache=str(tmp_path / "cache"), typhoon_tables=enabled)
+    log = Log("t", tmp_path / "logs", argv=["x"])
+    b = build.Builder(args, log)
+    b.f = _StubFetcher()
+    b.task_typhoon()
+    doc = json.loads((tmp_path / "data" / "typhoon.json").read_text())
+    if enabled:
+        assert set(doc["tables"]) == {"wind", "rain24", "rainTotal"} and doc["tablesRestricted"] is False
+    else:
+        assert doc["tables"] == {} and doc["tablesRestricted"] is True
+        assert doc["tablesLink"].startswith("https://www.cwa.gov.tw/")
+    log.close()

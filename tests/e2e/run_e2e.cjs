@@ -188,6 +188,12 @@ function serve() {
     if (await page.$('[data-open="typhoon"]')) {
       await page.click('[data-open="typhoon"]');
       await page.waitForSelector('#sheet-title:has-text("颱風")');
+      const restricted = await page.evaluate(async () => (await import('./js/state.js')).S.typhoon.tablesRestricted);
+      if (restricted) {
+        assert(await page.$('#sheet-body a[href*="cwa.gov.tw/V8/C/P/Typhoon"]'), 'missing CWA typhoon link');
+        assert(!(await page.$('.chip[data-layer="tyrain"]')), 'typhoon rain layer shown without permission');
+        assert(!(await page.$('#sheet-body [data-tylayer]')), 'typhoon tables shown without permission');
+      }
       await page.click('#sheet-back');
     }
     await page.click('#btn-allq');

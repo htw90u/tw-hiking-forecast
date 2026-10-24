@@ -514,6 +514,9 @@ ${ty.warnings.map((w) => html`<section class="card warn"><h3>${w.title}</h3><p c
 ${t.rain24 ? html`<section class="card"><h3>各地區 24 小時雨量預測</h3>${rainTable(t.rain24)}<button class="btn" data-tylayer="0">在地圖上顯示</button></section>` : ''}
 ${t.rainTotal ? html`<section class="card"><h3>各地區總雨量預測</h3>${rainTable(t.rainTotal)}<button class="btn" data-tylayer="1">在地圖上顯示</button></section>` : ''}
 ${t.wind ? html`<section class="card"><h3>各地區風力預測</h3>${windTable(t.wind)}</section>` : ''}
+${ty.tablesRestricted ? html`<section class="card"><h3>各地區風力、24 小時雨量與總雨量預測</h3>
+<p>這些預測表附有中央氣象署著作權聲明（未經書面授權不得轉載），本網站不直接顯示。</p>
+<p><a class="btn" href="${ty.tablesLink}" target="_blank" rel="noopener">到中央氣象署颱風消息查看</a></p></section>` : ''}
 <p class="src">資料來源：中央氣象署颱風消息與警報、颱風各地區風雨預測。</p>`;
   openSheet('颱風資訊', body, {
     onRender: (root) => {

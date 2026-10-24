@@ -13,6 +13,7 @@ ensure_requirements()
 import argparse  # noqa: E402
 import json  # noqa: E402
 import math  # noqa: E402
+import os  # noqa: E402
 import re  # noqa: E402
 import shutil  # noqa: E402
 import sys  # noqa: E402
@@ -29,6 +30,11 @@ from .log import Log, TZ, now  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TOPO = ROOT / "site" / "geo" / "towns-10t.json"
+# CWA's typhoon wind / 24 h rain / total rain tables carry a copyright notice
+# forbidding redistribution without written permission, so they are only built
+# when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
+# private use or after permission has been granted (see docs/TODO.md).
+TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
 TASKS = ["stations", "history", "grids", "radar", "qpf", "spots", "towns", "quakes", "typhoon", "warnings", "satellite"]
 
 
@@ -266,7 +272,7 @@ class Builder:
             if ft and datetime.fromisoformat(ft) > cur - timedelta(hours=24):
                 active.append(tc)
         tables = {}
-        if ty_texts:
+        if ty_texts and self.args.typhoon_tables:
             for key, name, parser in (("wind", "WindTable.xml", hazards.parse_wind_table),
                                       ("rain24", "24hPrecipTable.xml", hazards.parse_precip_table),
                                       ("rainTotal", "AllPrecipTable.xml", hazards.parse_precip_table)):
@@ -277,12 +283,14 @@ class Builder:
                         tables[key] = tbl
                 except Exception as e:  # noqa: BLE001
                     self.log.warn(f"typhoon table {name}: {e}")
-        doc = {"active": bool(active and ty_texts), "cyclones": active, "warnings": ty_texts, "tables": tables}
+        doc = {"active": bool(active and ty_texts), "cyclones": active, "warnings": ty_texts, "tables": tables,
+               "tablesRestricted": not self.args.typhoon_tables, "tablesLink": TYPHOON_TABLES_LINK}
         write_json(self.out / "typhoon.json", doc)
         self.manifest["layers"]["typhoon"] = {"time": ty_texts[0]["issue"] if ty_texts else None,
                                               "active": doc["active"]}
         names = ", ".join(f"{t['cname']}({t['name']})" for t in active) or "none"
-        return f"active={doc['active']} cyclones: {names}; tables: {sorted(tables)}"
+        tbl_msg = sorted(tables) if self.args.typhoon_tables else "disabled (copyright notice)"
+        return f"active={doc['active']} cyclones: {names}; tables: {tbl_msg}"
 
     def task_warnings(self):
         counties = hazards.parse_county_warnings(self.f.get_json("Warning/W-C0033-001.json"))
@@ -354,6 +362,9 @@ def main(argv=None):
     ap.add_argument("--radar-frames", type=int, default=7)
     ap.add_argument("--archive-seed-url", default="",
                     help="deployed site URL used to restore data/archive/*.csv.gz when the local archive is empty")
+    ap.add_argument("--typhoon-tables", action="store_true",
+                    default=os.environ.get("TYPHOON_TABLES", "") in ("1", "true", "yes"),
+                    help="include CWA typhoon wind/rain tables (copyrighted; only for private use or with permission)")
     args = ap.parse_args(argv)
     only = [x.strip() for x in args.only.split(",") if x.strip()]
     bad = [x for x in only if x not in TASKS]

@@ -110,7 +110,8 @@ function applyOverlayVisibility() {
 // ---------------------------------------------------------------- controls
 function buildChips() {
   const box = document.getElementById('chips');
-  const items = LAYERS.filter((l) => !l.typhoonOnly || S.typhoon?.active);
+  const tyTables = S.typhoon?.tables || {};
+  const items = LAYERS.filter((l) => !l.typhoonOnly || (S.typhoon?.active && (tyTables.rain24 || tyTables.rainTotal)));
   box.innerHTML = items.map((l) => `<button class="chip" role="radio" data-layer="${l.id}" aria-checked="${l.id === S.settings.layer}">${esc(l.label)}</button>`).join('');
   box.querySelectorAll('[data-layer]').forEach((b) => b.addEventListener('click', () => {
     S.settings.layer = b.dataset.layer;

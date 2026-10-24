@@ -23,6 +23,8 @@ jobs:
     env:
       LOG_TZ: Asia/Taipei
       FORCE_COLOR: "1"
+      # Set the repository variable TYPHOON_TABLES=1 only after CWA grants written permission.
+      TYPHOON_TABLES: ${{ vars.TYPHOON_TABLES }}
     outputs:
       ok: ${{ steps.build.outcome }}
     steps:
