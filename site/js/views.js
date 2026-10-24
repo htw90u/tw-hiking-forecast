@@ -3,7 +3,7 @@ import { S } from './state.js';
 import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty,
 } from './util.js';
-import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS } from './layers.js';
+import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL } from './layers.js';
 import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
@@ -326,13 +326,19 @@ export function dbzToRate(dbz) {
   return (10 ** (dbz / 10) / 200) ** (1 / 1.6);
 }
 
+function qpf12Metas() { return (S.manifest?.layers?.qpf?.periods || []).map((p) => p.meta); }
+
 async function sampleLayers(lat, lon) {
   const out = {};
   const jobs = [
     ['radar', framesFor('radar').slice(-1)[0]], ['qpe1h', 'grids/qpe1h.json'], ['rainday', 'grids/rainday.json'],
     ['qpf1h', 'grids/qpf1h.json'], ['temp', 'grids/temp.json'],
-    ...framesFor('qpf').map((p, i) => [`qpf${i}`, p]),
+    ...qpf12Metas().map((p, i) => [`qpf${i}`, p]),
+    ...(S.manifest?.layers?.qpf6?.periods || []).map((p, i) => [`qpf6_${i}`, p.meta]),
+    ...(S.manifest?.layers?.qpfacc?.periods || []).flatMap((p) => [[`qacc${p.hours}`, p.meta],
+      [`qacc${p.hours}_lo`, p.meta.replace('.json', '_lo.json')], [`qacc${p.hours}_hi`, p.meta.replace('.json', '_hi.json')]]),
     ...(S.manifest?.layers?.rainacc?.periods || []).filter((p) => p.id !== 'day').map((p) => [`acc_${p.id}`, p.meta]),
+    ['satir', S.manifest?.layers?.satellite?.grids?.ir?.meta],
   ].filter(([, p]) => p);
   await Promise.all(jobs.map(async ([k, p]) => {
     try {
@@ -394,7 +400,7 @@ export async function showPoint(lat, lon, opts = {}) {
     if (!x) return '';
     return `<tr><th scope="row">${esc(p.label)}</th><td>${x.v === null ? '無資料' : fmtNum(x.v, 1, 'mm')}</td></tr>`;
   }).join('');
-  const qpfRows = framesFor('qpf').map((_, i) => {
+  const qpfRows = qpf12Metas().map((_, i) => {
     const x = vals[`qpf${i}`];
     if (!x) return '';
     const r = x.range;
@@ -402,6 +408,21 @@ export async function showPoint(lat, lon, opts = {}) {
     return `<tr><th scope="row">${esc(fmtTime(x.meta.start))}–${esc(fmtTime(x.meta.end, { date: false }))}</th><td colspan="2">${txt}</td></tr>`;
   }).join('');
 
+  const qpf6Rows = (S.manifest?.layers?.qpf6?.periods || []).map((_, i) => {
+    const x = vals[`qpf6_${i}`];
+    if (!x) return '';
+    return `<tr><th scope="row">${esc(fmtTime(x.meta.start))}–${esc(fmtTime(x.meta.end, { date: false }))}</th><td colspan="2">${x.v === null ? '無資料' : fmtNum(x.v, 1, 'mm')}</td></tr>`;
+  }).join('');
+  let accMeta = null;
+  const qaccRows = (S.manifest?.layers?.qpfacc?.periods || []).map((p) => {
+    const x = vals[`qacc${p.hours}`];
+    if (!x) return '';
+    accMeta = x.meta;
+    const lo = vals[`qacc${p.hours}_lo`]?.v;
+    const hi = vals[`qacc${p.hours}_hi`]?.v;
+    const range = lo === null || lo === undefined ? '' : `（範圍 ${fmtNum(lo, 1)}–${hi === null || hi === undefined ? '300 以上' : fmtNum(hi, 1)} mm）`;
+    return `<tr><th scope="row">未來 ${p.hours} 小時</th><td colspan="2">${x.v === null ? '無資料' : `約 ${fmtNum(x.v, 0, 'mm')}${range}`}</td></tr>`;
+  }).join('');
   const fcHtml = spotPick && spotFc
     ? `<p class="muted">${esc(spotFc.n)}（${esc(S.spotCats.find((c) => c.id === spotFc.c)?.label || '')}）・發布 ${esc(fmtTime(spotFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="d3">未來3天(逐3小時)</button><button role="tab" class="tab" aria-selected="false" data-tab="week">一週(逐12小時)</button></div>
@@ -426,10 +447,12 @@ ${risk.reasons.length ? html`<ul>${risk.reasons.map((r) => html`<li>${lvBadge(r.
 <p class="note">依門檻自動判斷，僅供參考；請以現場狀況與官方資訊為準。門檻可在「設定」調整。</p></section>
 ${warnHtml}${tyHtml}
 <section class="card" aria-labelledby="h-now"><h3 id="h-now">此處即時格點值</h3><table class="kv"><tbody>
-${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1小時雨量', 'qpe1h', 'mm'))}${raw(vrow('未來1小時雨量', 'qpf1h', 'mm'))}${raw(vrow('溫度分析', 'temp', '°C'))}
+${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1小時雨量', 'qpe1h', 'mm'))}${raw(vrow('未來1小時雨量', 'qpf1h', 'mm'))}${raw(vrow('溫度分析', 'temp', '°C'))}${raw(vrow('雲頂溫度（紅外線）', 'satir', '°C', 0))}
 </tbody></table></section>
 ${accRows ? html`<section class="card" aria-labelledby="h-acc"><h3 id="h-acc">累積雨量（雨量站內插估計）</h3><table class="kv"><tbody>${raw(accRows)}</tbody></table></section>` : ''}
 ${qpfRows ? html`<section class="card" aria-labelledby="h-qpf"><h3 id="h-qpf">定量降水預報（每12小時）</h3><table class="kv"><tbody>${raw(qpfRows)}</tbody></table></section>` : ''}
+${qpf6Rows ? html`<section class="card" aria-labelledby="h-qpf6"><h3 id="h-qpf6">定量降水預報（每6小時・颱風警報期間）</h3><table class="kv"><tbody>${raw(qpf6Rows)}</tbody></table></section>` : ''}
+${qaccRows ? html`<section class="card" aria-labelledby="h-qacc"><h3 id="h-qacc">未來累積降水（由12小時預報加總）</h3><table class="kv"><tbody>${raw(qaccRows)}</tbody></table>${raw(accMeta ? attribution(accMeta) : '')}</section>` : ''}
 ${fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : ''}
 ${townHtml ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}
 <section class="card" aria-labelledby="h-st"><h3 id="h-st">鄰近測站（現在）</h3>
@@ -685,21 +708,24 @@ export async function showAffected() {
   if (!path) { openSheet('受影響山區', html`<p>請先選擇雷達、雨量、降水預報或溫度圖層。</p>`); return; }
   openSheet('受影響山區', loading);
   const grid = await getGrid(path);
-  const defaults = { radar: 30, rain: 10, temp: 5 };
+  const kind = layerKind(id);
+  if (kind === 'vis') { openSheet('受影響山區', html`<p>可見光反照率不適合用來篩選，請改用紅外線雲圖或雨量圖層。</p>`, { replace: true }); return; }
+  const lower = kind === 'temp' || kind.startsWith('ir'); // colder = more severe
+  const defaults = { radar: 30, rain: 10, rainacc: 50, temp: 5, irgray: -40, irenh: -40 };
   const render = (cat, thr) => {
     const items = S.spots.filter((s) => cat === 'all' || s.c === cat)
       .map((s) => ({ s, v: sample(grid, s.lat, s.lon) }))
-      .filter((x) => x.v !== null && (def.kind === 'temp' ? x.v <= thr : x.v >= thr))
-      .sort((a, b) => (def.kind === 'temp' ? a.v - b.v : b.v - a.v));
+      .filter((x) => x.v !== null && (lower ? x.v <= thr : x.v >= thr))
+      .sort((a, b) => (lower ? a.v - b.v : b.v - a.v));
     const cats = [{ id: 'mountain', label: '登山' }, { id: 'all', label: '全部景點' }];
-    return html`<p>${def.label}（${fmtTime(grid.meta.start || grid.meta.time)}）${def.kind === 'temp' ? '≤' : '≥'}
+    return html`<p>${def.label}（${fmtTime(grid.meta.start || grid.meta.time)}）${lower ? '≤' : '≥'}
 <input id="aff-thr" type="number" inputmode="decimal" value="${thr}" aria-label="門檻值" class="num"> ${grid.meta.unit || def.unit}</p>
 <div class="seg" role="radiogroup" aria-label="類別">${cats.map((c) => html`<button class="seg-btn" role="radio" aria-checked="${c.id === cat}" data-cat="${c.id}">${c.label}</button>`)}</div>
 <p class="muted">共 ${items.length} 處</p>
 <ul class="list">${items.slice(0, 200).map((x) => html`<li><button class="link" data-spot="${x.s.k}">${x.s.n}</button> <span class="meta">${grid.meta.kind === 'class' ? `${x.v}+` : fmtNum(x.v)} ${grid.meta.unit || def.unit}</span></li>`)}</ul>`;
   };
   let cat = 'mountain';
-  let thr = defaults[def.kind] ?? 10;
+  let thr = defaults[kind] ?? 10;
   const draw = () => openSheet('受影響山區', render(cat, thr), {
     replace: true,
     onRender: (root) => {
@@ -736,4 +762,39 @@ export function search(q) {
   const coord = s.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (coord) res.unshift({ type: '座標', label: s, lat: Number(coord[1]), lon: Number(coord[2]) });
   return res.slice(0, 30);
+}
+
+// ------------------------------------------------------------------ sources & licence
+const DATASETS = [
+  ['O-A0001-001', '自動氣象站－氣象觀測資料'], ['O-A0002-001', '自動雨量站－雨量觀測資料'], ['O-A0003-001', '現在天氣觀測報告'],
+  ['O-A0059-001', '雷達整合回波格點資料'], ['O-B0045-001', '雷達定量降水估計（QPESUMS）'], ['F-B0046-001', '雷達定量降水預報（未來1小時）'],
+  ['O-A0040-004', '日累積雨量格點資料'], ['O-A0038-003', '溫度分析格點資料'],
+  ['F-C0035-015／017／023／024', '定量降水預報圖（I～IV，逐12小時）'], ['F-C0041-001～008', '定量降水格點預報（颱風警報期間，逐6小時）'],
+  ['F-B0053-xxx', '育樂天氣預報（登山、國家公園、森林遊樂區、農場、水庫等14類）'], ['F-D0047-xxx', '鄉鎮天氣預報'],
+  ['E-A0015-001／E-A0016-001', '顯著有感／小區域有感地震報告'], ['E-A0015-003', '等震度圖'],
+  ['W-C0034-005', '颱風消息與警報－熱帶氣旋路徑'], ['W-C0033-001／002', '天氣特報'],
+  ['O-B0055-001／O-B0056-001', '東亞可見光反照率／紅外線亮度溫度資料'], ['O-C0042-xxx', '台灣衛星雲圖'],
+  ['C-B0024-001', '過去氣象觀測'], ['history/Observation', '逐時觀測歷史快照（開放資料 S3）'],
+];
+
+export function showSources() {
+  const year = (S.manifest?.built || '').slice(0, 4);
+  const body = html`<section class="card"><h3>顯名聲明</h3>
+<p><strong>中央氣象署 ${year} 開放資料</strong>（各資料集與版本如下，版本以發布時間為準）</p>
+<p>${OGDL_TEXT}</p>
+<p>政府資料開放授權條款：<a href="${OGDL_URL}" target="_blank" rel="noopener">${OGDL_URL}</a></p></section>
+<section class="card"><h3>使用的資料集</h3><table class="kv"><tbody>${DATASETS.map(([id, name]) => html`<tr><th scope="row">${id}</th><td>${name}</td></tr>`)}</tbody></table>
+<p class="muted">資料取自中央氣象署開放資料（https://opendata.cwa.gov.tw，及其官方 S3 鏡像）。本網站資料更新：${fmtTime(S.manifest?.built)}</p></section>
+<section class="card"><h3>本網站的加工與衍生資料</h3><ul>
+<li>定量降水預報圖、等震度圖：由圖片自動對位並依圖例顏色換算回數值級距。</li>
+<li>未來 24／48 小時累積降水：將各 12 小時預報加總計算，<strong>非中央氣象署發布之預報</strong>，未經中央氣象署審閱。</li>
+<li>多時段累積雨量：由雨量站觀測值以距離權重內插估計。</li>
+<li>衛星雲圖：由亮度溫度／反照率數值重新著色並平滑顯示。</li>
+<li>登山安全評估：本網站依門檻自動判斷，僅供參考，並非氣象預報或警報。</li></ul>
+<p class="note">颱風各地區風力、24小時雨量與總雨量預測表附有中央氣象署著作權聲明，未取得授權前本網站不顯示。</p></section>
+<section class="card"><h3>其他來源</h3><ul>
+<li>行政區界：taiwan-atlas（MIT），資料來源內政部。</li>
+<li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心。</li>
+<li>地圖程式庫：Leaflet（BSD-2）、topojson-client（ISC）。</li></ul></section>`;
+  openSheet('資料來源與授權', body);
 }

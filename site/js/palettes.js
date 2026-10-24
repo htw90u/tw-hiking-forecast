@@ -43,6 +43,32 @@ const CONTRAST_INT = ['#ffffff', '#ffff00', '#ffaa00', '#ff5500', '#ff0000', '#b
 function zip(bounds, colours, labels) { return bounds.map((b, i) => (labels ? [b, colours[i], labels[i]] : [b, colours[i]])); }
 const INT_BOUNDS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
+// ---- satellite: continuous scales built from colour stops (many small steps)
+function hex(c) { return `#${c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`; }
+function ramp(stops, from, to, step) {
+  // stops: [[value, [r,g,b]], ...] ascending by value
+  const out = [];
+  for (let v = from; v <= to + 1e-9; v += step) {
+    let i = 0;
+    while (i < stops.length - 2 && v > stops[i + 1][0]) i += 1;
+    const [v0, c0] = stops[i];
+    const [v1, c1] = stops[i + 1];
+    const t = Math.max(0, Math.min(1, (v - v0) / (v1 - v0)));
+    out.push([+v.toFixed(3), hex(c0.map((x, k) => x + (c1[k] - x) * t))]);
+  }
+  return out;
+}
+// Infrared: cold cloud tops bright, warm surface dark (like CWA's B/W IR image).
+const IR_GRAY = ramp([[-90, [255, 255, 255]], [-20, [200, 200, 200]], [40, [20, 20, 20]]], -90, 40, 2);
+// Enhanced IR: grey for warm/low clouds, colours for cold convective tops.
+const IR_ENH = ramp([[-90, [255, 255, 255]], [-80, [255, 0, 255]], [-70, [255, 0, 0]], [-60, [255, 160, 0]],
+  [-50, [255, 255, 0]], [-40, [0, 200, 0]], [-30, [0, 120, 255]], [-20, [150, 210, 255]], [-19.9, [210, 210, 210]], [40, [20, 20, 20]]], -90, 40, 2);
+const IR_CVD = ramp([[-90, [253, 231, 37]], [-60, [94, 201, 98]], [-40, [33, 145, 140]], [-20, [59, 82, 139]],
+  [-19.9, [200, 200, 200]], [40, [20, 20, 20]]], -90, 40, 2);
+const IR_CONTRAST = ramp([[-90, [255, 255, 0]], [-40, [255, 255, 255]], [-20, [160, 160, 160]], [40, [0, 0, 0]]], -90, 40, 2);
+// Visible albedo (fraction): dark sea -> bright cloud, with a gamma to lift thin cloud.
+const VIS_GRAY = ramp([[0, [10, 10, 10]], [0.15, [90, 90, 90]], [0.4, [180, 180, 180]], [0.8, [255, 255, 255]]], 0, 0.8, 0.02);
+
 export const SCALES = {
   rain: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   radar: { cwa: zip(RADAR_BOUNDS, CWA_RADAR), cvd: zip(RADAR_BOUNDS, VIRIDIS13), contrast: zip(RADAR_BOUNDS, CONTRAST_RADAR) },
@@ -50,6 +76,9 @@ export const SCALES = {
   intensity: {
     cwa: zip(INT_BOUNDS, CWA_INT, INT_LABELS), cvd: zip(INT_BOUNDS, CVD_INT, INT_LABELS), contrast: zip(INT_BOUNDS, CONTRAST_INT, INT_LABELS),
   },
+  irgray: { cwa: IR_GRAY, cvd: IR_GRAY, contrast: IR_CONTRAST },
+  irenh: { cwa: IR_ENH, cvd: IR_CVD, contrast: IR_CONTRAST },
+  vis: { cwa: VIS_GRAY, cvd: VIS_GRAY, contrast: VIS_GRAY },
   temp: { cwa: zip(TEMP_BOUNDS, CWA_TEMP), cvd: zip(TEMP_BOUNDS, CVD_TEMP), contrast: zip(TEMP_BOUNDS, CONTRAST_TEMP) },
 };
 
@@ -68,10 +97,12 @@ function hexToRgb(h) {
 /** Returns f(value) -> [r,g,b,a] (a = 0 for transparent). */
 export function colourFn(scale) {
   const bounds = scale.map((s) => s[0]);
+  const continuous = scale.length > 30; // satellite ramps cover the whole value range
   const rgb = scale.map((s) => hexToRgb(s[1]));
   const none = [0, 0, 0, 0];
   return (v) => {
-    if (v === null || Number.isNaN(v) || v < bounds[0]) return none;
+    if (v === null || Number.isNaN(v)) return none;
+    if (v < bounds[0]) return continuous ? [...rgb[0], 255] : none;
     let lo = 0;
     let hi = bounds.length - 1;
     while (lo < hi) {

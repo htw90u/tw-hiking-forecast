@@ -54,10 +54,12 @@ def crop(grid, region=CROP):
 
 
 def bounds(grid):
+    """Cell-edge bounds; ``resy`` may differ from ``res`` (longitude step)."""
     ny, nx = grid["data"].shape
-    r = grid["res"]
-    w, s = grid["lon0"] - r / 2, grid["lat0"] - r / 2
-    return [round(w, 5), round(s, 5), round(w + nx * r, 5), round(s + ny * r, 5)]
+    rx = grid["res"]
+    ry = grid.get("resy", rx)
+    w, s = grid["lon0"] - rx / 2, grid["lat0"] - ry / 2
+    return [round(w, 5), round(s, 5), round(w + nx * rx, 5), round(s + ny * ry, 5)]
 
 
 def encode_png(grid, scale: float, offset: float) -> bytes:

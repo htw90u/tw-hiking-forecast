@@ -5,7 +5,7 @@ import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $ } from './util.
 import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
 import {
-  showPoint, closeSheet, sheetBack, setSheetMini, showAlerts, showRecent, showAffected, showQuake, showTyphoon, search, flyTo,
+  showPoint, closeSheet, sheetBack, setSheetMini, showSources, showAlerts, showRecent, showAffected, showQuake, showTyphoon, search, flyTo,
 } from './views.js';
 import { clearAll } from './store.js';
 
@@ -186,7 +186,8 @@ function updateStatus() {
   const built = S.manifest?.built;
   const off = !navigator.onLine;
   const failed = Object.entries(S.manifest?.status || {}).filter(([, v]) => !v.ok).map(([k]) => k);
-  el.innerHTML = `${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}`;
+  el.innerHTML = `${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
+  el.querySelector('#btn-sources').addEventListener('click', showSources);
   const n = (S.warnings?.counties || []).filter((c) => c.hazards.length).length + (S.typhoon?.active ? 1 : 0);
   const badge = document.getElementById('alert-badge');
   badge.hidden = !n;
@@ -263,6 +264,7 @@ function openSettings() {
 <fieldset><legend>資料與離線</legend>
 <p>資料更新：${esc(fmtTime(S.manifest?.built))}</p>
 <table class="kv"><tbody>${Object.entries(S.manifest?.status || {}).map(([k, v]) => `<tr><th scope="row">${esc(k)}</th><td>${v.ok ? '<span class="ok">PASS</span>' : `<span class="bad">FAIL</span> ${esc(v.error || '')}`}</td></tr>`).join('')}</tbody></table>
+<button class="btn" id="set-src">資料來源與授權</button>
 <button class="btn" id="set-clear">清除最近查詢與收藏</button>
 <button class="btn" id="set-reset">恢復預設設定</button>
 </fieldset>`;
@@ -287,6 +289,7 @@ function openSettings() {
   });
   body.querySelectorAll('[data-th]').forEach((i) => i.addEventListener('change', () => { s.thresholds[i.dataset.th] = Number(i.value); save(); }));
   body.querySelector('#set-dl').addEventListener('click', () => downloadTiles(body.querySelector('#set-dl-out')));
+  body.querySelector('#set-src').addEventListener('click', () => { dlg.close(); showSources(); });
   body.querySelector('#set-clear').addEventListener('click', async (e) => { await clearAll(); e.target.textContent = '已清除'; });
   body.querySelector('#set-reset').addEventListener('click', () => {
     Object.assign(s, JSON.parse(JSON.stringify(DEFAULTS)));

@@ -152,6 +152,40 @@ function serve() {
     await page.screenshot({ path: path.join(SHOTS, 'qpf-mobile.png') });
   });
 
+  await check('QPF modes: 12h / 6h / 24-48h totals with derived-product attribution', async () => {
+    await page.click('.chip[data-layer="qpf"]');
+    await page.waitForSelector('[data-qpfmode]');
+    const modes = await page.$$eval('[data-qpfmode]', (b) => b.map((x) => x.dataset.qpfmode));
+    assert(modes.join() === '12,6,acc', `modes ${modes}`);
+    const has6 = await page.evaluate(async () => (await import('./js/state.js')).S.manifest.layers.qpf6?.available);
+    if (has6) {
+      await page.click('[data-qpfmode="6"]');
+      await page.waitForFunction(() => document.querySelectorAll('[data-period]').length >= 4);
+      await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('6小時'));
+    } else {
+      assert(await page.getAttribute('[data-qpfmode="6"]', 'aria-disabled') === 'true', '6h should be disabled when unavailable');
+    }
+    await page.click('[data-qpfmode="acc"]');
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-period]')].map((b) => b.textContent).join() === '未來24小時,未來48小時');
+    await page.click('[data-period="1"]');
+    await page.waitForFunction(() => document.querySelector('#legend summary')?.textContent.includes('48'));
+    const lg = await page.textContent('#legend');
+    for (const want of ['非中央氣象署發布之預報', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0035-015']) assert(lg.includes(want), `legend lacks ${want}`);
+    await page.click('[data-qpfmode="12"]');
+    await page.waitForTimeout(500);
+  });
+
+  await check('satellite: numeric IR / enhanced IR / visible with gradient legend', async () => {
+    await page.click('.chip[data-layer="sat"]');
+    await page.waitForSelector('[data-frame]');
+    const labels = await page.$$eval('[data-frame]', (b) => b.map((x) => x.textContent));
+    assert(labels.length === 3 && labels[1].includes('色調強化'), `sat modes ${labels}`);
+    await page.click('[data-frame="1"]');
+    await page.waitForFunction(() => document.querySelector('#legend .grad'));
+    const n = await page.$$eval('img.wx-grid', (x) => x.length);
+    assert(n === 1, `satellite overlay images ${n}`);
+  });
+
   await check('QPF outlying islands placed at real coordinates (Matsu, Kinmen)', async () => {
     const r = await page.evaluate(async () => {
       const { getGrid, framesFor } = await import('./js/layers.js');
@@ -163,6 +197,8 @@ function serve() {
     assert(r.parts === 4, `parts ${r.parts}`);
     assert(r.beigan !== null && r.nangan !== null && r.kinmen !== null, JSON.stringify(r));
     assert(r.sea === null, `sea should be no-data ${JSON.stringify(r)}`);
+    await page.click('.chip[data-layer="qpf"]');
+    await page.waitForFunction(() => document.querySelectorAll('img.wx-grid').length === 5);
     const n = await page.$$eval('img.wx-grid', (x) => x.length);
     assert(n === 5, `expected 5 overlay images (main + 4 islands), got ${n}`);
     await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([26.17, 119.96], 11, { animate: false }); });
@@ -196,6 +232,9 @@ function serve() {
     const title = await page.textContent('#sheet-title');
     assert(title && title !== '查詢中…', `title ${title}`);
     assert(!(await page.textContent('#sheet-body')).includes('鄉鎮不明'), 'unknown-township text should not be shown');
+    const body = await page.textContent('#sheet-body');
+    assert(body.includes('雲頂溫度'), 'point panel lacks cloud-top temperature');
+    assert(body.includes('未來累積降水') && body.includes('非中央氣象署發布之預報'), 'point panel lacks derived totals with disclaimer');
     await page.screenshot({ path: path.join(SHOTS, 'point-mobile.png') });
   });
 
@@ -277,6 +316,14 @@ function serve() {
     await page.waitForTimeout(300);
     assert((await page.evaluate(() => document.getElementById('sheet').getBoundingClientRect().height)) > 200, 'sheet did not restore');
     await page.screenshot({ path: path.join(SHOTS, 'quake-mobile.png') });
+  });
+
+  await check('sources & licence panel with OGDL attribution', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    await page.click('#btn-sources');
+    await page.waitForSelector('#sheet-title:has-text("資料來源")');
+    const t = await page.textContent('#sheet-body');
+    for (const want of ['顯名聲明', '中央氣象署', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0041']) assert(t.includes(want), `panel lacks ${want}`);
   });
 
   await check('settings: font 200%, contrast theme, colour-blind palette persist', async () => {

@@ -16,8 +16,29 @@ export const LAYERS = [
   { id: 'none', label: '關閉圖層', kind: 'none' },
 ];
 
-// Interpolation fill for no-data cells per layer kind (temperature: ignore no-data).
+// Interpolation fill for no-data cells per layer kind (temperature, satellite: ignore no-data).
 const FILL = { radar: -20, rain: 0, rainacc: 0, temp: NaN };
+
+// Attribution required by the Open Government Data License (顯名聲明).
+export const OGDL_TEXT = '此開放資料依政府資料開放授權條款 (Open Government Data License) 進行公眾釋出，使用者於遵守本條款各項規定之前提下，得利用之。';
+export const OGDL_URL = 'https://data.gov.tw/license';
+
+// QPF display modes and satellite products (numeric grids from the pipeline).
+export const QPF_MODES = [{ id: '12', label: '12小時' }, { id: '6', label: '6小時' }, { id: 'acc', label: '24／48小時累積' }];
+const SAT_MODES = [
+  { label: '紅外線（黑白）', key: 'ir', kind: 'irgray' },
+  { label: '紅外線（色調強化）', key: 'ir', kind: 'irenh' },
+  { label: '可見光', key: 'vis', kind: 'vis' },
+];
+
+function satGrids() { return S.manifest?.layers?.satellite?.grids || {}; }
+
+/** Colour-scale kind actually used for the current layer / mode. */
+export function layerKind(id) {
+  if (id === 'qpf' && S.layer.qpfMode === 'acc') return 'rainacc';
+  if (id === 'sat' && satGrids().ir) return SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].kind;
+  return layerDef(id).kind;
+}
 // Layers whose frames are selectable periods (S.layer.period) rather than animation frames.
 export const PERIOD_LAYERS = ['qpf', 'rainacc'];
 
@@ -50,7 +71,15 @@ export function framesFor(id) {
     const fr = L_.radarFrames?.frames || [];
     return fr.length ? fr.map((f) => f.meta) : ['grids/radar.json'];
   }
-  if (id === 'qpf') return (L_.qpf?.periods || []).map((p) => p.meta);
+  if (id === 'qpf') {
+    if (S.layer.qpfMode === '6') return (L_.qpf6?.periods || []).map((p) => p.meta);
+    if (S.layer.qpfMode === 'acc') return (L_.qpfacc?.periods || []).map((p) => p.meta);
+    return (L_.qpf?.periods || []).map((p) => p.meta);
+  }
+  if (id === 'sat') {
+    const g = satGrids();
+    return g.ir ? SAT_MODES.map((m) => g[m.key]?.meta).filter(Boolean) : [];
+  }
   if (id === 'rainacc') return (L_.rainacc?.periods || [{ meta: 'grids/rainday.json' }]).map((p) => p.meta);
   if (['qpe1h', 'rainday', 'qpf1h', 'temp'].includes(id)) return [`grids/${id}.json`];
   return [];
@@ -71,7 +100,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   if (S.layer.id !== id) stopAnimation();
   S.layer.id = id;
   if (!keepFrame) {
-    S.layer.frame = Math.max(0, framesFor(id).length - 1);
+    S.layer.frame = id === 'sat' ? 0 : Math.max(0, framesFor(id).length - 1);
     S.layer.period = id === 'rainacc' ? Math.max(0, (S.manifest?.layers?.rainacc?.periods || []).findIndex((p) => p.id === '24h')) : 0;
   }
   document.querySelectorAll('.chip[data-layer]').forEach((b) => {
@@ -80,17 +109,18 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   renderTimeControl();
   try {
     if (def.kind === 'none') { clearOverlay(); renderLegend(); return; }
-    if (id === 'sat') { await showSatellite(); return; }
+    if (id === 'sat' && !satGrids().ir) { await showSatellite(); return; }
     if (id === 'tyrain') { showTyphoonRain(); return; }
     const frames = framesFor(id);
-    const path = PERIOD_LAYERS.includes(id) ? frames[S.layer.period] : frames[S.layer.frame];
+    const path = PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
-    const colour = colourFn(scaleFor(def.kind, S.settings.palette));
+    const kind = layerKind(id);
+    const colour = colourFn(scaleFor(kind, S.settings.palette));
     // Smooth rendering interpolates between cells; "no echo / no rain" counts as a low value
     // so that rain areas fade out at their edges instead of ending in square steps.
-    const opts = { smooth: S.settings.smooth !== false, fill: FILL[def.kind] ?? NaN };
+    const opts = { smooth: S.settings.smooth !== false, fill: FILL[kind] ?? NaN };
     const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
       const [w, s, e, n] = g.bounds;
       return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
@@ -99,7 +129,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (!S.layer.hidden) ov.addTo(S.map);
     clearOverlay();
     S.layer.overlay = ov;
-    renderLegend(grid.meta);
+    renderLegend({ ...grid.meta, kindOverride: kind });
     renderTimeControl(grid.meta);
   } catch (e) {
     console.error(e);
@@ -196,7 +226,16 @@ export function renderLegend(meta, message) {
   if (kind !== 'sat') {
     const scale = scaleFor(kind, S.settings.palette);
     const unit = meta.unit || def.unit || '';
-    body = '<ol class="swatches">' + scale.map((s, i) => `<li><span class="sw" style="background:${s[1]}"></span>${esc(classLabel(scale, i, unit))}</li>`).reverse().join('') + '</ol>';
+    if (scale.length > 30) {
+      // Continuous satellite scale: gradient bar with a few labels.
+      const stops = scale.map((x, i) => `${x[1]} ${(i / (scale.length - 1) * 100).toFixed(1)}%`).join(',');
+      const lo = scale[0][0]; const hi = scale[scale.length - 1][0];
+      const fmt = (v) => (kind === 'vis' ? `${Math.round(v * 100)}%` : `${v}${unit}`);
+      body = `<div class="grad" style="background:linear-gradient(90deg,${stops})"></div><div class="grad-lbl"><span>${esc(fmt(lo))}</span><span>${esc(fmt((lo + hi) / 2))}</span><span>${esc(fmt(hi))}</span></div>`
+        + (kind === 'vis' ? '<p class="note">可見光僅白天可用（夜間為黑色）。</p>' : '<p class="note">越白（或越鮮豔）代表雲頂越高、越冷，常伴隨強對流。</p>');
+    } else {
+      body = '<ol class="swatches">' + scale.map((x, i) => `<li><span class="sw" style="background:${x[1]}"></span>${esc(classLabel(scale, i, unit))}</li>`).reverse().join('') + '</ol>';
+    }
   }
   let when = '';
   if (meta.start && meta.end) when = `${fmtTime(meta.start)} ～ ${fmtTime(meta.end)}`;
@@ -206,8 +245,20 @@ export function renderLegend(meta, message) {
   const note = meta.note ? `<p class="note">${esc(meta.note)}</p>` : '';
   const qpfNote = meta.kind === 'class' ? '<p class="note">由氣象署定量降水預報圖自動對位轉換；時間以原圖標題為準。</p>' : '';
   el.innerHTML = `<summary>${esc(meta.label || def.label)}<span class="when">${esc(when)}</span></summary>
-<div class="lg-body">${title}${body}${note}${qpfNote}<p class="src">來源：中央氣象署 ${esc(meta.src || '')}</p></div>`;
+<div class="lg-body">${title}${body}${note}${qpfNote}${attribution(meta)}</div>`;
   el.hidden = false;
+}
+
+/** Attribution block (顯名聲明); derived products carry the full statement and a disclaimer. */
+export function attribution(meta) {
+  const year = (meta.issued || meta.time || meta.start || '').slice(0, 4) || new Date().getFullYear();
+  const version = meta.issued || meta.time || '';
+  if (meta.derived) {
+    return `<div class="attr"><p><strong>中央氣象署 ${esc(year)} 定量降水預報（${esc(meta.src || '')}，發布 ${esc(fmtTime(version))}）</strong></p>
+<p>${esc(OGDL_TEXT)} 政府資料開放授權條款：<a href="${OGDL_URL}" target="_blank" rel="noopener">${OGDL_URL}</a></p>
+<p class="warn-txt">本圖為本網站將上述各時段預報加總計算之衍生資料，非中央氣象署發布之預報，未經中央氣象署審閱。${esc(meta.method || '')}</p></div>`;
+  }
+  return `<p class="src">資料來源：中央氣象署 ${esc(year)} ${esc(meta.src || '')}${version ? `（${esc(fmtTime(version))}）` : ''}・依<a href="${OGDL_URL}" target="_blank" rel="noopener">政府資料開放授權條款</a>釋出</p>`;
 }
 
 export function renderTimeControl(meta) {
@@ -226,13 +277,21 @@ export function renderTimeControl(meta) {
     const periods = S.manifest?.layers?.rainacc?.periods || [];
     h = '<div class="seg" role="radiogroup" aria-label="累積時段">' + periods.map((p, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-period="${i}">${esc(p.label)}</button>`).join('') + '</div>';
   } else if (id === 'qpf') {
-    const periods = S.manifest?.layers?.qpf?.periods || [];
-    h = '<div class="seg" role="radiogroup" aria-label="預報時段">' + periods.map((p, i) => {
-      const end = new Date(new Date(p.start).getTime() + 12 * 3600e3).toISOString();
-      return `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-period="${i}">${esc(fmtTime(p.start))}–${esc(fmtTime(end, { date: false }))}</button>`;
+    const L_ = S.manifest?.layers || {};
+    const mode = S.layer.qpfMode || '12';
+    const has6 = Boolean(L_.qpf6?.available);
+    h = '<div class="seg" role="radiogroup" aria-label="預報種類">' + QPF_MODES.map((m) => {
+      const off = m.id === '6' && !has6;
+      return `<button class="seg-btn" role="radio" aria-checked="${m.id === mode}" data-qpfmode="${m.id}"${off ? ' aria-disabled="true" title="6小時版目前不在氣象署開放資料中（颱風警報期間除外）"' : ''}>${esc(m.label)}${off ? '（暫無）' : ''}</button>`;
     }).join('') + '</div>';
+    let periods = [];
+    if (mode === '6') periods = (L_.qpf6?.periods || []).map((p, i, a) => ({ label: `${fmtTime(p.start)}`, i, n: a.length }));
+    else if (mode === 'acc') periods = (L_.qpfacc?.periods || []).map((p, i) => ({ label: `未來${p.hours}小時`, i }));
+    else periods = (L_.qpf?.periods || []).map((p, i) => ({ label: `${fmtTime(p.start)}–${fmtTime(new Date(new Date(p.start).getTime() + 12 * 3600e3).toISOString(), { date: false })}`, i }));
+    h += '<div class="seg" role="radiogroup" aria-label="預報時段">' + periods.map((p) => `<button class="seg-btn" role="radio" aria-checked="${p.i === S.layer.period}" data-period="${p.i}">${esc(p.label)}</button>`).join('') + '</div>';
   } else if (id === 'sat') {
-    h = '<div class="seg" role="radiogroup" aria-label="雲圖種類">' + S.sat.map((s, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.frame}" data-frame="${i}">${esc(s.label)}</button>`).join('') + '</div>';
+    const list = satGrids().ir ? SAT_MODES : S.sat;
+    h = '<div class="seg" role="radiogroup" aria-label="雲圖種類">' + list.map((x, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.frame}" data-frame="${i}">${esc(x.label)}</button>`).join('') + '</div>';
   } else if (id === 'tyrain') {
     const t = S.typhoon?.tables || {};
     h = '<div class="seg" role="radiogroup" aria-label="雨量預測種類">'
@@ -250,6 +309,15 @@ export function renderTimeControl(meta) {
       showLayer('radar', { keepFrame: true });
     });
   }
+  el.querySelectorAll('[data-qpfmode]').forEach((b) => b.addEventListener('click', () => {
+    if (b.getAttribute('aria-disabled') === 'true') {
+      renderLegend(null, '氣象署網站每日都有6小時定量降水預報圖，但開放資料平台目前只在陸上颱風警報期間提供6小時格點資料；平時請使用12小時版本。');
+      return;
+    }
+    S.layer.qpfMode = b.dataset.qpfmode;
+    S.layer.period = 0;
+    showLayer('qpf', { keepFrame: true });
+  }));
   el.querySelectorAll('[data-period]').forEach((b) => b.addEventListener('click', () => {
     S.layer.period = Number(b.dataset.period);
     showLayer(id, { keepFrame: true });

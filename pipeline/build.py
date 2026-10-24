@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import forecast, geo, grids, hazards, qpf, rainacc, shakemap, stations  # noqa: E402
+from . import forecast, geo, grids, hazards, qpf, qpfacc, rainacc, satellite, shakemap, stations  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -237,6 +237,7 @@ class Builder:
         land = geo.land_mask(topo, g["lon0"], g["lat0"], g["res"], g["nx"], g["ny"])
         insets = qpf.prepare_insets(topo)
         periods = []
+        main_cls, inset_cls, starts, issued = [], {}, [], None
         for i, ds_id in enumerate(qpf.QPF_IDS):
             meta = self.f.get_json(f"Forecast/{ds_id}.json")["cwaopendata"]
             png = self.f.get(f"Forecast/{ds_id}.png").read_bytes()
@@ -244,6 +245,12 @@ class Builder:
             if r["refit"]:
                 self.log.warn(f"QPF {ds_id}: layout changed, re-fitted transform {np.round(r['fit'], 2).tolist()}")
             start = qpf.period_start(meta["Sent"]) + timedelta(hours=12 * i)
+            main_cls.append(r["grid"])
+            starts.append(start)
+            issued = meta["Sent"]
+            for iname, ires in r["insets"].items():
+                if "grid" in ires:
+                    inset_cls.setdefault(iname, []).append(ires["grid"])
             name = f"qpf{i + 1}"
             grid = {"data": r["grid"].astype(np.float32), "lon0": g["lon0"], "lat0": g["lat0"], "res": g["res"]}
             grid["data"][grid["data"] == 0] = np.nan
@@ -276,7 +283,77 @@ class Builder:
             (self.out / "grids" / f"{name}_title.png").write_bytes(r["title_png"])
             periods.append({"meta": f"grids/{name}.json", "start": start.isoformat()})
         self.manifest["layers"]["qpf"] = {"time": periods[0]["start"] if periods else None, "periods": periods}
-        return f"{len(periods)} periods (+{len(qpf.INSETS)} island insets each)"
+        acc = self.write_qpf_totals(main_cls, inset_cls, insets, starts, issued)
+        n6 = self.write_qpf6()
+        return f"{len(periods)} periods (+{len(qpf.INSETS)} island insets each); totals {acc}; 6h periods {n6}"
+
+    def write_qpf_totals(self, main_cls, inset_cls, insets, starts, issued) -> list:
+        """24 h / 48 h totals derived by adding CWA's 12-hour QPF periods."""
+        g = qpf.GRID
+        out = []
+        for hours in (24, 48):
+            n = hours // 12
+            if len(main_cls) < n:
+                continue
+            name = f"qpfacc{hours}"
+            srcs = qpf.QPF_IDS[:n]
+
+            def write(suffix, arr, base, label, extra):
+                data = np.where(np.isinf(arr), np.nan, arr).astype(np.float32)
+                grids.write_layer(self.out / "grids", f"{name}{suffix}", {"data": data, **base}, 0.1, 0.0, {
+                    "label": label, "unit": "mm", "start": starts[0].isoformat(),
+                    "end": (starts[0] + timedelta(hours=hours)).isoformat(), "issued": issued,
+                    "derived": True, "sources": srcs, "src": "、".join(srcs), **extra})
+
+            sets = {"": [], "_lo": [], "_hi": []}
+            for iname, cls_list in inset_cls.items():
+                if len(cls_list) < n:
+                    continue
+                ig = insets[iname]["grid"]
+                lo, hi, mid = qpfacc.sum_classes(cls_list[:n])
+                base = {"lon0": ig["lon0"], "lat0": ig["lat0"], "res": ig["res"]}
+                for suffix, arr in (("", mid), ("_lo", lo), ("_hi", hi)):
+                    write(f"{suffix}_{iname}", arr, base, qpf.INSETS[iname]["label"], {})
+                    sets[suffix].append(f"grids/{name}{suffix}_{iname}.json")
+            lo, hi, mid = qpfacc.sum_classes(main_cls[:n])
+            base = {"lon0": g["lon0"], "lat0": g["lat0"], "res": g["res"]}
+            write("_lo", lo, base, f"未來{hours}小時累積降水下限", {"parts": sets["_lo"]})
+            write("_hi", hi, base, f"未來{hours}小時累積降水上限", {"parts": sets["_hi"], "openAbove": 300})
+            write("", mid, base, f"未來{hours}小時累積降水預報（加總）", {
+                "parts": sets[""], "range": {"lo": f"grids/{name}_lo.json", "hi": f"grids/{name}_hi.json"},
+                "method": "各12小時時段級距中值相加（≥300 mm 級距以 300 計）；範圍為級距下限與上限之和"})
+            out.append(hours)
+        self.manifest["layers"]["qpfacc"] = {"periods": [
+            {"hours": h, "meta": f"grids/qpfacc{h}.json"} for h in out], "issued": issued}
+        return out
+
+    def write_qpf6(self) -> int:
+        """6-hour QPF grids (F-C0041), published only during land typhoon warnings."""
+        periods = []
+        cur = now()
+        for i in range(1, 9):
+            ds_id = f"F-C0041-00{i}"
+            try:
+                g6 = qpfacc.parse_qpf6(self.f.get_json(f"Forecast/{ds_id}.json"))
+            except Exception as e:  # noqa: BLE001
+                self.log.warn(f"QPF 6h {ds_id}: {e}")
+                continue
+            # Stale files stay on the server after a warning ends: keep only current issues.
+            if not g6["end"] or datetime.fromisoformat(g6["end"]) < cur or \
+                    datetime.fromisoformat(g6["issue"]) < cur - timedelta(hours=18):
+                continue
+            name = f"qpf6_{i}"
+            grids.write_layer(self.out / "grids", name, g6, 0.1, 0.0, {
+                "label": f"6小時定量降水預報（颱風警報期間，第{i}段）", "unit": "mm/6h",
+                "start": g6["start"], "end": g6["end"], "issued": g6["issue"], "src": ds_id})
+            periods.append({"meta": f"grids/{name}.json", "start": g6["start"]})
+        keep = {f"qpf6_{p['meta'].split('_')[-1].split('.')[0]}" for p in periods}
+        for old in (self.out / "grids").glob("qpf6_*.*"):
+            if old.stem not in keep:
+                old.unlink()
+        self.manifest["layers"]["qpf6"] = {"available": bool(periods), "periods": periods,
+                                           "note": "氣象署開放資料僅於陸上颱風警報期間提供6小時定量降水格點預報"}
+        return len(periods)
 
     def task_spots(self):
         r = forecast.build_spots(self.f.get_json, self.out, self.log)
@@ -370,6 +447,30 @@ class Builder:
         return f"{len(texts)} bulletins, {n} counties with hazards"
 
     def task_satellite(self):
+        """Himawari IR / visible as numeric grids (smooth rendering, own colour scales)."""
+        layers = {}
+        for key, ds_id, conv, scale, offset, label, unit in (
+                ("ir", "O-B0056-001", satellite.ir_celsius, 0.1, -120.0, "紅外線雲頂溫度（亮度溫度）", "°C"),
+                ("vis", "O-B0055-001", satellite.vis_albedo, 0.001, 0.0, "可見光反照率", "")):
+            try:
+                meta = self.f.get_json(f"Observation/{ds_id}.json")["cwaopendata"]["dataset"]
+                t = meta.get("ObsTime", {}).get("Datetime") or meta.get("DateTime")
+                raw, geo_ = satellite.read_geotiff(self.f.get(f"Observation/{ds_id}.gtif.zip").read_bytes())
+                arr = conv(satellite.resample(raw, geo_))
+                g = satellite.GRID
+                grids.write_layer(self.out / "grids", f"sat_{key}", {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"],
+                                                                      "res": g["res"]}, scale, offset,
+                                  {"label": label, "unit": unit, "time": t, "src": ds_id})
+                layers[key] = {"meta": f"grids/sat_{key}.json", "time": t}
+            except Exception as e:  # noqa: BLE001
+                self.log.warn(f"satellite {ds_id}: {e}")
+        imgs = self.satellite_images()
+        self.manifest["layers"]["satellite"] = {"time": (layers.get("ir") or {}).get("time") or (imgs[0]["time"] if imgs else None),
+                                                "grids": layers, "images": imgs}
+        return f"numeric {sorted(layers)}; fallback images {len(imgs)}"
+
+    def satellite_images(self):
+        """Pre-rendered CWA satellite JPEGs (fallback when the numeric data fails)."""
         out = []
         for ds_id, label in (("O-C0042-004", "紅外線(黑白)"), ("O-C0042-008", "可見光"), ("O-C0042-006", "紅外線(色調強化)")):
             meta = self.f.get_json(f"Observation/{ds_id}.json")["cwaopendata"]["dataset"]
@@ -384,8 +485,7 @@ class Builder:
             out.append({"id": name, "label": label, "img": f"sat/{name}.jpg", "bounds": [lon[0], lat[0], lon[1], lat[1]],
                         "time": meta["ObsTime"]["Datetime"], "src": ds_id})
         write_json(self.out / "sat" / "index.json", out)
-        self.manifest["layers"]["satellite"] = {"time": out[0]["time"] if out else None, "images": out}
-        return f"{len(out)} images"
+        return out
 
     # ------------------------------------------------------------- driver
     def run(self, only):

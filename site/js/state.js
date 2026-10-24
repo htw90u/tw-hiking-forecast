@@ -16,7 +16,7 @@ export const S = {
   counties: [],  // GeoJSON features
   grids: new Map(),   // meta path -> Promise<grid>
   metas: new Map(),   // meta path -> Promise<meta>
-  layer: { id: null, overlay: null, frame: 0, period: 0, timer: null },
+  layer: { id: null, overlay: null, frame: 0, period: 0, timer: null, qpfMode: '12' },
   overlays: {},
   focus: null,   // L.LayerGroup for point / quake highlight
 };

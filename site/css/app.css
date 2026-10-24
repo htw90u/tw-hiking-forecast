@@ -271,3 +271,9 @@ summary::-webkit-details-marker { display: none; }
 }
 .ty-lbl { color: #8b0000; font-weight: 700; font-size: 12px; white-space: nowrap; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; }
 .ty-lbl.now { color: #000; }
+.link.inline { display: inline; min-height: 0; padding: 0; width: auto; font-size: inherit; }
+.status .link.inline { min-height: 2rem; display: inline-flex; align-items: center; }
+.grad { height: 1rem; border: 1px solid rgba(0,0,0,.4); margin-top: .3rem; }
+.grad-lbl { display: flex; justify-content: space-between; font-size: .75rem; }
+.attr { border-top: 1px solid var(--line); margin-top: .4rem; padding-top: .3rem; font-size: .8rem; }
+.attr p { margin: .2rem 0; }

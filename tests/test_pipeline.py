@@ -305,3 +305,38 @@ def test_archive_totals_needs_coverage():
             rows[(hk, "B")] = {"R1h": 5.0}
     tot = rainacc.archive_totals(rows, now_, 24)
     assert tot == {"A": 24.0}  # B has only 10 of 24 hours
+
+
+# ------------------------------------------------------------------ QPF totals / 6 h grid
+def test_sum_classes_ranges():
+    from pipeline import qpfacc
+    # class codes: 0 no data, 1 dry, 12 = 70-90 mm, 18 = >=300 mm
+    a = np.array([[1, 12, 18, 0]])
+    b = np.array([[1, 12, 12, 1]])
+    lo, hi, mid = qpfacc.sum_classes([a, b])
+    assert lo[0, 0] == 0 and hi[0, 0] == 1.0 and mid[0, 0] == 0
+    assert (lo[0, 1], hi[0, 1], mid[0, 1]) == (140, 180, 160)
+    assert lo[0, 2] == 370 and np.isinf(hi[0, 2]) and mid[0, 2] == 380
+    assert np.isnan(mid[0, 3])  # any period without data -> no total
+
+
+def test_parse_qpf6_fixture():
+    from pipeline import qpfacc
+    g = qpfacc.parse_qpf6(load("qpf6.json"))
+    assert g["data"].shape == (130, 130) and np.nanmax(g["data"]) > 10
+    assert g["start"].startswith("2026-10-24T08") and g["end"].startswith("2026-10-24T14")
+    b = grids.bounds(g)
+    assert abs(b[0] - (117.56 + grids.TWD67_TO_WGS84[0] - g["res"] / 2)) < 1e-4 and abs(b[3] - 26.67) < 0.05
+
+
+# ------------------------------------------------------------------ satellite projection
+def test_lcc_forward_matches_cwa_grid():
+    from pipeline import satellite as sat
+    geo_ = {"x0": -3765109.1081896117, "y0": 6022415.477491152, "sx": 1879.834333780261, "sy": 1870.3513229919351,
+            "lat0": 0.0, "lon0": 128.5, "lat1": 30.0, "lat2": 60.0, "fe": 0.0, "fn": 0.0}
+    x, y = sat.lcc_forward(np.array(128.5), np.array(0.0), geo_)
+    assert abs(float(x)) < 1e-6 and abs(float(y)) < 1e-6          # projection origin
+    # The image's documented extent starts at 102E / -1N: its south-west corner falls on column ~0
+    x, y = sat.lcc_forward(np.array(102.0), np.array(-1.0), geo_)
+    assert 0 <= (float(x) - geo_["x0"]) / geo_["sx"] < 10
+    assert sat.ir_celsius(np.array([27315.0]))[0] == pytest.approx(0.0)
