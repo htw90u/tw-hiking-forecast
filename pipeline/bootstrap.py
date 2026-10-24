@@ -34,7 +34,9 @@ def ensure_requirements() -> None:
             print(f"[bootstrap] creating virtualenv at {venv}", flush=True)
             subprocess.check_call([sys.executable, "-m", "venv", str(venv)])
         print(f"[bootstrap] re-running inside {venv}", flush=True)
-        os.execv(str(py), [str(py)] + sys.argv)
+        # orig_argv keeps "-m pipeline.build" (argv[0] would be the file path).
+        args = getattr(sys, "orig_argv", [sys.executable] + sys.argv)[1:]
+        os.execv(str(py), [str(py)] + args)
     print(f"[bootstrap] installing {', '.join(_missing())} from requirements.txt", flush=True)
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-r", str(REQUIREMENTS)])
     importlib.invalidate_caches()

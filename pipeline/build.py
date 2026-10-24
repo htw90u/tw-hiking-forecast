@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import forecast, geo, grids, hazards, qpf, qpfacc, rainacc, satellite, shakemap, stations  # noqa: E402
+from . import forecast, geo, grids, hazards, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -284,8 +284,75 @@ class Builder:
             periods.append({"meta": f"grids/{name}.json", "start": start.isoformat()})
         self.manifest["layers"]["qpf"] = {"time": periods[0]["start"] if periods else None, "periods": periods}
         acc = self.write_qpf_totals(main_cls, inset_cls, insets, starts, issued)
-        n6 = self.write_qpf6()
-        return f"{len(periods)} periods (+{len(qpf.INSETS)} island insets each); totals {acc}; 6h periods {n6}"
+        n6, src6 = self.write_qpf6_web(pts, land, insets)
+        if not n6:
+            n6, src6 = self.write_qpf6(), "F-C0041"
+        return f"{len(periods)} periods (+{len(qpf.INSETS)} island insets each); totals {acc}; 6h periods {n6} ({src6})"
+
+    def write_qpf6_web(self, pts, land, insets):
+        """Daily 6-hour QPF images from the CWA website (times read from the image header)."""
+        g = qpf.GRID
+        web = Fetcher(Path(self.args.cache) / "cwaweb", self.log, base=qpfweb.WEB_BASE)
+        learned_dir = Path(self.args.cache) / "qpf_digits"
+        tpl = qpfweb.load_templates(learned_dir)
+        cur = now()
+        decoded = []
+        try:
+            for i, key in enumerate(qpfweb.IMAGES_6H):
+                png = web.get(key).read_bytes()
+                rgba = qpfweb.read_png(png)
+                res = qpfweb.decode(rgba, cur, 6, tpl)
+                if not qpfweb.confident(res):
+                    raise ValueError(f"{key}: header not recognised (err {res['err']:.3f}, margin {res['margin']:.3f})")
+                decoded.append((key, png, res))
+        except Exception as e:  # noqa: BLE001
+            self.log.warn(f"QPF 6h (website): {e}; falling back to open data")
+            return 0, None
+        issue0, start0 = decoded[0][2]["issue"], decoded[0][2]["start"]
+        for k, (key, _, res) in enumerate(decoded):
+            if res["issue"] != issue0 or res["start"] != start0 + timedelta(hours=6 * k):
+                self.log.warn(f"QPF 6h (website): inconsistent periods at {key}; falling back to open data")
+                return 0, None
+        if decoded[-1][2]["end"] < cur:
+            self.log.warn("QPF 6h (website): images are out of date; falling back to open data")
+            return 0, None
+        for _, _, res in decoded[:1]:
+            new = qpfweb.learn_unknown_digits(res, 6, learned_dir, tpl)
+            if new:
+                self.log.info(f"QPF 6h: learned digit templates {new}")
+        periods = []
+        classes = [{"lo": 0, "hi": 0.5}] + [{"lo": lo, "hi": hi} for lo, hi in qpf.CLASS_BOUNDS]
+        for k, (key, png, res) in enumerate(decoded):
+            r = qpf.process(png, pts, land, insets)
+            name = f"qpf6_{k + 1}"
+            common = {"unit": "mm/6h", "kind": "class", "classes": classes, "start": res["start"].isoformat(),
+                      "end": res["end"].isoformat(), "issued": res["issue"].isoformat(), "license": "cwa-web",
+                      "src": "全球資訊網 定量降水預報（逐6小時）", "url": f"{qpfweb.WEB_BASE}/V8/C/P/QPF.html"}
+            parts = []
+            for iname, ires in r["insets"].items():
+                if "grid" not in ires:
+                    continue
+                ig = insets[iname]["grid"]
+                arr = ires["grid"].astype(np.float32)
+                arr[arr == 0] = np.nan
+                grids.write_layer(self.out / "grids", f"{name}_{iname}", {"data": arr, "lon0": ig["lon0"], "lat0": ig["lat0"],
+                                                                         "res": ig["res"]}, 1, 0,
+                                  {**common, "label": qpf.INSETS[iname]["label"]})
+                parts.append(f"grids/{name}_{iname}.json")
+            arr = r["grid"].astype(np.float32)
+            arr[arr == 0] = np.nan
+            grids.write_layer(self.out / "grids", name, {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"], "res": g["res"]},
+                              1, 0, {**common, "parts": parts, "label": f"6小時定量降水預報（第{k + 1}段）",
+                                     "title": f"grids/{name}_title.png", "fitCost": round(r["cost"], 1)})
+            (self.out / "grids" / f"{name}_title.png").write_bytes(r["title_png"])
+            periods.append({"meta": f"grids/{name}.json", "start": res["start"].isoformat()})
+        for old in (self.out / "grids").glob("qpf6_*"):
+            m = re.match(r"qpf6_(\d+)", old.name)
+            if m and int(m.group(1)) > len(periods):
+                old.unlink()
+        self.manifest["layers"]["qpf6"] = {"available": True, "periods": periods, "source": "cwa-web",
+                                           "issued": issue0.isoformat()}
+        return len(periods), "website"
 
     def write_qpf_totals(self, main_cls, inset_cls, insets, starts, issued) -> list:
         """24 h / 48 h totals derived by adding CWA's 12-hour QPF periods."""

@@ -801,6 +801,7 @@ export function showSources() {
 <p class="muted">資料取自中央氣象署開放資料（https://opendata.cwa.gov.tw，及其官方 S3 鏡像）。本網站資料更新：${fmtTime(S.manifest?.built)}</p></section>
 <section class="card"><h3>本網站的加工與衍生資料</h3><ul>
 <li>定量降水預報圖、等震度圖：由圖片自動對位並依圖例顏色換算回數值級距。</li>
+<li>逐 6 小時定量降水預報：取自中央氣象署全球資訊網（https://www.cwa.gov.tw/V8/C/P/QPF.html），依<a href="https://www.cwa.gov.tw/V8/C/information.html" target="_blank" rel="noopener">政府網站資料開放宣告</a>註明出處引用；颱風警報期間若網站圖無法取得，改用開放資料 F-C0041。</li>
 <li>未來 24／48 小時累積降水：將各 12 小時預報加總計算，<strong>非中央氣象署發布之預報</strong>，未經中央氣象署審閱。</li>
 <li>多時段累積雨量：由雨量站觀測值以距離權重內插估計。</li>
 <li>衛星雲圖：由亮度溫度／反照率數值重新著色並平滑顯示。</li>

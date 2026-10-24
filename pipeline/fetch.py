@@ -6,6 +6,7 @@ disk together with their ETag so unchanged files are not downloaded again.
 """
 import json
 import re
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -15,6 +16,13 @@ from pathlib import Path
 
 S3_BASE = "https://cwaopendata.s3.ap-northeast-1.amazonaws.com"
 USER_AGENT = "tw-hiking-forecast/1.0 (+https://github.com/htw90u/tw-hiking-forecast)"
+
+
+# Certificates are still verified against the CA bundle; only Python 3.13's
+# extra X.509 strictness (e.g. "Missing Subject Key Identifier") is relaxed,
+# matching curl/OpenSSL defaults.
+SSL_CTX = ssl.create_default_context()
+SSL_CTX.verify_flags &= ~getattr(ssl, "VERIFY_X509_STRICT", 0)
 
 
 class FetchError(RuntimeError):
@@ -37,7 +45,7 @@ class Fetcher:
         for attempt in range(self.retries + 1):
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                with urllib.request.urlopen(req, timeout=self.timeout, context=SSL_CTX) as r:
                     return r.status, dict(r.headers), r.read()
             except urllib.error.HTTPError as e:
                 if e.code == 304:

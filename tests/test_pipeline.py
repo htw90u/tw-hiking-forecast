@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import forecast, geo, grids, hazards, qpf, stations
+from pipeline import forecast, geo, grids, hazards, qpf, qpfweb, stations
 from pipeline.build import to_mercator
 from pipeline.log import TZ, Log, colorize
 
@@ -340,3 +340,27 @@ def test_lcc_forward_matches_cwa_grid():
     x, y = sat.lcc_forward(np.array(102.0), np.array(-1.0), geo_)
     assert 0 <= (float(x) - geo_["x0"]) / geo_["sx"] < 10
     assert sat.ir_celsius(np.array([27315.0]))[0] == pytest.approx(0.0)
+
+
+def _web_head():
+    return qpfweb.read_png((FIX / "qpf6_web_head.png").read_bytes())
+
+
+def test_qpfweb_decode_header():
+    cur = datetime(2026, 10, 24, 12, 0, tzinfo=TZ)
+    res = qpfweb.decode(_web_head(), cur, 6, qpfweb.load_templates())
+    assert qpfweb.confident(res)
+    assert res["issue"] == datetime(2026, 10, 24, 11, 30, tzinfo=TZ)
+    assert res["start"] == datetime(2026, 10, 24, 20, 0, tzinfo=TZ)
+    assert res["end"] == res["start"] + timedelta(hours=6)
+
+
+def test_qpfweb_learns_missing_digit(tmp_path):
+    cur = datetime(2026, 10, 24, 12, 0, tzinfo=TZ)
+    tpl = qpfweb.load_templates()
+    tpl.pop("4")
+    res = qpfweb.decode(_web_head(), cur, 6, tpl)
+    assert res["start"] == datetime(2026, 10, 24, 20, 0, tzinfo=TZ)
+    learned = qpfweb.learn_unknown_digits(res, 6, tmp_path, tpl)
+    assert "4" in learned and (tmp_path / "4.png").exists()
+    assert "4" in qpfweb.load_templates(tmp_path)

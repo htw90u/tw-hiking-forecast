@@ -250,6 +250,8 @@ export function renderLegend(meta, message) {
 }
 
 /** Attribution block (顯名聲明); derived products carry the full statement and a disclaimer. */
+const CWA_WEB_TERMS = 'https://www.cwa.gov.tw/V8/C/information.html';
+
 export function attribution(meta) {
   const year = (meta.issued || meta.time || meta.start || '').slice(0, 4) || new Date().getFullYear();
   const version = meta.issued || meta.time || '';
@@ -257,6 +259,9 @@ export function attribution(meta) {
     return `<div class="attr"><p><strong>中央氣象署 ${esc(year)} 定量降水預報（${esc(meta.src || '')}，發布 ${esc(fmtTime(version))}）</strong></p>
 <p>${esc(OGDL_TEXT)} 政府資料開放授權條款：<a href="${OGDL_URL}" target="_blank" rel="noopener">${OGDL_URL}</a></p>
 <p class="warn-txt">本圖為本網站將上述各時段預報加總計算之衍生資料，非中央氣象署發布之預報，未經中央氣象署審閱。${esc(meta.method || '')}</p></div>`;
+  }
+  if (meta.license === 'cwa-web') {
+    return `<p class="src">資料來源：中央氣象署全球資訊網 ${esc(meta.src || '')}${version ? `（發布 ${esc(fmtTime(version))}）` : ''}・依<a href="${CWA_WEB_TERMS}" target="_blank" rel="noopener">政府網站資料開放宣告</a>引用；本網站將原圖自動對位並依圖例換算為級距，<a href="${esc(meta.url || CWA_WEB_TERMS)}" target="_blank" rel="noopener">原圖</a></p>`;
   }
   return `<p class="src">資料來源：中央氣象署 ${esc(year)} ${esc(meta.src || '')}${version ? `（${esc(fmtTime(version))}）` : ''}・依<a href="${OGDL_URL}" target="_blank" rel="noopener">政府資料開放授權條款</a>釋出</p>`;
 }
@@ -282,7 +287,7 @@ export function renderTimeControl(meta) {
     const has6 = Boolean(L_.qpf6?.available);
     h = '<div class="seg" role="radiogroup" aria-label="預報種類">' + QPF_MODES.map((m) => {
       const off = m.id === '6' && !has6;
-      return `<button class="seg-btn" role="radio" aria-checked="${m.id === mode}" data-qpfmode="${m.id}"${off ? ' aria-disabled="true" title="6小時版目前不在氣象署開放資料中（颱風警報期間除外）"' : ''}>${esc(m.label)}${off ? '（暫無）' : ''}</button>`;
+      return `<button class="seg-btn" role="radio" aria-checked="${m.id === mode}" data-qpfmode="${m.id}"${off ? ' aria-disabled="true" title="目前無法取得6小時定量降水預報"' : ''}>${esc(m.label)}${off ? '（暫無）' : ''}</button>`;
     }).join('') + '</div>';
     let periods = [];
     if (mode === '6') periods = (L_.qpf6?.periods || []).map((p, i, a) => ({ label: `${fmtTime(p.start)}`, i, n: a.length }));
