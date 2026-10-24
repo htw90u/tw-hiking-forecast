@@ -83,6 +83,8 @@ a { color: var(--accent); }
 .wx-grid { image-rendering: auto; }
 .pin-mtn, .pin-spot { color: #5b3a1a; text-shadow: 0 0 2px #fff, 0 0 2px #fff; font-size: 16px; line-height: 18px; text-align: center; }
 .pin-spot { color: #00577a; font-size: 13px; }
+.pin-peak { color: #8a6a4a; font-size: 12px; line-height: 14px; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+[data-theme="contrast"] .pin-peak { color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; }
 [data-theme="contrast"] .pin-mtn, [data-theme="contrast"] .pin-spot { color: #ff0; text-shadow: 0 0 2px #000, 0 0 2px #000; }
 .epi { color: #c00; font-size: 26px; font-weight: 900; text-align: center; line-height: 28px; text-shadow: 0 0 3px #fff; }
 .ty-icon { font-size: 26px; line-height: 30px; text-align: center; }
@@ -307,3 +309,6 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .map-lbl.lbl-left > span { position: absolute; right: 0; top: 0; }
 .tog-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 calc(var(--u) * .9); }
 .tog-lbl { color: var(--muted); }
+.map-lbl.lbl-peaks { color: #6b4f33; font-weight: 600; }
+.seg-btn.mtn.osm > span { color: #8a6a4a; }
+.base-note { display: block; color: var(--lv2); font-weight: 700; }

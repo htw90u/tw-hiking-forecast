@@ -7,8 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import forecast, geo, grids, hazards, qpf, qpfweb, stations
+from pipeline import forecast, geo, grids, hazards, peaks, qpf, qpfweb, stations
 from pipeline.build import to_mercator
+from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
 
 FIX = Path(__file__).parent / "fixtures"
@@ -364,3 +365,42 @@ def test_qpfweb_learns_missing_digit(tmp_path):
     learned = qpfweb.learn_unknown_digits(res, 6, tmp_path, tpl)
     assert "4" in learned and (tmp_path / "4.png").exists()
     assert "4" in qpfweb.load_templates(tmp_path)
+
+
+# ------------------------------------------------------------------ OSM peaks
+OVERPASS_SAMPLE = {"elements": [
+    {"type": "node", "id": 1, "lat": 23.47, "lon": 120.957, "tags": {"natural": "peak", "name": "玉山", "ele": "3952"}},
+    {"type": "node", "id": 2, "lat": 24.383, "lon": 121.231, "tags": {"natural": "peak", "name": "Snow Mountain", "name:zh": "雪山", "ele": "3,886 m"}},
+    {"type": "node", "id": 3, "lat": 24.3831, "lon": 121.2311, "tags": {"natural": "peak", "name:zh": "雪山", "ele": "3886"}},
+    {"type": "node", "id": 4, "lat": 25.17, "lon": 121.55, "tags": {"natural": "peak", "name": "七星山", "ele": "abc"}},
+    {"type": "node", "id": 5, "lat": 30.0, "lon": 121.0, "tags": {"natural": "peak", "name": "Outside"}},
+    {"type": "node", "id": 6, "lat": 24.1, "lon": 121.0, "tags": {"natural": "peak"}},
+    {"type": "node", "id": 7, "lat": 23.2, "lon": 120.9, "tags": {"natural": "peak", "name": "測試山", "ele": "9999"}},
+]}
+
+
+def test_peaks_parse():
+    out = peaks.parse(OVERPASS_SAMPLE, cwa_mountains=[("玉山", 23.47, 120.957)])
+    names = [p[0] for p in out]
+    assert "玉山" not in names                      # already a CWA forecast spot
+    assert names.count("雪山") == 1                 # zh name preferred, near-duplicates merged
+    assert "Outside" not in names and len(out) == 3  # outside Taiwan and unnamed peaks dropped
+    assert out[0][:4] == ["雪山", 24.383, 121.231, 3886]  # highest first, '3,886 m' parsed
+    assert dict((p[0], p[3]) for p in out) == {"雪山": 3886, "七星山": None, "測試山": None}
+
+
+def test_peaks_build_cache_and_fallback(tmp_path):
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 24, 12, tzinfo=TZ)
+    n, fresh = peaks.build(tmp_path, log, now, fetch=lambda _log: OVERPASS_SAMPLE)
+    assert (n, fresh) == (4, True)
+    saved = json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))
+    assert saved["license"] == "ODbL-1.0" and saved["fields"][0] == "n"
+
+    def boom(_log):
+        raise FetchError("offline")
+    assert peaks.build(tmp_path, log, now + timedelta(days=1), fetch=boom) == (4, False)   # fresh copy kept
+    assert peaks.build(tmp_path, log, now + timedelta(days=8), fetch=boom) == (4, False)   # stale but Overpass down
+    with pytest.raises(FetchError):
+        peaks.build(tmp_path / "empty", log, now, fetch=boom)
+    log.close()

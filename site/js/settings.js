@@ -14,8 +14,8 @@ export const DEFAULTS = {
   ui: 'text',            // text (readable labels) | icon (icon tiles and tab bar)
   layer: 'radar',
   opacity: 0.7,
-  overlays: { stations: true, mountains: true, spots: false, quakes: true, typhoon: true },
-  labels: { mountains: false, spots: false, stations: false }, // names drawn on the map
+  overlays: { stations: true, mountains: true, peaks: true, spots: false, quakes: true, typhoon: true },
+  labels: { mountains: false, peaks: false, spots: false, stations: false }, // names drawn on the map
   thresholds: { rain1h: 10, rain1hRed: 30, rain24: 80, rain24Red: 200, gust: 10, gustRed: 17, cold: 5, coldRed: 0 },
 };
 

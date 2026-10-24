@@ -47,6 +47,8 @@ function serve() {
     const u = new URL(req.url, 'http://x');
     let p = path.join(SITE, decodeURIComponent(u.pathname));
     if (!p.startsWith(SITE)) { res.writeHead(403); res.end(); return; }
+    // OSM peaks come from Overpass in CI; use the small fixture when a local build could not fetch them.
+    if (u.pathname.endsWith('/data/peaks.json') && !fs.existsSync(p)) p = path.join(ROOT, 'tests', 'fixtures', 'peaks_sample.json');
     if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
     fs.readFile(p, (err, buf) => {
       if (err) { res.writeHead(404); res.end('not found'); return; }
@@ -411,6 +413,43 @@ function serve() {
     await page.waitForTimeout(300);
     assert((await page.$$('.map-lbl.lbl-mountains')).length === 0, 'labels remain after turning off');
     if (await page.isVisible('#btn-more')) await page.click('#btn-more');
+  });
+
+  await check('OSM peaks: markers from zoom 11, peak panel shows the nearby township forecast', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    const n = await page.evaluate(async () => (await import('./js/state.js')).S.peaks.length);
+    assert(n > 0, 'no peaks loaded');
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.map.setView([23.47, 120.9], 12, { animate: false }); });
+    await page.waitForFunction(() => document.querySelectorAll('.pin-peak').length > 0);
+    await page.evaluate(async () => {
+      const { S } = await import('./js/state.js'); const v = await import('./js/views.js');
+      const p = S.peaks[0];
+      await v.showPoint(p.lat, p.lon, { peak: p });
+    });
+    await page.waitForSelector('#h-tfc');
+    const h = await page.textContent('#h-tfc');
+    assert(h.includes('鄰近鄉鎮預報'), `heading ${h}`);
+    assert(!(await page.$('#h-fc')), 'a CWA spot forecast should not be shown for an OSM peak');
+    const attr = await page.textContent('.leaflet-control-attribution');
+    assert(attr.includes('ODbL'), 'OSM peak attribution missing');
+    const res = await page.evaluate(async () => (await import('./js/views.js')).search('鹿林').map((r) => r.type));
+    assert(res.includes('山'), 'peak not found by search');
+    await page.click('#sheet-close');
+  });
+
+  await check('OpenCycleMap without a key falls back to the topo map with a notice', async () => {
+    await page.click('#btn-settings');
+    await page.fill('#set-tfkey', '');
+    await page.dispatchEvent('#set-tfkey', 'change');
+    await page.selectOption('#set-base', 'cycle');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.base-note');
+    const src = await page.$eval('.leaflet-tile-pane img', (i) => i.src).catch(() => '');
+    assert(!src.includes('thunderforest'), 'keyless Thunderforest tiles requested');
+    await page.click('#btn-settings');
+    await page.selectOption('#set-base', 'topo');
+    await page.keyboard.press('Escape');
+    assert(!(await page.$('.base-note')), 'notice remains after switching back');
   });
 
   await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {

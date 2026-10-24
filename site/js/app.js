@@ -32,12 +32,30 @@ function thunderforestKey() {
 
 function setBasemap() {
   const s = S.settings;
-  const def = BASEMAPS[s.basemap] || BASEMAPS.topo;
-  const url = s.basemap === 'custom' ? s.customTile : def.url;
+  let key = s.basemap;
+  S.baseNotice = '';
+  // OpenCycleMap without an API key only returns "API Key Required" tiles: show the topo map instead.
+  if (key === 'cycle' && !thunderforestKey()) {
+    key = 'topo';
+    S.baseNotice = 'OpenCycleMap 需要 Thunderforest API key（設定 → 底圖），目前先以等高線地形圖顯示。';
+  }
+  const def = BASEMAPS[key] || BASEMAPS.topo;
+  const url = key === 'custom' ? s.customTile : def.url;
   if (baseLayer) S.map.removeLayer(baseLayer);
-  if (!url) return;
-  baseLayer = L.tileLayer(url, { maxZoom: def.max, maxNativeZoom: def.max, subdomains: def.sub || 'abc', attribution: def.attr, crossOrigin: true, apikey: thunderforestKey() });
-  baseLayer.addTo(S.map);
+  if (url) {
+    // Thunderforest tiles are shown as plain images (no CORS request needed).
+    baseLayer = L.tileLayer(url, { maxZoom: def.max, maxNativeZoom: def.max, subdomains: def.sub || 'abc', attribution: def.attr,
+      crossOrigin: key !== 'cycle', apikey: thunderforestKey() });
+    if (key === 'cycle') {
+      let errors = 0;
+      baseLayer.on('tileerror', () => {
+        errors += 1;
+        if (errors === 6) { S.baseNotice = 'OpenCycleMap 圖磚載入失敗：請確認 API key 是否正確或額度是否用完。'; updateStatus(); }
+      });
+    }
+    baseLayer.addTo(S.map);
+  }
+  if (S.manifest) updateStatus();
 }
 
 // ---------------------------------------------------------------- overlays
@@ -70,6 +88,9 @@ function buildOverlays() {
     m.on('click', () => showPoint(p.lat, p.lon, { spotKey: p.k }));
     (mountain ? o.mountains : o.spots).addLayer(m);
   });
+
+  // OSM peaks: thousands of points, so markers are created only for the visible area (see updatePeaks).
+  o.peaks = L.layerGroup([], { attribution: '山頭 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)' });
 
   o.quakes = L.layerGroup();
   S.quakes.filter((q) => Date.now() - new Date(q.time).getTime() < 7 * 864e5).forEach((q) => {
@@ -144,18 +165,45 @@ function applyOverlayVisibility() {
   Object.entries(S.overlays).forEach(([k, g]) => {
     // In the earthquake view, ordinary station dots would be confused with intensity markers.
     const hiddenByQuake = S.quakeMode && (k === 'stations' || k === 'spots' || k === 'quakes');
-    const on = show[k] && !hiddenByQuake && (k !== 'stations' || S.map.getZoom() >= 9) && (k !== 'spots' || S.map.getZoom() >= 9);
+    const minZoom = { stations: 9, spots: 9, peaks: PEAK_MIN_ZOOM }[k] || 0;
+    const on = show[k] && !hiddenByQuake && S.map.getZoom() >= minZoom;
     if (on && !S.map.hasLayer(g)) g.addTo(S.map);
     if (!on && S.map.hasLayer(g)) S.map.removeLayer(g);
   });
   document.getElementById('map').dataset.zoom = String(S.map.getZoom());
+  updatePeaks();
   updateLabels();
+}
+
+const PEAK_MIN_ZOOM = 11;
+const MAX_PEAK_MARKERS = 800;
+let peakKeys = '';
+
+/** (Re)create OSM peak markers for the current view. */
+function updatePeaks() {
+  const g = S.overlays.peaks;
+  if (!g) return;
+  if (!S.map.hasLayer(g)) { g.clearLayers(); peakKeys = ''; return; }
+  const view = S.map.getBounds().pad(0.2);
+  const list = S.peaks.filter((p) => view.contains([p.lat, p.lon])).slice(0, MAX_PEAK_MARKERS);
+  const keys = list.map((p) => p.k).join();
+  if (keys === peakKeys) return;
+  peakKeys = keys;
+  g.clearLayers();
+  list.forEach((p) => {
+    const icon = L.divIcon({ className: 'pin-peak', html: '▲', iconSize: [14, 14] });
+    const m = L.marker([p.lat, p.lon], { icon, title: p.n, alt: p.n, keyboard: false, pane: 'spots' });
+    m.bindTooltip(`${esc(p.n)}${p.ele ? ` ${p.ele} m` : ''}`, { direction: 'top', offset: [0, -6] });
+    m.on('click', () => showPoint(p.lat, p.lon, { peak: p }));
+    g.addLayer(m);
+  });
 }
 
 // ---------------------------------------------------------------- name labels
 // [kind, min zoom, items]: labels follow their marker layer and skip any that would overlap.
 const LABEL_KINDS = [
   ['mountains', 10, () => S.spots.filter((p) => p.c === 'mountain')],
+  ['peaks', 12, () => S.peaks],
   ['spots', 11, () => S.spots.filter((p) => p.c !== 'mountain')],
   ['stations', 11, () => S.stations],
 ];
@@ -233,9 +281,9 @@ function buildChips() {
 }
 
 function buildOverlayToggles() {
-  const items = [['stations', '測站'], ['mountains', '山岳'], ['spots', '景點'], ['quakes', '地震'], ['typhoon', '颱風']];
+  const items = [['stations', '測站'], ['mountains', '山岳'], ['peaks', '山頭(OSM)'], ['spots', '景點'], ['quakes', '地震'], ['typhoon', '颱風']];
   const box = document.getElementById('toggles');
-  const names = [['mountains', '山岳'], ['spots', '景點'], ['stations', '測站']];
+  const names = [['mountains', '山岳'], ['peaks', '山頭'], ['spots', '景點'], ['stations', '測站']];
   box.innerHTML = items.map(([k, label]) => `<label class="tog"><input type="checkbox" data-ov="${k}"${S.settings.overlays[k] ? ' checked' : ''}> ${label}</label>`).join('')
     + `<span class="tog-group" role="group" aria-label="在地圖上顯示名稱"><span class="tog-lbl">顯示名稱：</span>${names.map(([k, label]) => `<label class="tog"><input type="checkbox" data-lbl="${k}"${S.settings.labels[k] ? ' checked' : ''}> ${label}</label>`).join('')}</span>`;
   box.querySelectorAll('[data-lbl]').forEach((c) => c.addEventListener('change', () => {
@@ -265,7 +313,8 @@ function updateStatus() {
   const tyNames = ty ? ty.cyclones.map((c) => c.cname || c.name).filter(Boolean).join('、') : '';
   const tyTitle = ty ? (ty.warnings || []).map((w) => w.title).filter(Boolean)[0] || '颱風警報' : '';
   const tyBanner = ty ? `<button class="ty-banner" id="ty-banner"><span aria-hidden="true">🌀</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}｜${esc(tyTitle)}</span><span class="ty-more">詳情 ›</span></button>` : '';
-  el.innerHTML = `${tyBanner}${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
+  const baseNote = S.baseNotice ? `<span class="base-note">${esc(S.baseNotice)}</span> ` : '';
+  el.innerHTML = `${tyBanner}${baseNote}${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
   el.querySelector('#btn-sources').addEventListener('click', showSources);
   el.querySelector('#ty-banner')?.addEventListener('click', showTyphoon);
   placeLegend();
@@ -287,7 +336,7 @@ function bindSearch() {
     list.hidden = true;
     input.value = r.label;
     flyTo(r.lat, r.lon, 12);
-    showPoint(r.lat, r.lon, { spotKey: r.spot, stationId: r.station, label: r.type === '鄉鎮' ? r.label : undefined });
+    showPoint(r.lat, r.lon, { spotKey: r.spot, stationId: r.station, peak: r.peak, label: r.type === '鄉鎮' ? r.label : undefined });
   };
   input.addEventListener('input', () => {
     results = search(input.value);
@@ -448,6 +497,8 @@ async function loadData() {
     getJSON('warnings.json', { optional: true }), getJSON('sat/index.json', { optional: true }),
     fetch('geo/towns-10t.json').then((r) => r.json()),
   ]);
+  const peaks = await getJSON('peaks.json', { optional: true });
+  S.peaks = (peaks?.peaks || []).map(([n, lat, lon, ele, osm]) => ({ k: `osm-${osm}`, n, lat, lon, ele }));
   S.stations = st?.stations || [];
   S.stationsTime = st?.time;
   S.spots = spots?.spots || [];
@@ -477,7 +528,7 @@ async function main() {
   setBasemap();
   S.map.on('click', (e) => showPoint(e.latlng.lat, e.latlng.lng));
   S.map.on('zoomend', applyOverlayVisibility);
-  S.map.on('moveend', updateLabels);
+  S.map.on('moveend', () => { updatePeaks(); updateLabels(); });
   S.map.on('zoomend', layoutTyLabels);
   document.addEventListener('quakemode', (e) => {
     applyOverlayVisibility();
@@ -550,6 +601,14 @@ async function main() {
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW', e)));
+  // A new version took over (the service worker activates immediately): reload once so the page matches it.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    location.reload();
+  });
 }
 
 main();

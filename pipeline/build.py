@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import forecast, geo, grids, hazards, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations  # noqa: E402
+from . import forecast, geo, grids, hazards, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "towns", "quakes", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "quakes", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -433,6 +433,11 @@ class Builder:
                                             "count": r["count"]}
         return f"{r['count']} spots"
 
+    def task_peaks(self):
+        n, fresh = peaks.build(self.out, self.log, now(), force=self.args.refresh_peaks)
+        self.manifest["layers"]["peaks"] = {"count": n, "source": "OpenStreetMap", "license": "ODbL-1.0"}
+        return f"{n} OSM peaks ({'downloaded' if fresh else 'cached, refreshed weekly'})"
+
     def task_towns(self):
         r = forecast.build_towns(self.f.get_json, self.out, self.log)
         self.manifest["layers"]["towns"] = {"time": r["issue"], "count": r["count"]}
@@ -601,6 +606,7 @@ def main(argv=None):
     ap.add_argument("--history-days", type=int, default=15, help="how far back to ingest S3 history snapshots")
     ap.add_argument("--hist-days-out", type=int, default=31, help="days of hourly history per station file")
     ap.add_argument("--radar-frames", type=int, default=7)
+    ap.add_argument("--refresh-peaks", action="store_true", help="download OSM peaks even if the weekly copy is fresh")
     ap.add_argument("--archive-seed-url", default="",
                     help="deployed site URL used to restore data/archive/*.csv.gz when the local archive is empty")
     ap.add_argument("--typhoon-tables", action="store_true",

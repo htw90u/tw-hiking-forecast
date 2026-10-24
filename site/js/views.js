@@ -160,12 +160,18 @@ ${rain ? `<h4>雨量</h4><div class="tiles">${rain}</div>` : ''}
 <p class="muted">觀測時間 ${esc(fmtTime(st.t))}（${esc(ageText(st.t))}）</p></section>`);
 }
 
-/** Mountains (CWA hiking spots) near a point, nearest first. */
-function mountainsCard(lat, lon, maxKm = 20) {
-  const list = nearest(S.spots.filter((x) => x.c === 'mountain'), lat, lon, { limit: 8, maxKm });
+/** Mountains near a point, nearest first: CWA hiking forecast spots and OSM peaks. */
+function mountainsCard(lat, lon, maxKm = 20, excludeKey = null) {
+  const cwa = S.spots.filter((x) => x.c === 'mountain').map((it) => ({ it, kind: 'cwa' }));
+  const osm = S.peaks.map((it) => ({ it, kind: 'osm' }));
+  const list = [...cwa, ...osm].map((x) => ({ ...x, d: haversineKm(lat, lon, x.it.lat, x.it.lon) }))
+    .filter((x) => x.d <= maxKm && x.it.k !== excludeKey).sort((a, b) => a.d - b.d).slice(0, 12);
+  const btn = ({ it, kind, d }) => (kind === 'cwa'
+    ? html`<button class="seg-btn mtn" data-spot="${it.k}" title="氣象署登山預報點"><span aria-hidden="true">▲</span> ${it.n} <small>${d.toFixed(1)} km・有登山預報</small></button>`
+    : html`<button class="seg-btn mtn osm" data-peak="${it.k}"><span aria-hidden="true">▲</span> ${it.n} <small>${it.ele ? `${it.ele} m・` : ''}${d.toFixed(1)} km</small></button>`);
   return html`<section class="card" aria-labelledby="h-mtn"><h3 id="h-mtn">鄰近山域（${maxKm} km 內）</h3>
-${list.length ? html`<div class="mtns">${list.map(({ it, d }) => html`<button class="seg-btn mtn" data-spot="${it.k}"><span aria-hidden="true">▲</span> ${it.n} <small>${d.toFixed(1)} km</small></button>`)}</div>
-<p class="note">點山名可查看該山的登山預報與安全評估。</p>` : html`<p>${maxKm} km 內沒有氣象署登山預報點。</p>`}</section>`;
+${list.length ? html`<div class="mtns">${list.map(btn)}</div>
+<p class="note">點山名可查看預報與安全評估。標示「有登山預報」的是氣象署登山預報點，其他山頭顯示鄰近鄉鎮預報。山頭資料 © OpenStreetMap contributors。</p>` : html`<p>${maxKm} km 內沒有已知山頭。</p>`}</section>`;
 }
 
 // ------------------------------------------------------------------ forecast tables
@@ -389,8 +395,11 @@ export async function showPoint(lat, lon, opts = {}) {
   const town = findTown(lat, lon);
   const spotsNear = nearest(S.spots, lat, lon, { limit: 8, maxKm: 6 });
   const mountainNear = spotsNear.filter((x) => x.it.c === 'mountain');
+  // An OSM peak has no CWA forecast of its own: its township forecast is shown instead.
+  const peak = opts.peak || null;
   const spotPick = opts.spotKey ? S.spots.find((s) => s.k === opts.spotKey)
-    : (mountainNear[0]?.d <= 5 ? mountainNear[0].it : spotsNear[0]?.d <= 3 ? spotsNear[0].it : null);
+    : peak ? null
+      : (mountainNear[0]?.d <= 5 ? mountainNear[0].it : spotsNear[0]?.d <= 3 ? spotsNear[0].it : null);
   const stationsNear = nearest(S.stations, lat, lon, { limit: 8, maxKm: 35 });
   const weatherSt = stationsNear.filter((x) => x.it.k !== 'rain');
   const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
@@ -415,8 +424,8 @@ export async function showPoint(lat, lon, opts = {}) {
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: q.areas?.[0]?.int || `${q.maxInt}級` })),
   }, S.settings.thresholds);
 
-  const title = opts.label || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
-  const placeLine = [town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
+  const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+  const placeLine = [peak?.ele ? `海拔 ${peak.ele} m` : null, town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
   const near = spotsNear.slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
 
   const vrow = (label, k, unit, digits = 1, empty = '無資料') => {
@@ -484,7 +493,9 @@ ${qpfRows ? html`<section class="card" aria-labelledby="h-qpf"><h3 id="h-qpf">�
 ${qpf6Rows ? html`<section class="card" aria-labelledby="h-qpf6"><h3 id="h-qpf6">定量降水預報（每6小時・颱風警報期間）</h3><table class="kv"><tbody>${raw(qpf6Rows)}</tbody></table></section>` : ''}
 ${qaccRows ? html`<section class="card" aria-labelledby="h-qacc"><h3 id="h-qacc">未來累積降水（由12小時預報加總）</h3><table class="kv"><tbody>${raw(qaccRows)}</tbody></table>${raw(accMeta ? attribution(accMeta) : '')}</section>` : ''}
 ${fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : ''}
-${townHtml ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}`;
+${townHtml && peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄰近鄉鎮預報</h3>
+<p class="note">此山不是氣象署登山預報點，以下為所在鄉鎮（${normCounty(town.COUNTYNAME)}${town.TOWNNAME}）的預報；山區氣溫通常較低、風較強，請一併參考鄰近測站。</p>${raw(townHtml)}</section>` : ''}
+${townHtml && !peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}`;
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
   const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站（現在）'}</h3>
 ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}</section>`;
@@ -493,7 +504,9 @@ ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).m
   // Station clicked: its observations and the mountains around it come first; safety and alerts follow.
   const main = station
     ? html`${stationCard(station)}${mountainsCard(station.lat, station.lon)}${histHtml}${riskHtml}${warnHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${qHtml}`
-    : html`${riskHtml}${warnHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${histHtml}${qHtml}${nearHtml}`;
+    : peak
+      ? html`${riskHtml}${warnHtml}${tyHtml}${rainFcHtml}${nowHtml}${stationsHtml}${mountainsCard(lat, lon, 10, peak.k)}${histHtml}${qHtml}`
+      : html`${riskHtml}${warnHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${histHtml}${qHtml}${nearHtml}`;
 
   const body = html`
 <p class="place">${placeLine}</p>
@@ -554,6 +567,10 @@ function bindCommon(root) {
   root.querySelectorAll('[data-spot]').forEach((b) => b.addEventListener('click', () => {
     const sp = S.spots.find((s) => s.k === b.dataset.spot);
     if (sp) { flyTo(sp.lat, sp.lon); showPoint(sp.lat, sp.lon, { spotKey: sp.k }); }
+  }));
+  root.querySelectorAll('[data-peak]').forEach((b) => b.addEventListener('click', () => {
+    const pk = S.peaks.find((p) => p.k === b.dataset.peak);
+    if (pk) { flyTo(pk.lat, pk.lon); showPoint(pk.lat, pk.lon, { peak: pk }); }
   }));
   root.querySelectorAll('[data-quake]').forEach((b) => b.addEventListener('click', () => {
     const q = S.quakes.find((x) => x.time === b.dataset.quake);
@@ -795,6 +812,7 @@ export function search(q) {
   if (!s) return [];
   const res = [];
   S.spots.forEach((x) => { if (x.n.includes(s)) res.push({ type: x.c === 'mountain' ? '山' : '景點', label: x.n, lat: x.lat, lon: x.lon, spot: x.k }); });
+  S.peaks.forEach((x) => { if (x.n.includes(s)) res.push({ type: '山', label: `${x.n}${x.ele ? `（${x.ele} m）` : ''}`, lat: x.lat, lon: x.lon, peak: x }); });
   S.stations.forEach((x) => { if (x.n && x.n.includes(s)) res.push({ type: '測站', label: `${x.n}（${x.county || ''}${x.town || ''}）`, lat: x.lat, lon: x.lon, station: x.id }); });
   S.towns.forEach((f) => {
     const p = f.properties;
@@ -848,6 +866,7 @@ export function showSources() {
 <section class="card"><h3>其他來源</h3><ul>
 <li>行政區界：taiwan-atlas（MIT），資料來源內政部。</li>
 <li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap（Maps © Thunderforest）。</li>
+<li>山頭（非氣象署登山預報點）：© OpenStreetMap contributors，依開放資料庫授權（ODbL 1.0）使用，每週更新；點選時顯示鄰近鄉鎮預報。</li>
 <li>地圖程式庫：Leaflet（BSD-2）、topojson-client（ISC）。</li></ul></section>`;
   openSheet('資料來源與授權', body);
 }
