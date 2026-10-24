@@ -11,7 +11,8 @@
   - 未取得授權前：公開網站只顯示颱風路徑、暴風圈、警報全文，並提供氣象署颱風消息頁連結；自己電腦執行時可用 `python -m pipeline.build --typhoon-tables` 開啟（僅限個人使用）。
 
 - [ ] 決定 repository 公開或升級 GitHub Pro，並在 Settings → Pages → Source 選「GitHub Actions」。
-- [ ] repository 若要公開：舊的 commit 歷史中仍有兩個颱風表原始檔（`tests/fixtures/precip24.xml`、`tests/fixtures/wind.xml` 在 2026-10-23 的版本），公開前需改寫歷史移除。
+- [x] 已改寫 commit 歷史（2026-10-24），所有版本的 `tests/fixtures/precip24.xml`、`tests/fixtures/wind.xml` 皆替換為虛構測試資料並強制推送。
+  - 註：GitHub 伺服器端可能仍暫存舊 commit（以完整 SHA 直接存取時）；若需徹底清除，可在公開前向 GitHub Support 申請清除快取（舊 commit：`9fd403f3e9d62369d2944ba30753a71b25769776` 起）。
 
 ## 後續擴充
 
