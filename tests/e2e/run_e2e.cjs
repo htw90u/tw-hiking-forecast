@@ -354,6 +354,27 @@ function serve() {
     assert(mapH > 0.3, `map only ${(mapH * 100).toFixed(0)}% of screen at 200% font`);
   });
 
+  await check('UI style: text <-> icon switch (tab bar, icon tiles) persists', async () => {
+    await page.click('#btn-settings');
+    await page.waitForSelector('#set-ui');
+    await page.selectOption('#set-ui', 'icon');
+    await page.keyboard.press('Escape');
+    assert((await page.getAttribute('html', 'data-ui')) === 'icon', 'data-ui not icon');
+    assert(await page.$('#tabbar .actions-top #btn-settings'), 'actions not moved to the tab bar');
+    assert(await page.isVisible('#tabbar'), 'tab bar hidden');
+    const ic = await page.$eval('.chip[data-layer="radar"]', (el) => getComputedStyle(el, '::before').maskImage || getComputedStyle(el, '::before').webkitMaskImage);
+    assert(ic && ic.includes('svg'), `chip icon missing: ${ic}`);
+    await page.screenshot({ path: path.join(SHOTS, 'ui-icon-mobile.png') });
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    assert((await page.getAttribute('html', 'data-ui')) === 'icon', 'icon UI not persisted');
+    await page.click('#btn-settings');
+    await page.selectOption('#set-ui', 'text');
+    await page.keyboard.press('Escape');
+    assert(await page.$('.topbar > .actions-top #btn-settings'), 'actions not back in the top bar');
+    assert(!(await page.isVisible('#tabbar')), 'tab bar visible in text UI');
+  });
+
   await check('offline: app shell, data and recent query snapshot from cache', async () => {
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.reload();  // ensure SW controls the page and caches data

@@ -1,11 +1,11 @@
 // Service worker: offline app shell, last-known data, and visited map tiles.
-const VERSION = 'v10';
+const VERSION = 'v11';
 const SHELL = `shell-${VERSION}`;
 const DATA = 'data';
 const TILES = 'tiles';
 const MAX_TILES = 6000;
 const SHELL_FILES = [
-  './', 'index.html', 'manifest.webmanifest', 'css/app.css',
+  './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'css/icons.css',
   'js/app.js', 'js/state.js', 'js/settings.js', 'js/palettes.js', 'js/grid.js', 'js/util.js', 'js/store.js',
   'js/chart.js', 'js/safety.js', 'js/layers.js', 'js/views.js',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'vendor/topojson/topojson-client.min.js',

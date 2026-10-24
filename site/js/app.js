@@ -240,6 +240,7 @@ function openSettings() {
   const th = s.thresholds;
   body.innerHTML = `
 <fieldset><legend>閱讀與顯示</legend>
+<label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
 <label class="field">字體大小 <input type="range" id="set-fs" min="0.9" max="2" step="0.1" value="${s.fontScale}" aria-valuetext="${Math.round(s.fontScale * 100)}%"> <output id="set-fs-out">${Math.round(s.fontScale * 100)}%</output></label>
 <label class="field">主題 <select id="set-theme">${opt({ auto: '跟隨系統', light: '淺色', dark: '深色', contrast: '高對比（黑底黃字）' }, s.theme)}</select></label>
 <label class="field">色盤 <select id="set-pal">${opt(PALETTE_NAMES, s.palette)}</select></label>
@@ -275,6 +276,7 @@ function openSettings() {
     e.target.setAttribute('aria-valuetext', `${Math.round(s.fontScale * 100)}%`);
     save();
   });
+  body.querySelector('#set-ui').addEventListener('change', (e) => { s.ui = e.target.value; save(); });
   body.querySelector('#set-theme').addEventListener('change', (e) => { s.theme = e.target.value; save(); });
   body.querySelector('#set-pal').addEventListener('change', (e) => { s.palette = e.target.value; save(); showLayer(S.layer.id, { keepFrame: true }); });
   body.querySelector('#set-smooth').addEventListener('change', (e) => { s.smooth = e.target.checked; save(); showLayer(S.layer.id, { keepFrame: true }); });
@@ -409,6 +411,7 @@ async function main() {
   });
   // Keep the map sized correctly when the side panel opens/closes on wide screens.
   new MutationObserver(() => S.map.invalidateSize()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(() => S.map.invalidateSize()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-ui'] });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !document.querySelector('dialog[open]') && !$('#sheet').hidden) closeSheet();
   });

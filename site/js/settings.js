@@ -10,6 +10,7 @@ export const DEFAULTS = {
   reduceMotion: false,
   smooth: true,          // interpolate grid layers (false = raw cells)
   boldText: false,
+  ui: 'text',            // text (readable labels) | icon (icon tiles and tab bar)
   layer: 'radar',
   opacity: 0.7,
   overlays: { stations: true, mountains: true, spots: false, quakes: true, typhoon: true },
@@ -48,6 +49,11 @@ export function applySettings(s) {
   root.dataset.theme = theme;
   root.dataset.motion = s.reduceMotion ? 'reduce' : 'full';
   root.dataset.bold = s.boldText ? 'on' : 'off';
+  root.dataset.ui = s.ui === 'icon' ? 'icon' : 'text';
+  // Icon UI: the action buttons live in the tab bar instead of the top bar.
+  const nav = document.querySelector('.actions-top');
+  const dest = s.ui === 'icon' ? document.getElementById('tabbar') : document.querySelector('.topbar');
+  if (nav && dest && nav.parentElement !== dest) dest.appendChild(nav);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = theme === 'light' ? '#1d4e5f' : '#000000';
 }
