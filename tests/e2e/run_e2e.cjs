@@ -727,6 +727,27 @@ function serve() {
     await page.fill('#q', '');
   });
 
+  await check('a plain tap or a peak without forecast shows its own data; nearest forecast mountains are listed below', async () => {
+    await page.click('#sheet-close').catch(() => {});
+    const m = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const sp = S.spots.find((p) => p.c === 'mountain');
+      return { k: sp.k, n: sp.n, lat: sp.lat + 0.012, lon: sp.lon + 0.012 };   // about 1.7 km from a forecast mountain
+    });
+    await page.evaluate(async (p) => { const v = await import('./js/views.js'); await v.showPoint(p.lat, p.lon); }, m);
+    await page.waitForSelector('#sheet.open #h-nmf');
+    assert((await page.textContent('#sheet-title')) !== m.n, 'the tap jumped to the nearby forecast mountain');
+    assert(!(await page.$('#h-fc')), 'a tap near a mountain must not open that mountain\'s forecast');
+    assert((await page.textContent('#h-nmf')).length > 0 && (await page.$('#h-nmf ~ ul [data-spot], #h-nmf + p + ul [data-spot]')), 'nearby mountain list missing');
+    assert((await page.$('#h-tfc')) !== null, 'the township forecast should stay');
+    const txt = await page.textContent('#sheet-body');
+    assert(txt.includes('°C') && txt.includes('降雨機率'), 'nearby mountain forecast summary missing');
+    await page.click('#h-nmf >> xpath=../ul//button[@data-spot]');
+    await page.waitForSelector('#h-fc');
+    assert((await page.textContent('#sheet-title')).length > 0, 'chosen mountain panel');
+    await page.click('#sheet-close');
+  });
+
   await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {
     const h0 = (await page.locator('#map').boundingBox()).height;
     await page.click('#btn-bar-hide');

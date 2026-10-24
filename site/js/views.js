@@ -296,6 +296,29 @@ function minApparent(fc) {
 
 const GUST_NOTE = '<p class="note">陣風：Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布；氣象署鄉鎮與登山預報只提供平均風。</p>';
 
+/** One-line summary of a hiking forecast for the next 24 h: weather, temperature, rain chance, wind. */
+function mtnBrief(fc, key) {
+  const d3 = fc?.d3;
+  if (!d3) return '';
+  const now = Date.now();
+  const within = (e) => (e ? e.t.map((t, i) => [new Date(t).getTime(), i]).filter(([ms]) => ms + 3 * 3600e3 > now && ms < now + 24 * 3600e3).map(([, i]) => i) : []);
+  const col = (e, k) => within(e).map((i) => e.v[k]?.[i]).filter((v) => typeof v === 'number');
+  const T = col(el(d3, '溫度'), 'Temperature');
+  const pop = col(el(d3, '3小時降雨機率'), 'ProbabilityOfPrecipitation');
+  const bf = col(el(d3, '風速'), 'BeaufortScale');
+  const wxE = el(d3, '天氣現象');
+  const wx = wxE && within(wxE).length ? wxE.v.Weather?.[within(wxE)[0]] : null;
+  const wdE = el(d3, '風向');
+  const wd = wdE && within(wdE).length ? wdE.v.WindDirection?.[within(wdE)[0]] : null;
+  const gust = maxGust24(gustSeries(key));
+  return [
+    wx || null,
+    T.length ? `${Math.min(...T)}–${Math.max(...T)}°C` : null,
+    pop.length ? `降雨機率 ${Math.max(...pop)}%` : null,
+    bf.length ? `${wd || '風'} 最大 ${Math.max(...bf)} 級${gust !== null ? `（陣風 ${gust} m/s）` : ''}` : null,
+  ].filter(Boolean).join('・');
+}
+
 /** Highest model gust (m/s) in the next 24 h, or null. */
 function maxGust24(gust) {
   if (!gust) return null;
@@ -479,22 +502,24 @@ export async function showPoint(lat, lon, opts = {}) {
 
   const town = findTown(lat, lon);
   const spotsNear = nearest(S.spots, lat, lon, { limit: 8, maxKm: 6 });
-  const mountainNear = spotsNear.filter((x) => x.it.c === 'mountain');
-  // An OSM peak has no CWA forecast of its own: its township forecast is shown instead.
+  // An OSM peak or a plain map tap has no CWA forecast of its own: the township forecast and the forecasts of
+  // the nearest CWA mountains are shown instead. A spot's own forecast only opens when that spot was chosen
+  // (its marker, search result or favourite), never by guessing from a nearby tap.
   const peak = opts.peak || null;
-  const spotPick = opts.spotKey ? S.spots.find((s) => s.k === opts.spotKey)
-    : peak ? null
-      : (mountainNear[0]?.d <= 5 ? mountainNear[0].it : spotsNear[0]?.d <= 3 ? spotsNear[0].it : null);
+  const spotPick = opts.spotKey ? S.spots.find((s) => s.k === opts.spotKey) : null;
+  const nearMtns = spotPick || opts.stationId ? [] : nearest(S.spots, lat, lon, { limit: 60, maxKm: 15 }).filter((x) => x.it.c === 'mountain').slice(0, 3);
   const stationsNear = nearest(S.stations, lat, lon, { limit: 8, maxKm: 35 });
   const weatherSt = stationsNear.filter((x) => x.it.k !== 'rain');
   const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
 
-  const [vals, spotFc, townFc] = await Promise.all([
+  const [vals, spotFc, townFc, , ...mtnFcs] = await Promise.all([
     sampleLayers(lat, lon),
     spotPick ? getJSON(`spots/f/${spotPick.k}.json`).catch(() => null) : null,
     town ? getJSON(`towns/${town.TOWNCODE}.json`).catch(() => null) : null,
     loadWind().catch(() => null), // model gusts for the forecast tables
+    ...nearMtns.map(({ it }) => getJSON(`spots/f/${it.k}.json`).catch(() => null)),
   ]);
+  const nearFc = nearMtns[0] && nearMtns[0].d <= 10 ? mtnFcs[0] : null; // wind of the nearest mountain, for the risk list
 
   const county = normCounty(town?.COUNTYNAME);
   const countyWarn = (S.warnings?.counties || []).find((c) => normCounty(c.county) === county);
@@ -508,8 +533,8 @@ export async function showPoint(lat, lon, opts = {}) {
     stations: stationsNear.map((x) => x.it), spotMinAT: minApparent(fcForCold),
     warnings: countyWarn?.hazards || [], typhoon: ty,
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
-    lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc),
-    gustFc: maxGust24(gustSeries(spotFc?.k) || gustSeries(town?.TOWNCODE)),
+    lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc || nearFc),
+    gustFc: maxGust24(gustSeries(spotFc?.k || nearFc?.k) || gustSeries(town?.TOWNCODE)),
   }, S.settings.thresholds);
 
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
@@ -556,6 +581,14 @@ export async function showPoint(lat, lon, opts = {}) {
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="d3">未來3天(逐3小時)</button><button role="tab" class="tab" aria-selected="false" data-tab="week">一週(逐12小時)</button></div>
 <div data-panel="d3">${forecastD3(spotFc.d3, gustSeries(spotFc.k))}</div>${gustSeries(spotFc.k) ? GUST_NOTE : ''}<div data-panel="week" hidden>${forecastWeek(spotFc.week)}</div>`
     : '';
+  // Forecasts of the nearest CWA hiking-forecast mountains (the tapped point is not one of them).
+  const mtnFcHtml = nearMtns.length ? html`<section class="card" aria-labelledby="h-nmf"><h3 id="h-nmf">鄰近山頭預報</h3>
+<p class="note">此處不是氣象署登山預報點，以下為 15 km 內最近的預報山頭（未來 24 小時概況）；距離越遠、海拔差越大，參考性越低。</p>
+<ul class="list">${nearMtns.map(({ it, d }, i) => {
+    const b = mtnBrief(mtnFcs[i], it.k);
+    return html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">距此 ${d.toFixed(1)} km${it.ele ? `・海拔 ${it.ele} m` : ''}${it.a ? `・${it.a}` : ''}</span>
+${b ? html`<br><small>${b}</small>` : html`<br><small class="muted">暫無預報資料</small>`}</li>`;
+  })}</ul></section>` : '';
   const townHtml = townFc
     ? `<p class="muted">${esc(normCounty(town.COUNTYNAME))}${esc(townFc.n)} 鄉鎮預報・發布 ${esc(fmtTime(townFc.issue3d || townFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="td3">未來3天</button><button role="tab" class="tab" aria-selected="false" data-tab="tweek">一週</button></div>
@@ -583,7 +616,8 @@ ${qaccRows ? html`<section class="card" aria-labelledby="h-qacc"><h3 id="h-qacc"
 ${fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : ''}
 ${townHtml && peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄰近鄉鎮預報</h3>
 <p class="note">此山不是氣象署登山預報點，以下為所在鄉鎮（${normCounty(town.COUNTYNAME)}${town.TOWNNAME}）的預報；山區氣溫通常較低、風較強，請一併參考鄰近測站。</p>${raw(townHtml)}</section>` : ''}
-${townHtml && !peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}`;
+${townHtml && !peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}
+${mtnFcHtml}`;
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
   const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站（現在）'}</h3>
 ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}</section>`;
