@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import forecast, geo, grids, hazards, lightning, peaks, qpf, qpfweb, stations, wind
+from pipeline import forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -437,8 +437,11 @@ def test_peaks_area_and_list_tags(tmp_path):
     log.close()
 
 
-def _fc(t, ws, bf, wd):
-    return {"風速": {"t": t, "v": {"WindSpeed": ws, "BeaufortScale": bf}}, "風向": {"t": t, "v": {"WindDirection": wd}}}
+def _fc(t, ws, bf, wd, at=None):
+    d = {"風速": {"t": t, "v": {"WindSpeed": ws, "BeaufortScale": bf}}, "風向": {"t": t, "v": {"WindDirection": wd}}}
+    if at:
+        d["體感溫度"] = {"t": t, "v": {"ApparentTemperature": at}}
+    return d
 
 
 def test_wind_summary(tmp_path):
@@ -446,14 +449,42 @@ def test_wind_summary(tmp_path):
     (tmp_path / "spots" / "f").mkdir(parents=True)
     t = ["2026-10-24T12:00:00+08:00", "2026-10-24T15:00:00+08:00"]
     (tmp_path / "towns" / "10014020.json").write_text(json.dumps(
-        {"g": "10014020", "n": "成功鎮", "issue3d": "2026-10-24T11:00:00+08:00", "d3": _fc(t, ["6", "11"], ["4", "6"], ["東北風", "偏北風"])}), encoding="utf-8")
+        {"g": "10014020", "n": "成功鎮", "lat": "23.1", "lon": "121.37", "issue3d": "2026-10-24T11:00:00+08:00",
+         "d3": _fc(t, ["6", "11"], ["4", "6"], ["東北風", "偏北風"], ["24", "22"])}), encoding="utf-8")
     (tmp_path / "spots" / "f" / "mountain-D001.json").write_text(json.dumps(
         {"k": "mountain-D001", "n": "玉山", "lat": 23.47, "lon": 120.957, "d3": _fc(t[1:], [14], [7], ["西南風"])}), encoding="utf-8")
     r = wind.build(tmp_path)
     assert (r["times"], r["towns"], r["mountains"]) == (2, 1, 1)
     d = json.loads((tmp_path / "wind.json").read_text(encoding="utf-8"))
-    assert d["towns"]["10014020"] == [[6, 11], [4, 6], [1, 0]]          # ws, Beaufort, direction index
-    assert d["mountains"][0]["w"] == [[None, 14], [None, 7], [None, 5]]  # missing first step stays empty
+    assert d["towns"]["10014020"] == [[6, 11], [4, 6], [1, 0], [None, None], [24, 22]]  # ws, Beaufort, dir, gust, apparent
+    assert d["mountains"][0]["w"][:3] == [[None, 14], [None, 7], [None, 5]]  # missing first step stays empty
+    assert d["gustSource"] is None
+
+
+def test_gusts_open_meteo(tmp_path):
+    test_wind_summary(tmp_path)
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 24, 12, tzinfo=TZ)
+    hours = [f"2026-10-24T{h:02d}:00" for h in range(12, 18)]
+
+    def fake(pts):
+        assert [p[0] for p in pts] == ["10014020"]                        # townships (no mountain index here)
+        return [{"hourly": {"time": hours, "wind_gusts_10m": [9.0, 12.5, 11.0, 14.2, None, 8.0]}}]
+    r = gusts.build(tmp_path, log, now, fetch=fake)
+    assert r["fresh"] and r["points"] == 1
+    wind.build(tmp_path)
+    d = json.loads((tmp_path / "wind.json").read_text(encoding="utf-8"))
+    assert d["towns"]["10014020"][3] == [12.5, 14.2]                   # max gust in each 3-hour step
+    assert d["gustSource"]["name"] == "Open-Meteo"
+
+    def boom(_pts):
+        raise FetchError("offline")
+    assert gusts.build(tmp_path, log, now + timedelta(minutes=30), fetch=boom)["fresh"] is False   # fresh copy, no fetch
+    assert gusts.build(tmp_path, log, now + timedelta(hours=2), fetch=boom)["fresh"] is False      # API down: keep
+    with pytest.raises(FetchError):
+        gusts.build(tmp_path, log, now + timedelta(hours=13), fetch=boom)                          # too old: dropped
+    assert not (tmp_path / "gusts.json").exists()
+    log.close()
 
 
 def test_lightning_kmz(tmp_path):

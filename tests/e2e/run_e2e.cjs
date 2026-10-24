@@ -559,6 +559,42 @@ function serve() {
     await selectLayer('.chip[data-layer="radar"]');
   });
 
+  await check('gusts (model) and apparent temperature in the wind layer, forecast tables and station card', async () => {
+    const w = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'wind.json'), 'utf-8'));
+    w.gustSource = { name: 'Open-Meteo', license: 'CC BY 4.0', time: new Date().toISOString() };
+    const fill = (cols) => { cols[3] = cols[0].map((v) => (v === null ? null : v * 2 + 1)); };
+    Object.values(w.towns).forEach(fill);
+    w.mountains.forEach((m) => fill(m.w));
+    await ctx.route(/data\/wind\.json/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(w) }));
+    await page.reload();
+    await page.waitForSelector('body.ready');
+    const tip = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js'); const l = await import('./js/layers.js');
+      await l.loadWind();
+      const m = S.wind.mountains.find((x) => x.w[0].some((v) => v !== null));
+      const i = m.w[0].findIndex((v) => v !== null);
+      return l.windText(m.w, i);
+    });
+    assert(tip.includes('陣風') && tip.includes('體感'), `wind tooltip text: ${tip}`);
+    const spot = await page.evaluate(async () => (await import('./js/state.js')).S.wind.mountains[0]);
+    await page.evaluate(async (sp) => { const v = await import('./js/views.js'); await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k }); }, spot);
+    await page.waitForSelector('#sheet.open table.fc');
+    const t = await page.textContent('#sheet-body');
+    assert(t.includes('陣風') && t.includes('Open-Meteo'), 'gust row / source note missing from the forecast table');
+    assert(t.includes('體感'), 'apparent temperature missing');
+    await page.click('#sheet-close');
+    const st = await page.evaluate(async () => (await import('./js/state.js')).S.stations.find((s) => s.T !== undefined && s.RH !== undefined && s.WS !== undefined));
+    if (st) {
+      await page.evaluate(async (s) => { const v = await import('./js/views.js'); await v.showPoint(s.lat, s.lon, { stationId: s.id, label: s.n }); }, st);
+      await page.waitForSelector('#h-stn');
+      assert((await page.textContent('.card.station')).includes('體感（估算）'), 'station apparent temperature missing');
+      await page.click('#sheet-close');
+    }
+    await ctx.unroute(/data\/wind\.json/);
+    await page.reload();
+    await page.waitForSelector('body.ready');
+  });
+
   await check('lightning layer: strikes by age; nearby strikes raise the hiking risk', async () => {
     const now = Date.now();
     const iso = (m) => new Date(now - m * 60e3).toISOString();

@@ -82,6 +82,14 @@ export function beaufort(ms) {
   return b;
 }
 
+/** Apparent temperature (°C) from temperature, relative humidity and wind, CWA's formula:
+ * AT = 1.04 T + 0.2 e − 0.65 V − 2.7, with e the vapour pressure (hPa). */
+export function apparentTemp(t, rh, ws) {
+  if (![t, rh, ws].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const e = (rh / 100) * 6.105 * Math.exp((17.27 * t) / (237.7 + t));
+  return Math.round((1.04 * t + 0.2 * e - 0.65 * ws - 2.7) * 10) / 10;
+}
+
 /** Tagged template that escapes interpolated values. Use raw() to opt out. */
 export function html(strings, ...vals) {
   let out = '';

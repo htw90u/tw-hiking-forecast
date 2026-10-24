@@ -2,6 +2,7 @@
 import { S } from './state.js';
 import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty, intText, isStrongQuake,
+  beaufort, apparentTemp,
 } from './util.js';
 import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL, lightningNear, loadWind, WIND_DIRS } from './layers.js';
 import { sample, classRange, renderGrid } from './grid.js';
@@ -148,6 +149,7 @@ function stationCard(st) {
     num('溫度', st.T, '°C'), num('相對濕度', st.RH, '%', 0),
     st.WS === undefined ? '' : tile('風向風速', `${windDir(st.WD)} ${fmtNum(st.WS, 1, 'm/s')}`),
     num('最大陣風', st.G, 'm/s'),
+    apparentTemp(st.T, st.RH, st.WS) === null ? '' : tile('體感（估算）', fmtNum(apparentTemp(st.T, st.RH, st.WS), 1, '°C')),
     st.Tmax === undefined ? '' : tile('今日高／低', `${fmtNum(st.Tmax, 1)}／${fmtNum(st.Tmin, 1, '°C')}`),
     num('氣壓', st.P, 'hPa'), num('能見度', st.vis, 'km'), num('紫外線', st.uv, '', 0),
   ].join('');
@@ -175,7 +177,16 @@ ${list.length ? html`<div class="mtns">${list.map(btn)}</div>
 }
 
 // ------------------------------------------------------------------ forecast tables
-function forecastD3(d3) {
+/** {time: gust m/s} for a mountain spot key or township code from wind.json (model gusts), or null. */
+function gustSeries(key) {
+  const w = S.wind;
+  if (!w || !w.gustSource || !key) return null;
+  const cols = w.mountains.find((m) => m.k === key)?.w || w.towns[key];
+  if (!cols || !cols[3]) return null;
+  return Object.fromEntries(w.times.map((t, i) => [t, cols[3][i]]));
+}
+
+function forecastD3(d3, gust = null) {
   const pop = el(d3, '3小時降雨機率');
   if (!pop) return '';
   const wx = el(d3, '天氣現象');
@@ -197,6 +208,7 @@ ${row('降雨機率', (c) => (c.pop === null ? '—' : `<span class="pop" style=
 ${row('溫度', (c) => (c.T === null ? '—' : `${c.T}°`))}
 ${row('體感', (c) => (c.AT === null ? '—' : `${c.AT}°`))}
 ${row('風', (c) => (c.ws === null ? '—' : `${esc(c.wd ?? '')} ${c.ws} m/s<br><small>${c.bf ?? ''}級</small>`))}
+${gust ? row('陣風<br><small>模式</small>', (c) => (gust[c.t] == null ? '—' : `${gust[c.t]} m/s<br><small>${beaufort(gust[c.t])}級</small>`)) : ''}
 ${row('濕度', (c) => (c.rh === null ? '—' : `${c.rh}%`))}
 </tbody></table></div>`;
 }
@@ -227,6 +239,16 @@ function minApparent(fc) {
   if (!e) return null;
   const vals = (e.v.MinApparentTemperature || []).slice(0, 4).filter((v) => typeof v === 'number');
   return vals.length ? Math.min(...vals) : null;
+}
+
+const GUST_NOTE = '<p class="note">陣風：Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布；氣象署鄉鎮與登山預報只提供平均風。</p>';
+
+/** Highest model gust (m/s) in the next 24 h, or null. */
+function maxGust24(gust) {
+  if (!gust) return null;
+  const now = Date.now();
+  const vals = Object.entries(gust).filter(([t, g]) => g != null && new Date(t).getTime() + 3 * 3600e3 > now && new Date(t).getTime() < now + 24 * 3600e3).map(([, g]) => g);
+  return vals.length ? Math.max(...vals) : null;
 }
 
 /** Highest Beaufort number in the next 24 h of a 3-hourly forecast. */
@@ -418,6 +440,7 @@ export async function showPoint(lat, lon, opts = {}) {
     sampleLayers(lat, lon),
     spotPick ? getJSON(`spots/f/${spotPick.k}.json`).catch(() => null) : null,
     town ? getJSON(`towns/${town.TOWNCODE}.json`).catch(() => null) : null,
+    loadWind().catch(() => null), // model gusts for the forecast tables
   ]);
 
   const county = normCounty(town?.COUNTYNAME);
@@ -433,6 +456,7 @@ export async function showPoint(lat, lon, opts = {}) {
     warnings: countyWarn?.hazards || [], typhoon: ty,
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
     lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc),
+    gustFc: maxGust24(gustSeries(spotFc?.k) || gustSeries(town?.TOWNCODE)),
   }, S.settings.thresholds);
 
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
@@ -477,12 +501,12 @@ export async function showPoint(lat, lon, opts = {}) {
   const fcHtml = spotPick && spotFc
     ? `<p class="muted">${esc(spotFc.n)}（${esc(S.spotCats.find((c) => c.id === spotFc.c)?.label || '')}）・發布 ${esc(fmtTime(spotFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="d3">未來3天(逐3小時)</button><button role="tab" class="tab" aria-selected="false" data-tab="week">一週(逐12小時)</button></div>
-<div data-panel="d3">${forecastD3(spotFc.d3)}</div><div data-panel="week" hidden>${forecastWeek(spotFc.week)}</div>`
+<div data-panel="d3">${forecastD3(spotFc.d3, gustSeries(spotFc.k))}</div>${gustSeries(spotFc.k) ? GUST_NOTE : ''}<div data-panel="week" hidden>${forecastWeek(spotFc.week)}</div>`
     : '';
   const townHtml = townFc
     ? `<p class="muted">${esc(normCounty(town.COUNTYNAME))}${esc(townFc.n)} 鄉鎮預報・發布 ${esc(fmtTime(townFc.issue3d || townFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="td3">未來3天</button><button role="tab" class="tab" aria-selected="false" data-tab="tweek">一週</button></div>
-<div data-panel="td3">${forecastD3(townFc.d3)}</div><div data-panel="tweek" hidden>${forecastWeek(townFc.week)}</div>`
+<div data-panel="td3">${forecastD3(townFc.d3, gustSeries(town.TOWNCODE))}</div>${gustSeries(town.TOWNCODE) ? GUST_NOTE : ''}<div data-panel="tweek" hidden>${forecastWeek(townFc.week)}</div>`
     : '';
 
   const warnHtml = countyWarn?.hazards?.length
@@ -914,6 +938,7 @@ export function showSources() {
 <section class="card"><h3>其他來源</h3><ul>
 <li>行政區界：taiwan-atlas（MIT），資料來源內政部。</li>
 <li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap／Landscape／Outdoors（Maps © Thunderforest）。</li>
+<li>陣風預報：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 數值模式（CC BY 4.0），非中央氣象署發布；體感溫度：氣象署預報值，測站體感為依溫度、濕度、風速以氣象署公式估算。</li>
 <li>山頭（非氣象署登山預報點）：© OpenStreetMap contributors，依開放資料庫授權（ODbL 1.0）使用，每週更新；點選時顯示鄰近鄉鎮預報。</li>
 <li>地圖程式庫：Leaflet（BSD-2）、topojson-client（ISC）。</li></ul></section>`;
   openSheet('資料來源與授權', body);

@@ -1,6 +1,6 @@
 // Weather map layers: grid overlays, satellite, typhoon rain choropleth; legend and time control.
 import { S } from './state.js';
-import { getJSON, fmtTime, esc, normCounty, beaufort, haversineKm } from './util.js';
+import { getJSON, fmtTime, esc, normCounty, beaufort, haversineKm, apparentTemp } from './util.js';
 import { loadGrid, renderGrid } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
 import { saveSettings } from './settings.js';
@@ -234,7 +234,7 @@ async function showWind(keepFrame) {
     sts.forEach((s) => {
       const bf = beaufort(s.WS);
       L.marker([s.lat, s.lon], { icon: windArrow(s.WD, bf, hex(bf), ''), keyboard: false, pane: 'stations' })
-        .bindTooltip(`${esc(s.n)}：${s.WS} m/s（${bf}級）${s.G !== undefined ? `・陣風 ${s.G} m/s（${beaufort(s.G)}級）` : ''}`).addTo(ov);
+        .bindTooltip(`${esc(s.n)}：${s.WS} m/s（${bf}級）${s.G !== undefined ? `・陣風 ${s.G} m/s（${beaufort(s.G)}級）` : ''}${windChill(s)}`).addTo(ov);
     });
     finishOverlay(ov);
     renderLegend({ label: '風力觀測（測站）', time: S.manifest?.layers?.stations?.time, kindOverride: 'wind',
@@ -256,7 +256,7 @@ async function showWind(keepFrame) {
     onEachFeature: (f, layer) => {
       const r = w.towns[f.properties.TOWNCODE];
       if (!r) return;
-      layer.bindTooltip(`${esc(normCounty(f.properties.COUNTYNAME))}${esc(f.properties.TOWNNAME)}：${WIND_DIRS[r[2][i]] || ''} ${r[0][i] ?? '—'} m/s（${r[1][i] ?? '—'}級）`, { sticky: true });
+      layer.bindTooltip(`${esc(normCounty(f.properties.COUNTYNAME))}${esc(f.properties.TOWNNAME)}：${windText(r, i)}`, { sticky: true });
     },
   });
   towns.addTo(ov);
@@ -264,18 +264,31 @@ async function showWind(keepFrame) {
   // arrows closer than 34 px to one already drawn are skipped (they reappear when zooming in).
   const placed = [];
   w.mountains.filter((m) => m.w[0][i] !== null && m.w[2][i] !== null).sort((a, b) => (b.w[1][i] ?? 0) - (a.w[1][i] ?? 0)).forEach((m) => {
-    const [ws, bf, wd] = [m.w[0][i], m.w[1][i], m.w[2][i]];
+    const [bf, wd] = [m.w[1][i], m.w[2][i]];
     const pt = S.map.latLngToLayerPoint([m.lat, m.lon]);
     if (placed.some((q) => q.distanceTo(pt) < 34)) return;
     placed.push(pt);
     L.marker([m.lat, m.lon], { icon: windArrow(wd * 45, bf, hex(bf)), keyboard: false, pane: 'spots', zIndexOffset: 200 })
-      .bindTooltip(`${esc(m.n)}（登山預報）：${WIND_DIRS[wd]} ${ws} m/s（${bf}級）`).addTo(ov);
+      .bindTooltip(`${esc(m.n)}（登山預報）：${windText(m.w, i)}`).addTo(ov);
   });
   finishOverlay(ov);
   const t = w.times[i];
   renderLegend({ label: '風力預報（蒲福風級）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: w.issue, kindOverride: 'wind',
-    note: '色塊為鄉鎮預報（平地），箭頭為登山預報點，指向風吹去的方向，數字為蒲福風級。6 級以上山區行走困難，8 級以上請避免稜線。' });
+    note: `色塊為鄉鎮預報（平地），箭頭為登山預報點，指向風吹去的方向，數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布。` : '目前沒有陣風預報資料。'}6 級以上山區行走困難，8 級以上請避免稜線。` });
   renderTimeControl();
+}
+
+/** "東北風 6 m/s（4級）・陣風 12 m/s（6級）・體感 18°" for forecast step i of [ws, bf, wd, gust, at] columns. */
+export function windText(cols, i) {
+  const [ws, bf, wd, g, at] = [0, 1, 2, 3, 4].map((k) => cols[k]?.[i] ?? null);
+  return [`${WIND_DIRS[wd] || ''} ${ws ?? '—'} m/s（${bf ?? '—'}級）`, g !== null ? `陣風 ${g} m/s（${beaufort(g)}級）` : null,
+    at !== null ? `體感 ${at}°C` : null].filter(Boolean).join('・');
+}
+
+/** Estimated apparent temperature for a station tooltip. */
+function windChill(s) {
+  const at = apparentTemp(s.T, s.RH, s.WS);
+  return at === null ? '' : `・體感約 ${at}°C`;
 }
 
 function finishOverlay(ov) {
