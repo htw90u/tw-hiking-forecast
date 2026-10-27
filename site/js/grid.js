@@ -69,12 +69,18 @@ const invMercY = (y) => (Math.atan(Math.exp(y)) * 360) / Math.PI - 90;
  *   so colour bands get smooth curved edges instead of square cells.
  * fill: value used for no-data neighbours while interpolating (e.g. "no echo");
  *   NaN means no-data neighbours are ignored (weights renormalised).
+ * landClip: GeoJSON features (county outlines); the image is cut to the real coastline, so a coarse land-only
+ *   analysis (e.g. temperature, 3 km cells) neither leaves gaps along the coast nor spills over the sea.
+ * extend: for such layers, fill no-data cells within this many cells of valid ones (nearest-neighbour average)
+ *   before drawing, so coastal land cells without a value get the temperature of their neighbours.
+ * maxK: upper limit of the smoothing factor (more pixels = a crisper clipped coastline).
  */
-export function renderGrid(grid, colour, { smooth = false, fill = NaN, maxPixels = 5e6 } = {}) {
+export function renderGrid(grid, colour, { smooth = false, fill = NaN, maxPixels = 5e6, landClip = null, extend = 0, maxK = 4 } = {}) {
+  if (extend > 0) grid = { ...grid, values: extendValues(grid.values, grid.w, grid.h, extend) };
   const [, south, , north] = grid.bounds;
   const yN = mercY(north);
   const yS = mercY(south);
-  const k = smooth ? Math.max(1, Math.min(4, Math.floor(Math.sqrt(maxPixels / (grid.w * grid.h))))) : 1;
+  const k = smooth ? Math.max(1, Math.min(maxK, Math.floor(Math.sqrt(maxPixels / (grid.w * grid.h))))) : 1;
   const outW = grid.w * k;
   const outH = Math.round(grid.h * k * (yN - yS) / ((north - south) * Math.PI / 180));
   const cv = document.createElement('canvas');
@@ -128,5 +134,55 @@ export function renderGrid(grid, colour, { smooth = false, fill = NaN, maxPixels
     }
   }
   ctx.putImageData(out, 0, 0);
+  if (landClip) clipToLand(cv, grid.bounds, landClip, yN, yS);
   return cv;
+}
+
+/** Fill no-data cells next to valid ones with the mean of their valid 8-neighbours, `rounds` times. */
+export function extendValues(values, w, h, rounds) {
+  let cur = Float32Array.from(values);
+  for (let r = 0; r < rounds; r += 1) {
+    const next = Float32Array.from(cur);
+    for (let j = 0; j < h; j += 1) {
+      for (let i = 0; i < w; i += 1) {
+        if (!Number.isNaN(cur[j * w + i])) continue;
+        let sum = 0; let n = 0;
+        for (let dj = -1; dj <= 1; dj += 1) {
+          for (let di = -1; di <= 1; di += 1) {
+            const a = i + di; const b = j + dj;
+            if (a < 0 || b < 0 || a >= w || b >= h) continue;
+            const v = cur[b * w + a];
+            if (!Number.isNaN(v)) { sum += v; n += 1; }
+          }
+        }
+        if (n) next[j * w + i] = sum / n;
+      }
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+/** Keep only the pixels inside the outer rings of the given county polygons. */
+function clipToLand(cv, bounds, features, yN, yS) {
+  const [west, , east] = bounds;
+  const m = document.createElement('canvas');
+  m.width = cv.width;
+  m.height = cv.height;
+  const mc = m.getContext('2d');
+  mc.fillStyle = '#000';
+  const px = ([lon, lat]) => [((lon - west) / (east - west)) * m.width, ((yN - mercY(lat)) / (yN - yS)) * m.height];
+  features.forEach((f) => {
+    const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+    polys.forEach((poly) => {
+      mc.beginPath();
+      poly[0].forEach((p, i) => { const [x, y] = px(p); if (i) mc.lineTo(x, y); else mc.moveTo(x, y); });
+      mc.closePath();
+      mc.fill();
+    });
+  });
+  const ctx = cv.getContext('2d');
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(m, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
 }

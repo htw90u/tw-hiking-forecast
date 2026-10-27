@@ -134,6 +134,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     // Smooth rendering interpolates between cells; "no echo / no rain" counts as a low value
     // so that rain areas fade out at their edges instead of ending in square steps.
     const opts = { smooth: S.settings.smooth !== false, fill: FILL[kind] ?? NaN };
+    // The temperature analysis covers land only, in 3 km cells: cut it to the real coastline (no gaps, no sea spill-over).
+    if (kind === 'temp') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
     const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
       const [w, s, e, n] = g.bounds;
       return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],

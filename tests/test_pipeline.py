@@ -368,6 +368,14 @@ def test_qpfweb_learns_missing_digit(tmp_path):
 
 
 # ------------------------------------------------------------------ OSM peaks
+@pytest.fixture(autouse=True)
+def _offline_elevation(monkeypatch):
+    """Peak elevations come from a web API in production; unit tests must never reach it."""
+    def down(coords, timeout=60):
+        raise FetchError("tests are offline")
+    monkeypatch.setattr(peaks, "fetch_elevations", down)
+
+
 OVERPASS_SAMPLE = {"elements": [
     {"type": "node", "id": 1, "lat": 23.47, "lon": 120.957, "tags": {"natural": "peak", "name": "玉山", "ele": "3952"}},
     {"type": "node", "id": 2, "lat": 24.383, "lon": 121.231, "tags": {"natural": "peak", "name": "Snow Mountain", "name:zh": "雪山", "ele": "3,886 m"}},
@@ -550,4 +558,32 @@ def test_cached_peaks_reprocessed_when_rules_change(tmp_path):
     peaks.build(tmp_path, log, now + timedelta(hours=1), fetch=boom, lists_dir=tmp_path / "none")
     again = json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))
     assert all(p[3] != 1782 for p in again["peaks"]) and again["listsVersion"] != "old"
+    log.close()
+
+
+def test_missing_peak_elevations_estimated(tmp_path):
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 24, 12, tzinfo=TZ)
+    calls = []
+
+    def dem(coords):
+        calls.append(len(coords))
+        return [123.4 + i for i, _ in enumerate(coords)]
+    lists = tmp_path / "lists"
+    lists.mkdir()
+    (lists / "x.json").write_text(json.dumps({"id": "x", "label": "X", "peaks": [{"n": "七星山", "min_ele": 100}]}, ensure_ascii=False), encoding="utf-8")
+    peaks.build(tmp_path, log, now, fetch=lambda _log: OVERPASS_SAMPLE, lists_dir=lists, fetch_ele=dem)
+    saved = json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))
+    rows = {r[0]: r for r in saved["peaks"]}
+    assert rows["雪山"][3] == 3886 and rows["雪山"][7] == 0                 # OSM value untouched
+    assert rows["七星山"][7] == 1 and 123 <= rows["七星山"][3] <= 130        # estimated, flagged
+    assert rows["七星山"][6] == ["x"]                                       # list matched on the estimate
+    # A later build keeps the estimate and does not ask again for peaks that have one.
+    calls.clear()
+    peaks.build(tmp_path, log, now + timedelta(hours=1), fetch=lambda _log: (_ for _ in ()).throw(AssertionError("no download")), lists_dir=lists, fetch_ele=dem)
+    assert calls == []
+    # API down: peaks stay without elevation, the build still works.
+    (tmp_path / "peaks.json").unlink()
+    peaks.build(tmp_path, log, now, fetch=lambda _log: OVERPASS_SAMPLE, lists_dir=lists)
+    assert any(r[3] is None for r in json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))["peaks"])
     log.close()

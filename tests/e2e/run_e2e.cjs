@@ -749,6 +749,22 @@ function serve() {
     await page.click('#sheet-close');
   });
 
+  await check('temperature layer is cut to the real coastline: land opaque, sea and gaps fixed', async () => {
+    const r = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js'); const L2 = await import('./js/layers.js'); const G = await import('./js/grid.js'); const P = await import('./js/palettes.js');
+      const g = await L2.getGrid('grids/temp.json');
+      const cv = G.renderGrid(g, P.colourFn(P.scaleFor('temp', 'cwa')), { smooth: true, landClip: S.counties, extend: 2, maxK: 8 });
+      const [w, so, e, n] = g.bounds; const my = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+      const ctx = cv.getContext('2d');
+      const alpha = (lat, lon) => ctx.getImageData(Math.round((lon - w) / (e - w) * (cv.width - 1)), Math.round((my(n) - my(lat)) / (my(n) - my(so)) * (cv.height - 1)), 1, 1).data[3];
+      const raw = G.renderGrid(g, P.colourFn(P.scaleFor('temp', 'cwa')), { smooth: true });
+      return { taipei: alpha(25.04, 121.52), toucheng: alpha(24.86, 121.82), guishan: alpha(24.847, 121.95), sea: alpha(24.7, 122.3), strait: alpha(24.2, 119.5), mid: alpha(23.5, 121.0), size: [cv.width, cv.height], rawSize: [raw.width, raw.height] };
+    });
+    assert(r.taipei === 255 && r.toucheng === 255 && r.mid === 255, `land must be opaque: ${JSON.stringify(r)}`);
+    assert(r.guishan === 255, `Guishan island must be shown: ${JSON.stringify(r)}`);
+    assert(r.sea === 0 && r.strait === 0, `sea must be transparent: ${JSON.stringify(r)}`);
+  });
+
   await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {
     const h0 = (await page.locator('#map').boundingBox()).height;
     await page.click('#btn-bar-hide');
@@ -787,6 +803,8 @@ function serve() {
     const res = await page.evaluate(async () => (await import('./js/views.js')).search('鹿林').map((r) => ({ type: r.type, sub: r.sub || '' })));
     assert(res.some((r) => r.type === '山'), 'peak not found by search');
     assert(res.some((r) => r.sub.includes('阿里山鄉') && r.sub.includes('測試清單')), `peak township / list tag missing: ${JSON.stringify(res)}`);
+    const est = await page.evaluate(async () => (await import('./js/views.js')).search('麟趾').find((r) => r.peak)?.label || '');
+    assert(est.includes('約'), `estimated elevation must be marked: ${est}`);
     await page.fill('#q', '鹿林山');
     await page.waitForSelector('#q-results .sub');
     await page.screenshot({ path: path.join(SHOTS, 'search-peak-area.png') });

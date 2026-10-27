@@ -151,3 +151,8 @@ export function intText(v) {
 export function isStrongQuake(q) {
   return (Number(q.maxInt) || 0) >= 5 || (Number(q.mag) || 0) >= 6;
 }
+
+/** "3886 m", or "約 123 m" for an elevation estimated from a terrain model; '' when unknown. */
+export function eleText(p) {
+  return p && p.ele ? `${p.est ? '約 ' : ''}${p.ele} m` : '';
+}

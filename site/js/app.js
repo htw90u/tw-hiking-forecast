@@ -1,7 +1,7 @@
 // Entry point: map setup, data loading, overlays, controls and settings.
 import { S } from './state.js';
 import { loadSettings, saveSettings, applySettings, DEFAULTS } from './settings.js';
-import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $, intText, isStrongQuake } from './util.js';
+import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $, intText, isStrongQuake, eleText } from './util.js';
 import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
 import {
@@ -253,7 +253,7 @@ function updatePeaks() {
     const icon = L.divIcon({ className: 'pin-peak', html: PEAK_SVG, iconSize: [14, 14] });
     const m = L.marker([p.lat, p.lon], { icon, title: p.n, alt: p.n, keyboard: false, pane: 'spots' });
     const tags = p.tags.map((t) => S.peakLists[t] || t).join('・');
-    m.bindTooltip(`${esc(p.n)}${p.ele ? ` ${p.ele} m` : ''}${p.area || tags ? `<br><small>${esc([p.area, tags].filter(Boolean).join('・'))}</small>` : ''}`, { direction: 'top', offset: [0, -6] });
+    m.bindTooltip(`${esc(p.n)}${p.ele ? ` ${eleText(p)}` : ''}${p.area || tags ? `<br><small>${esc([p.area, tags].filter(Boolean).join('・'))}</small>` : ''}`, { direction: 'top', offset: [0, -6] });
     m.on('click', () => showPoint(p.lat, p.lon, { peak: p }));
     g.addLayer(m);
   });
@@ -743,9 +743,9 @@ async function loadData() {
   ]);
   const peaks = await getJSON('peaks.json', { optional: true });
   S.lightning = await getJSON('lightning.json', { optional: true });
-  // [name, lat, lon, ele, osm id, area ('新竹縣關西鎮'), list tags]; older files lack the last two.
+  // [name, lat, lon, ele, osm id, area ('新竹縣關西鎮'), list tags, est]; est = 1: elevation estimated from a terrain model.
   S.peakLists = Object.fromEntries((peaks?.lists || []).map((l) => [l.id, l.label]));
-  S.peaks = (peaks?.peaks || []).map(([n, lat, lon, ele, osm, area, tags]) => ({ k: `osm-${osm}`, n, lat, lon, ele, area: area || '', tags: tags || [] }));
+  S.peaks = (peaks?.peaks || []).map(([n, lat, lon, ele, osm, area, tags, est]) => ({ k: `osm-${osm}`, n, lat, lon, ele, est: Boolean(est), area: area || '', tags: tags || [] }));
   S.stations = st?.stations || [];
   S.stationsTime = st?.time;
   // Mountain forecast points snapped to their OSM summit by the pipeline (CWA coordinates can be km off).
