@@ -765,6 +765,22 @@ function serve() {
     assert(r.sea === 0 && r.strait === 0, `sea must be transparent: ${JSON.stringify(r)}`);
   });
 
+  await check('satellite pictures are smooth: visible albedo and IR use many grey levels, not ten bands', async () => {
+    const r = await page.evaluate(async () => {
+      const L2 = await import('./js/layers.js'); const G = await import('./js/grid.js'); const P = await import('./js/palettes.js');
+      const levels = async (path, kind) => {
+        const g = await L2.getGrid(path);
+        const cv = G.renderGrid(g, P.colourFn(P.scaleFor(kind, 'cwa')), { smooth: true });
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        const set = new Set();
+        for (let i = 0; i < d.length; i += 4 * 7) if (d[i + 3]) set.add(d[i]);
+        return set.size;
+      };
+      return { vis: await levels('grids/sat_vis.json', 'vis'), ir: await levels('grids/sat_ir.json', 'irgray') };
+    });
+    assert(r.vis >= 60 && r.ir >= 60, `satellite images look posterised: ${JSON.stringify(r)}`);
+  });
+
   await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {
     const h0 = (await page.locator('#map').boundingBox()).height;
     await page.click('#btn-bar-hide');

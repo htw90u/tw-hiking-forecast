@@ -89,7 +89,8 @@ function ramp(stops, from, to, step) {
   return out;
 }
 // Infrared: cold cloud tops bright, warm surface dark (like CWA's B/W IR image).
-const IR_GRAY = ramp([[-90, [255, 255, 255]], [-20, [200, 200, 200]], [40, [20, 20, 20]]], -90, 40, 2);
+// Stretched like a weather-service IR image: warm sea / land (20-35 °C) is dark, low cloud mid grey, high cloud white.
+const IR_GRAY = ramp([[-90, [255, 255, 255]], [-60, [246, 246, 246]], [-30, [208, 208, 208]], [0, [140, 140, 140]], [20, [70, 70, 70]], [40, [12, 12, 12]]], -90, 40, 2);
 // Enhanced IR: grey for warm/low clouds, colours for cold convective tops.
 const IR_ENH = ramp([[-90, [255, 255, 255]], [-80, [255, 0, 255]], [-70, [255, 0, 0]], [-60, [255, 160, 0]],
   [-50, [255, 255, 0]], [-40, [0, 200, 0]], [-30, [0, 120, 255]], [-20, [150, 210, 255]], [-19.9, [210, 210, 210]], [40, [20, 20, 20]]], -90, 40, 2);
@@ -142,6 +143,12 @@ export function colourFn(scale) {
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
       if (bounds[mid] <= v) lo = mid; else hi = mid - 1;
+    }
+    if (continuous && lo < bounds.length - 1) {
+      // Satellite ramps: blend between neighbouring stops so the picture has no visible steps.
+      const t = (v - bounds[lo]) / (bounds[lo + 1] - bounds[lo]);
+      const a = rgb[lo]; const b = rgb[lo + 1];
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, 255].map((x, i) => (i < 3 ? Math.round(x) : x));
     }
     const c = rgb[lo];
     return [c[0], c[1], c[2], 255];

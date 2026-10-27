@@ -91,10 +91,13 @@ export function renderGrid(grid, colour, { smooth = false, fill = NaN, maxPixels
   const d = out.data;
   const cache = new Map();
   const { w, h, values } = grid;
+  // Colours are cached per value rounded to the data's own step (0.1 for most layers, 0.001 for albedo); rounding
+  // everything to 0.1 would squeeze the visible-light albedo (0..1) into ten flat bands.
+  const q = Math.min(0.1, Number(grid.meta?.scale) || 0.1);
   const put = (p, v) => {
-    const key = Math.round(v * 10);
+    const key = Math.round(v / q);
     let c = cache.get(key);
-    if (!c) { c = colour(key / 10); cache.set(key, c); }
+    if (!c) { c = colour(key * q); cache.set(key, c); }
     if (!c[3]) return;
     d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2]; d[p + 3] = c[3];
   };
