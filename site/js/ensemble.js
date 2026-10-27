@@ -112,6 +112,8 @@ export function bindEnsemble(root, lat, lon, ele = null) {
   if (!b) return;
   // Shortcut at the top of the panel: scroll to the card and load the forecast.
   root.querySelector('#btn-ens-jump')?.addEventListener('click', () => {
+    const c = root.querySelector('#h-ens')?.closest('details.pcard');
+    if (c) c.open = true;
     root.querySelector('#h-ens')?.scrollIntoView({ block: 'start' });
     if (!b.disabled && !root.querySelector('#ens-out figure')) b.click();
   });

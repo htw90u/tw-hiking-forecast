@@ -263,6 +263,7 @@ function serve() {
     const box = await page.locator('#map').boundingBox();
     await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.4);
     await page.waitForSelector('#sheet.open #h-risk', { timeout: 20000 });
+    await page.click('details.sub[data-sub="hist"] > summary');          // the observation data load when the section is opened
     await page.waitForSelector('#hist-out figure.chart, #hist-out p', { timeout: 20000 });
     const title = await page.textContent('#sheet-title');
     assert(title && title !== '查詢中…', `title ${title}`);
@@ -392,11 +393,11 @@ function serve() {
       const st = S.stations.find((x) => x.k === 'manned' && x.alt > 2000) || S.stations.find((x) => x.k === 'manned');
       await v.showPoint(st.lat, st.lon, { stationId: st.id, label: `${st.n}測站` });
     });
-    await page.waitForSelector('#sheet-body .card.station');
-    const order = await page.$$eval('#sheet-body > section, #sheet-body > .card', (els) => els.map((e) => e.querySelector('h3')?.id || ''));
-    assert(order[0] === 'h-stn' && order[1] === 'h-mtn', `card order ${order.slice(0, 4)}`);
-    assert(order.indexOf('h-risk') > order.indexOf('h-mtn'), 'safety card should follow the station cards');
-    assert((await page.$$('#sheet-body .card.station .tile')).length >= 3, 'station value tiles missing');
+    await page.waitForSelector('#sheet-body [data-card="station"]');
+    const order = await page.$$eval('#sheet-body details.pcard', (els) => els.map((e) => e.dataset.card));
+    assert(order[0] === 'risk' && order.indexOf('station') < order.indexOf('stations') && order.indexOf('station') < order.indexOf('mtns'), `card order ${order}`);
+    assert((await page.$$('#sheet-body [data-card="station"] .tile')).length >= 3, 'station value tiles missing');
+    assert((await page.$$eval('#sheet-body [data-card="station"][open]', (e) => e.length)) === 1, 'the clicked station card should start open');
     await page.click('#sheet-close');
   });
 
@@ -644,7 +645,7 @@ function serve() {
       const key = Object.keys(al.points)[0];
       const sp = S.spots.find((x) => x.k === key);
       await v.showPoint(sp.lat, sp.lon, { spotKey: key });
-      return { aloft: Boolean(document.querySelector('#h-aloft')), sun: Boolean(document.querySelector('#h-sun')), rows: document.querySelectorAll('#h-aloft ~ table.aloft tbody tr').length };
+      return { aloft: Boolean(document.querySelector('#h-aloft')), sun: Boolean(document.querySelector('#h-sun')), rows: document.querySelectorAll('[data-card="aloft"] table.aloft tbody tr').length };
     });
     assert(panel.aloft && panel.sun && panel.rows === 4, `point panel cards ${JSON.stringify(panel)}`);
     await page.click('#sheet-close').catch(() => {});
@@ -686,7 +687,7 @@ function serve() {
       route.fulfill({ status: model === 'gfs025' ? 200 : 200, contentType: 'application/json', body: JSON.stringify({ elevation: model === 'gfs025' ? 1000 : 800, hourly }) });
     });
     await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.47, 120.957, { spotKey: 'mountain-D001' }); });
-    await page.waitForSelector('#btn-ens');
+    await page.waitForSelector('#btn-ens', { state: 'attached' });       // inside a folded card until the shortcut opens it
     await page.click('#btn-ens-jump');       // shortcut at the top of the panel loads the same forecast
     await page.waitForSelector('#ens-out figure.chart');
     const ens = await page.evaluate(() => ({ charts: document.querySelectorAll('#ens-out figure.chart').length, text: document.querySelector('#ens-out').textContent }));
@@ -733,6 +734,41 @@ function serve() {
     await selectLayer('.chip[data-layer="radar"]');
   });
 
+  await check('point panel cards: themed groups, folded cards carry a summary, open state is remembered, jump chips, expand / collapse all', async () => {
+    await page.evaluate(() => localStorage.removeItem('hikingwx.cards.v1'));
+    const show = () => page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const sp = S.spots.find((x) => x.c === 'mountain');
+      await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k });
+    });
+    await show();
+    await page.waitForSelector('#sheet.open details.pcard');
+    const info = await page.evaluate(() => ({
+      cards: [...document.querySelectorAll('#sheet-body details.pcard')].map((d) => ({ id: d.dataset.card, grp: d.dataset.grp, open: d.open, sum: d.querySelector('.pc-s')?.textContent || '' })),
+      bar: (() => { const a = document.querySelector('.ptbar .acts').getBoundingClientRect(); const b = document.querySelector('.ptbar').getBoundingClientRect(); return { right: Math.round(b.right - a.right), n: document.querySelectorAll('.ptbar .acts .ab').length }; })(),
+    }));
+    const groups = new Set(info.cards.map((c) => c.grp));
+    assert(info.cards.length >= 8 && ['safe', 'obs', 'fc', 'sun'].every((g) => groups.has(g)), `cards ${JSON.stringify(info.cards.map((c) => c.id))}`);
+    const folded = info.cards.filter((c) => !c.open && ['now', 'rain', 'sun', 'ens'].includes(c.id));
+    assert(folded.length >= 2 && folded.every((c) => c.sum.length > 3), `folded cards lack a summary: ${JSON.stringify(folded)}`);
+    assert(info.bar.n === 3 && info.bar.right <= 4, `Windy / coordinates / favourite buttons not right-aligned: ${JSON.stringify(info.bar)}`);
+    assert(info.cards.find((c) => c.id === 'stations')?.open && info.cards.find((c) => c.id === 'fc')?.open && !info.cards.find((c) => c.id === 'sun')?.open, 'default open / folded cards');
+    // remembered: open the sun card, reopen the panel
+    await page.click('[data-card="sun"] > summary');
+    await show();
+    await page.waitForSelector('#sheet.open details.pcard');
+    assert(await page.$eval('[data-card="sun"]', (d) => d.open), 'the open state of a card was not remembered');
+    await page.click('[data-cards="close"]');
+    assert((await page.$$eval('details.pcard[open]:not([data-alert])', (e) => e.length)) === 0, 'collapse all');
+    await page.click('[data-jump="fc"]');
+    assert(await page.$eval('details.pcard[data-grp="fc"]', (d) => d.open), 'jump chip should open the first card of the group');
+    await page.click('[data-cards="open"]');
+    assert((await page.$$eval('details.pcard:not([open])', (e) => e.length)) === 0, 'expand all');
+    await page.screenshot({ path: path.join(SHOTS, 'point-cards.png') });
+    await page.evaluate(() => localStorage.removeItem('hikingwx.cards.v1'));
+    await page.click('#sheet-close').catch(() => {});
+  });
+
   await check('gusts (model) and apparent temperature in the wind layer, forecast tables and station card', async () => {
     const w = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'wind.json'), 'utf-8'));
     w.gustSource = { name: 'Open-Meteo', license: 'CC BY 4.0', time: new Date().toISOString() };
@@ -761,7 +797,7 @@ function serve() {
     if (st) {
       await page.evaluate(async (s) => { const v = await import('./js/views.js'); await v.showPoint(s.lat, s.lon, { stationId: s.id, label: s.n }); }, st);
       await page.waitForSelector('#h-stn');
-      assert((await page.textContent('.card.station')).includes('體感（估算）'), 'station apparent temperature missing');
+      assert((await page.textContent('[data-card="station"]')).includes('體感（估算）'), 'station apparent temperature missing');
       await page.click('#sheet-close');
     }
     await ctx.unroute(/data\/wind\.json/);
@@ -844,8 +880,8 @@ function serve() {
     assert((await page.evaluate(async () => (await import('./js/store.js')).listFav().then((f) => f.length))) === 1, 'favourite not saved from the search list');
     // choosing the result: highlight + header star already filled
     await page.click('#q-results li[data-i="0"] >> text=鹿林');
-    await page.waitForSelector('#sheet.open #sheet-fav:not([hidden])');
-    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'true');
+    await page.waitForSelector('#sheet.open #btn-fav');
+    await page.waitForFunction(() => document.getElementById('btn-fav')?.getAttribute('aria-pressed') === 'true');
     assert((await page.$$('.pick-mk')).length === 1, 'selected point is not highlighted on the map');
     await page.waitForTimeout(1500);
     const vis = await page.evaluate(() => {
@@ -856,11 +892,11 @@ function serve() {
     // With 200 % text and two banners the map above the panel can be too short to show anything: only check when there is room.
     assert(vis.room < 160 || vis.ok, 'the highlighted point is hidden behind the panel');
     await page.screenshot({ path: path.join(SHOTS, 'pick-highlight.png') });
-    await page.click('#sheet-fav');
-    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'false');
+    await page.click('#btn-fav');
+    await page.waitForFunction(() => document.getElementById('btn-fav')?.getAttribute('aria-pressed') === 'false');
     assert((await page.evaluate(async () => (await import('./js/store.js')).listFav().then((f) => f.length))) === 0, 'header star did not remove the favourite');
-    await page.click('#sheet-fav');
-    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'true');
+    await page.click('#btn-fav');
+    await page.waitForFunction(() => document.getElementById('btn-fav')?.getAttribute('aria-pressed') === 'true');
     await page.click('#sheet-close');
     assert((await page.$$('.pick-mk')).length === 0, 'highlight should be removed when the panel closes');
     assert(!(await page.isVisible('#sheet-fav')), 'header star should be hidden without a panel');
@@ -885,11 +921,12 @@ function serve() {
     assert((await page.textContent('#sheet-title')) !== m.n, 'the tap jumped to the nearby forecast mountain');
     assert((await page.textContent('#sheet-sub')).includes('非預報點'), 'header hint missing for a plain tap');
     assert(!(await page.$('#h-fc')), 'a tap near a mountain must not open that mountain\'s forecast');
-    assert((await page.textContent('#h-nmf')).length > 0 && (await page.$('#h-nmf ~ ul [data-spot], #h-nmf + p + ul [data-spot]')), 'nearby mountain list missing');
+    assert(await page.$('[data-card="mtnfc"] ul [data-spot]'), 'nearby mountain list missing');
     assert((await page.$('#h-tfc')) !== null, 'the township forecast should stay');
     const txt = await page.textContent('#sheet-body');
     assert(txt.includes('°C') && txt.includes('降雨機率'), 'nearby mountain forecast summary missing');
-    await page.click('#h-nmf >> xpath=../ul//button[@data-spot]');
+    await page.click('[data-card="mtnfc"] > summary');                  // folded by default
+    await page.click('[data-card="mtnfc"] button[data-spot]');
     await page.waitForSelector('#h-fc');
     assert(!(await page.isVisible('#sheet-sub')), 'a forecast mountain needs no hint');
     await page.click('#sheet-close');

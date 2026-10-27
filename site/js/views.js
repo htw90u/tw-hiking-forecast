@@ -9,9 +9,11 @@ import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
 import { assess, LEVELS } from './safety.js';
-import { loadAloft, aloftCard, sunCard } from './aloft.js';
+import { loadAloft, aloftCard, sunCard, levelAlt as levelAltOf, compass as compassName } from './aloft.js';
+import { sunTimes, twDate } from './sun.js';
 import { ensembleCard, bindEnsemble } from './ensemble.js';
-import { loadHydro, hydroCard } from './hydro.js';
+import { loadHydro, hydroCard, townAlerts } from './hydro.js';
+import { cardize, bindCards, GROUPS } from './cards.js';
 import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRecent, deleteRecent, deleteFav } from './store.js';
 
 // ------------------------------------------------------------------ sheet
@@ -46,6 +48,7 @@ function renderTop() {
   body.innerHTML = typeof e.body === 'string' ? e.body : e.body.html;
   body.scrollTop = 0;
   document.getElementById('sheet-back').hidden = stack.length < 2;
+  document.getElementById('sheet').classList.toggle('pt', Boolean(e.fav));   // a point panel carries its own favourite button
   setSheetFav(e.fav);
   if (e.onRender) e.onRender(body);
 }
@@ -62,7 +65,7 @@ function setSheetFav(fav) {
     b.setAttribute('aria-pressed', String(on));
     b.setAttribute('aria-label', on ? `取消收藏：${fav.title}` : `加入收藏：${fav.title}`);
     b.title = on ? '取消收藏' : '加入收藏';
-    document.querySelectorAll('#btn-fav').forEach((x) => { x.textContent = on ? '★ 已收藏' : '☆ 收藏'; });
+    document.querySelectorAll('#btn-fav').forEach((x) => { x.textContent = on ? '★ 已收藏' : '☆ 收藏'; x.setAttribute('aria-pressed', String(on)); });
   };
   paint(false);
   listFav().then((f) => paint(f.some((x) => x.id === fav.id)));
@@ -272,6 +275,24 @@ ${row('濕度', (c) => (c.rh === null ? '—' : `${c.rh}%`))}
 </tbody></table></div>`;
 }
 
+
+/** The forecast step that is current now (first one not yet ended): { pop, wx, T, AT, ws, bf, g } or null. */
+function fcBrief(d3, gust = null) {
+  const pop = el(d3, '3小時降雨機率');
+  if (!pop || !pop.t.length) return null;
+  let i = pop.t.findIndex((t) => new Date(t).getTime() + 3 * 3600e3 > Date.now());
+  if (i < 0) i = pop.t.length - 1;
+  const t = pop.t[i];
+  return { pop: pop.v.ProbabilityOfPrecipitation[i] ?? null, wx: valueAt(el(d3, '天氣現象'), 'Weather', t), T: valueAt(el(d3, '溫度'), 'Temperature', t),
+    AT: valueAt(el(d3, '體感溫度'), 'ApparentTemperature', t), ws: valueAt(el(d3, '風速'), 'WindSpeed', t), bf: valueAt(el(d3, '風速'), 'BeaufortScale', t), g: gust?.[t] ?? null };
+}
+
+function briefText(b) {
+  if (!b) return '';
+  return [b.wx, b.pop !== null ? `降雨 ${b.pop}%` : null, b.T !== null ? `${b.T}°${b.AT !== null && b.AT !== b.T ? `（體感 ${b.AT}°）` : ''}` : null,
+    b.bf !== null ? `風 ${b.bf}級${b.g !== null ? `（陣風 ${beaufort(b.g)}級）` : ''}` : null].filter(Boolean).join('・');
+}
+
 function forecastWeek(week) {
   const pop = el(week, '12小時降雨機率');
   if (!pop) return '';
@@ -444,8 +465,8 @@ function historyBlock(stations, selected) {
   const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km${it.k === 'rain' ? '・雨量站' : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
-  return raw(`<section class="card" aria-labelledby="h-hist"><h3 id="h-hist">測站歷史資料</h3>
-<label class="field">測站 <select id="hist-sid">${opts}</select></label>
+  return raw(`<details class="sub" data-sub="hist"><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
+<label class="field">測站（距離） <select id="hist-sid">${opts}</select></label>
 <div class="seg" role="radiogroup" aria-label="期間">
 <button class="seg-btn" role="radio" aria-checked="true" data-range="24">24 小時</button>
 <button class="seg-btn" role="radio" aria-checked="false" data-range="72">3 天</button>
@@ -454,7 +475,7 @@ function historyBlock(stations, selected) {
 <button class="seg-btn" role="radio" aria-checked="false" data-range="custom">自訂</button></div>
 <div id="hist-custom" class="custom" hidden><label>起 <input type="date" id="hist-from" value="${weekAgo}"></label>
 <label>迄 <input type="date" id="hist-to" value="${today}"></label><button class="btn" id="hist-go">查詢</button></div>
-<div id="hist-out"></div></section>`);
+<div id="hist-out"></div></div></details>`);
 }
 
 function bindHistory(root) {
@@ -470,7 +491,12 @@ function bindHistory(root) {
   }));
   root.querySelector('#hist-go').addEventListener('click', run);
   sel.addEventListener('change', run);
-  run();
+  // The charts load when the section is first opened (or when another station is chosen), not for every panel.
+  const sub = sel.closest('details.sub');
+  let loaded = false;
+  const first = () => { if (!loaded) { loaded = true; run(); } };
+  sel.addEventListener('change', () => { loaded = true; });
+  if (sub?.open) first(); else sub?.addEventListener('toggle', () => { if (sub.open) first(); });
 }
 
 // ------------------------------------------------------------------ point view
@@ -613,48 +639,96 @@ ${b ? html`<br><small>${b}</small>` : html`<br><small class="muted">暫無預報
 
   const hydroHtml = hydroCard(S.hydro, lat, lon, town?.COUNTYNAME, town?.TOWNNAME);
   const warnHtml = countyWarn?.hazards?.length
-    ? html`<section class="card warn" aria-labelledby="h-warn"><h3 id="h-warn">⚠ ${county} 警特報</h3><ul>${countyWarn.hazards.map((h) => html`<li>${h.ph}${h.sig}（至 ${fmtTime(h.end)}）</li>`)}</ul></section>`
+    ? html`<section class="card warn" aria-labelledby="h-warn"><h3 id="h-warn">${county} 警特報</h3><ul>${countyWarn.hazards.map((h) => html`<li>${h.ph}${h.sig}（至 ${fmtTime(h.end)}）</li>`)}</ul></section>`
     : '';
-  const tyHtml = S.typhoon?.active ? html`<section class="card warn"><h3>🌀 颱風警報中</h3><button class="btn" data-open="typhoon">查看颱風路徑、風力與雨量預測</button></section>` : '';
+  const tyHtml = S.typhoon?.active ? html`<section class="card warn"><h3>颱風警報中</h3><button class="btn" data-open="typhoon">查看颱風路徑、風力與雨量預測</button></section>` : '';
   const qHtml = quakesNear.length ? html`<section class="card"><h3>近 3 天 50 km 內地震</h3><ul>${quakesNear.map((q) => html`<li><button class="link" data-quake="${q.time}">${fmtTime(q.time)} 規模 ${q.mag}</button> <span class="meta">距此 ${q.d.toFixed(0)} km・最大震度 ${intText(q.maxInt)}</span></li>`)}</ul></section>` : '';
 
   const station = opts.stationId ? S.stations.find((x) => x.id === opts.stationId) : null;
-  const riskHtml = html`<section class="card risk ${LEVELS[risk.level].cls}" aria-labelledby="h-risk"><h3 id="h-risk">登山安全評估 ${lvBadge(risk.level)}</h3>
+  const riskHtml = html`<section class="card risk ${LEVELS[risk.level].cls}" aria-labelledby="h-risk"><h3 id="h-risk">登山安全評估</h3>
 ${risk.reasons.length ? html`<ul>${risk.reasons.map((r) => html`<li>${lvBadge(r.lv)} ${r.text}</li>`)}</ul>` : html`<p>目前未觸發警示條件。</p>`}
 <p class="note">依門檻自動判斷，僅供參考；請以現場狀況與官方資訊為準。門檻可在「設定」調整。</p></section>`;
   const nowHtml = html`<section class="card" aria-labelledby="h-now"><h3 id="h-now">此處即時格點值</h3><table class="kv"><tbody>
 ${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1小時雨量', 'qpe1h', 'mm'))}${raw(vrow('未來1小時雨量', 'qpf1h', 'mm'))}${raw(vrow('溫度分析', 'temp', '°C'))}${raw(vrow('雲頂溫度（紅外線）', 'satir', '°C', 0))}
 </tbody></table></section>`;
-  const rainFcHtml = html`
-${accRows ? html`<section class="card" aria-labelledby="h-acc"><h3 id="h-acc">累積雨量（雨量站內插估計）</h3><table class="kv"><tbody>${raw(accRows)}</tbody></table></section>` : ''}
-${qpfRows ? html`<section class="card" aria-labelledby="h-qpf"><h3 id="h-qpf">定量降水預報（每12小時）</h3><table class="kv"><tbody>${raw(qpfRows)}</tbody></table></section>` : ''}
-${qpf6Rows ? html`<section class="card" aria-labelledby="h-qpf6"><h3 id="h-qpf6">定量降水預報（每6小時・颱風警報期間）</h3><table class="kv"><tbody>${raw(qpf6Rows)}</tbody></table></section>` : ''}
-${qaccRows ? html`<section class="card" aria-labelledby="h-qacc"><h3 id="h-qacc">未來累積降水（由12小時預報加總）</h3><table class="kv"><tbody>${raw(qaccRows)}</tbody></table>${raw(accMeta ? attribution(accMeta) : '')}</section>` : ''}
-${fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : ''}
-${townHtml && peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄰近鄉鎮預報</h3>
-<p class="note">此山不是氣象署登山預報點，以下為所在鄉鎮（${normCounty(town.COUNTYNAME)}${town.TOWNNAME}）的預報；山區氣溫通常較低、風較強，請一併參考鄰近測站。</p>${raw(townHtml)}</section>` : ''}
-${townHtml && !peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}
-${mtnFcHtml}
-${aloftHtml}${ensembleCard()}${sunCard(lat, lon, spotPick?.ele ?? peak?.ele ?? station?.alt ?? null)}`;
+  const accHtml = accRows ? html`<section class="card" aria-labelledby="h-acc"><h3 id="h-acc">累積雨量（雨量站內插估計）</h3><table class="kv"><tbody>${raw(accRows)}</tbody></table></section>` : '';
+  const qpfHtml = qpfRows ? html`<section class="card" aria-labelledby="h-qpf"><h3 id="h-qpf">定量降水預報（每12小時）</h3><table class="kv"><tbody>${raw(qpfRows)}</tbody></table></section>` : '';
+  const qpf6Html = qpf6Rows ? html`<section class="card" aria-labelledby="h-qpf6"><h3 id="h-qpf6">定量降水預報（每6小時・颱風警報期間）</h3><table class="kv"><tbody>${raw(qpf6Rows)}</tbody></table></section>` : '';
+  const qaccHtml = qaccRows ? html`<section class="card" aria-labelledby="h-qacc"><h3 id="h-qacc">未來累積降水（由12小時預報加總）</h3><table class="kv"><tbody>${raw(qaccRows)}</tbody></table>${raw(accMeta ? attribution(accMeta) : '')}</section>` : '';
+  const spotFcCard = fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : '';
+  const townCard = townHtml && peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄰近鄉鎮預報</h3>
+<p class="note">此山不是氣象署登山預報點，以下為所在鄉鎮（${normCounty(town.COUNTYNAME)}${town.TOWNNAME}）的預報；山區氣溫通常較低、風較強，請一併參考鄰近測站。</p>${raw(townHtml)}</section>`
+    : townHtml ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : '';
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
-  const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站（現在）'}</h3>
-${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}</section>`;
-  const histHtml = stationsNear.length ? historyBlock(stationsNear, histDefault) : '';
+  const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站'}</h3>
+${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}
+${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`;
   const nearHtml = near.length ? html`<section class="card"><h3>附近景點／山岳</h3><ul>${near}</ul></section>` : '';
-  // Station clicked: its observations and the mountains around it come first; safety and alerts follow.
-  const main = station
-    ? html`${stationCard(station)}${mountainsCard(station.lat, station.lon)}${histHtml}${riskHtml}${warnHtml}${hydroHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${qHtml}`
-    : peak
-      ? html`${riskHtml}${warnHtml}${hydroHtml}${tyHtml}${rainFcHtml}${nowHtml}${stationsHtml}${mountainsCard(lat, lon, 10, peak.k)}${histHtml}${qHtml}`
-      : html`${riskHtml}${warnHtml}${hydroHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${histHtml}${qHtml}${nearHtml}`;
+
+  // ---- one-line summaries of the folded cards
+  const [briefD3, briefGust] = spotFc ? [spotFc.d3, gustSeries(spotFc.k)] : townFc ? [townFc.d3, gustSeries(town.TOWNCODE)] : nearFc ? [nearFc.d3, gustSeries(nearFc.k)] : [null, null];
+  const brief = fcBrief(briefD3, briefGust);
+  const ws0 = weatherSt[0]?.it;
+  const eleHere = spotPick?.ele ?? peak?.ele ?? station?.alt ?? null;
+  const rainSum = [vals.acc_24h?.v != null ? `過去 24 小時 ${fmtNum(vals.acc_24h.v, 1)} mm` : null, vals.qacc24?.v != null ? `未來 24 小時約 ${fmtNum(vals.qacc24.v, 0)} mm` : null].filter(Boolean).join('・');
+  const nowSum = [vals.radar ? (vals.radar.v === null ? '雷達無回波' : `雷達 ${fmtNum(vals.radar.v, 0)} dBZ`) : null, vals.qpe1h?.v != null ? `1 小時雨量 ${fmtNum(vals.qpe1h.v, 1)} mm` : null,
+    vals.satir?.v != null ? `雲頂 ${fmtNum(vals.satir.v, 0)}°C` : null].filter(Boolean).join('・');
+  const stSum = ws0 ? [ws0.n, `${weatherSt[0].d.toFixed(1)} km`, ws0.T !== undefined ? `${fmtNum(ws0.T)}°C` : null, ws0.RH !== undefined ? `濕度 ${fmtNum(ws0.RH, 0)}%` : null,
+    ws0.WS !== undefined ? `風 ${fmtNum(ws0.WS)} m/s` : null].filter(Boolean).join('・') : (otherStations.length ? `${otherStations[0].it.n}・${otherStations[0].d.toFixed(1)} km` : '35 km 內沒有測站');
+  const mtnSum = nearMtns.map(({ it, d }) => `${it.n} ${d.toFixed(1)} km`).join('・');
+  const aloftPt = aloftSpot && S.aloft?.points?.[aloftSpot.it.k];
+  const aloftSum = aloftPt ? (() => {
+    const a = S.aloft; const k = a.times.findIndex((t) => new Date(t).getTime() + 3 * 3600e3 > Date.now());
+    const i0 = k < 0 ? a.times.length - 1 : k;
+    const li = eleHere === null ? 1 : a.levels.reduce((best, _, lj) => (Math.abs((levelAltOf(aloftPt, lj) ?? 1e9) - eleHere) < Math.abs((levelAltOf(aloftPt, best) ?? 1e9) - eleHere) ? lj : best), 0);
+    const ws = aloftPt.ws[li][i0]; const wd = aloftPt.wd[li][i0]; const v = aloftPt.vis[i0];
+    return [`${a.levels[li]} hPa${wd !== null && ws !== null ? ` ${compassName(wd)} ${ws} m/s` : ''}`, v !== null ? `能見度 ${v} km${v < 1 ? '（濃霧）' : ''}` : null].filter(Boolean).join('・');
+  })() : '';
+  const [sy, sm, sd] = twDate();
+  const sun0 = sunTimes(lat, lon, sy, sm, sd, eleHere && eleHere >= 300 ? eleHere : 0);
+  const hydroAlerts = town ? townAlerts(S.hydro, town.COUNTYNAME, town.TOWNNAME) : [];
+  const hydroSum = hydroAlerts.length ? `土石流${hydroAlerts.some((a) => a.level === 'red') ? '紅色' : '黃色'}警戒` : '鄰近水位站與水庫';
+  const near2 = spotsNear.slice(0, 2).map(({ it }) => it.n).join('・');
+
+  const cardsOut = {
+    risk: cardize(riskHtml, { id: 'risk', grp: 'safe', title: '登山安全評估', titleId: 'h-risk', open: true, alert: risk.level > 0, extra: `risk ${LEVELS[risk.level].cls}`,
+      summary: risk.reasons.length ? `${LEVELS[risk.level].label}・${risk.reasons.length} 項觸發：${risk.reasons.slice(0, 2).map((r) => r.text.replace(/（.*?）/g, '')).join('、')}` : '正常・目前未觸發警示條件' }),
+    warn: cardize(warnHtml, { id: 'warn', grp: 'safe', icon: '!', alert: true, summary: countyWarn?.hazards?.map((h) => `${h.ph}${h.sig}`).join('、') }),
+    ty: cardize(tyHtml, { id: 'ty', grp: 'safe', icon: '🌀', alert: true, summary: S.typhoon?.cyclones?.map((c) => c.cname).join('、') }),
+    quake: cardize(qHtml, { id: 'quake', grp: 'safe', icon: '≈', summary: `${quakesNear.length} 起・最近規模 ${quakesNear[0]?.mag}` }),
+    station: station ? cardize(stationCard(station), { id: 'station', grp: 'obs', open: true, summary: `${fmtTime(station.t)}・${station.T !== undefined ? `${fmtNum(station.T)}°C` : ''}` }) : '',
+    now: cardize(nowHtml, { id: 'now', grp: 'obs', summary: nowSum }),
+    stations: cardize(stationsHtml, { id: 'stations', grp: 'obs', open: true, summary: stSum }),
+    fc: cardize(spotFcCard, { id: 'fc', grp: 'fc', icon: '☀', open: true, summary: briefText(brief) }),
+    town: cardize(townCard, { id: 'town', grp: 'fc', icon: '☀', open: !spotFcCard, summary: briefText(brief) }),
+    rain: cardize([accHtml, qpfHtml, qpf6Html, qaccHtml], { id: 'rain', grp: 'fc', icon: '☂', title: '降雨預報', titleId: 'h-rain', keepHeads: true, summary: rainSum }),
+    mtnFc: cardize(mtnFcHtml, { id: 'mtnfc', grp: 'fc', icon: '▲', summary: mtnSum }),
+    aloft: cardize(aloftHtml, { id: 'aloft', grp: 'air', summary: aloftSum }),
+    hydro: cardize(hydroHtml, { id: 'hydro', grp: 'water', alert: hydroAlerts.length > 0, summary: hydroSum }),
+    ens: cardize(ensembleCard(), { id: 'ens', grp: 'fc', icon: '∿', summary: '按下載入 ECMWF／GFS 10 天範圍' }),
+    sun: cardize(sunCard(lat, lon, eleHere), { id: 'sun', grp: 'sun', summary: sun0 ? `日出 ${sun0.rise}・日沒 ${sun0.set}${eleHere && eleHere >= 300 ? '（海拔視野開闊）' : ''}` : '' }),
+    near: cardize(nearHtml, { id: 'near', grp: 'info', summary: near2 }),
+    mtns: cardize(station ? mountainsCard(station.lat, station.lon) : peak ? mountainsCard(lat, lon, 10, peak.k) : '', { id: 'mtns', grp: 'info', icon: '▲', summary: '' }),
+  };
+  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'fc', 'town', 'rain', 'mtnFc', 'aloft', 'hydro', 'ens', 'sun', 'mtns', 'near'];
+  const present = order.filter((k) => cardsOut[k]);
+  const groupsPresent = Object.keys(GROUPS).filter((g) => present.some((k) => cardsOut[k].includes(`data-grp="${g}"`)));
+  const bf = (n) => (n === null || n === undefined ? '—' : `${n} 級`);
+  const sT = brief?.T ?? ws0?.T ?? null;
+  const strip = html`<div class="pstrip">
+<div class="pill ${LEVELS[risk.level].cls === 'lv0' ? '' : LEVELS[risk.level].cls}"><b>${LEVELS[risk.level].label}</b>安全評估</div>
+<div class="pill"><b>${brief?.pop != null ? `${brief.pop}%` : '—'}</b>降雨機率</div>
+<div class="pill"><b>${sT !== null ? `${fmtNum(sT, 0)}°C` : '—'}</b>${brief?.AT != null ? `體感 ${brief.AT}°` : '氣溫'}</div>
+<div class="pill ${(brief?.bf ?? 0) >= 6 ? 'lv1' : ''}"><b>${bf(brief?.bf ?? (ws0?.WS !== undefined ? beaufort(ws0.WS) : null))}</b>${brief?.g != null ? `陣風 ${beaufort(brief.g)} 級` : '風力'}</div></div>`;
+  const jump = html`<div class="pjump" role="group" aria-label="跳到區段">${raw(groupsPresent.map((g) => `<button type="button" class="g-${g}" data-jump="${g}">${GROUPS[g].label}</button>`).join(''))}</div>
+<div class="ptools"><button type="button" id="btn-ens-jump">系集預報</button><button type="button" data-cards="open">全部展開</button><button type="button" data-cards="close">全部收合</button></div>`;
+  const windy = `https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${lat.toFixed(3)},${lon.toFixed(3)},11`;
 
   const body = html`
-<p class="place">${placeLine}</p>
-<p class="jump"><button type="button" class="btn" id="btn-ens-jump">系集預報（10 天）</button></p>
-${main}
-<div class="actions"><button class="btn" id="btn-fav">☆ 收藏</button>
-<a class="btn" target="_blank" rel="noopener" href="https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${lat.toFixed(3)},${lon.toFixed(3)},11">在 Windy 開啟</a>
-<button class="btn" id="btn-copy">複製座標</button></div>
+<div class="ptbar"><p class="place">${placeLine}</p>
+<div class="acts"><a class="ab" target="_blank" rel="noopener" href="${windy}">🌀 Windy</a><button type="button" class="ab" id="btn-copy">⌖ 座標</button><button type="button" class="ab fav" id="btn-fav" aria-pressed="false">☆ 收藏</button></div></div>
+${strip}${jump}
+${raw(present.map((k) => cardsOut[k]).join(''))}
 <p class="src">資料來源：中央氣象署開放資料。資料更新 ${fmtTime(S.manifest?.built)}</p>`;
 
   const id = pointId(lat, lon);
@@ -667,7 +741,8 @@ ${main}
     onRender: (root) => {
       bindCommon(root);
       bindHistory(root);
-      bindEnsemble(root, lat, lon, spotPick?.ele ?? peak?.ele ?? station?.alt ?? null);
+      bindCards(root);
+      bindEnsemble(root, lat, lon, eleHere);
       root.querySelector('#btn-fav')?.addEventListener('click', () => document.getElementById('sheet-fav').click());
       root.querySelector('#btn-copy')?.addEventListener('click', async (ev) => {
         try { await navigator.clipboard.writeText(`${lat.toFixed(5)}, ${lon.toFixed(5)}`); ev.target.textContent = '已複製'; } catch { ev.target.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; }
@@ -700,6 +775,8 @@ function bindCommon(root) {
     const sel = root.querySelector('#hist-sid');
     if (sel && [...sel.options].some((o) => o.value === b.dataset.station)) {
       sel.value = b.dataset.station;
+      const sub = sel.closest('details.sub');
+      if (sub) { sub.open = true; sub.closest('details.pcard')?.setAttribute('open', ''); }
       sel.dispatchEvent(new Event('change'));
       sel.scrollIntoView({ behavior: S.settings.reduceMotion ? 'auto' : 'smooth', block: 'center' });
     } else if (st) {
@@ -921,7 +998,7 @@ export async function showRecent({ replace = false } = {}) {
 
 export function showSnapshot(entry) {
   const body = html`<p class="offline-note" role="note">離線快照：${fmtTime(entry.savedAt)} 查詢（資料版本 ${fmtTime(entry.dataTime)}）。內容不會更新。</p>${raw(entry.html)}`;
-  openSheet(`${entry.title}（離線）`, body, { onRender: bindTabs });
+  openSheet(`${entry.title}（離線）`, body, { onRender: (root) => { bindTabs(root); bindCards(root); } });
   if (S.map) S.map.setView([entry.lat, entry.lon], Math.max(S.map.getZoom(), 11));
 }
 

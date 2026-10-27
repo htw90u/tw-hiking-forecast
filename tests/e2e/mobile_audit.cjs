@@ -92,6 +92,8 @@ async function audit(page, where) {
     // point panel: opened directly (a tap can land on a mountain marker, which opens that spot instead)
     await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.62, 120.93); });
     await page.waitForSelector('#sheet.open #h-risk', { timeout: 20000 });
+    await page.click('[data-cards="open"]');                              // audit the contents of every card
+    await page.click('details.sub[data-sub="hist"] > summary');
     await page.waitForSelector('#hist-out figure, #hist-out p', { timeout: 20000 });
     a = await audit(page, '#sheet');
     log(a.docW <= a.vw ? 'PASS' : 'FAIL', `${tag} panel: no horizontal scroll${a.overflow.length ? ' ' + a.overflow.join('; ') : ''}`);
