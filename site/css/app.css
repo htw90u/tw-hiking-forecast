@@ -429,3 +429,8 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 @keyframes pick-pulse { 0% { transform: scale(.75); opacity: 1; } 70% { transform: scale(1.15); opacity: .85; } 100% { transform: scale(1.3); opacity: .6; } }
 [data-theme="contrast"] .pick-mk .ring { border-color: #ff0; box-shadow: 0 0 0 2px #000, 0 0 10px 3px #ff0; }
 [data-theme="contrast"] .pick-mk .dot { background: #ff0; border-color: #000; }
+
+/* Sheet title with an optional one-line hint */
+.sheet-ttl { flex: 1; min-width: 0; padding-top: .35rem; }
+.sheet-ttl h2 { padding-top: 0; }
+#sheet-sub { display: block; color: var(--muted); font-size: .8rem; line-height: 1.25; }

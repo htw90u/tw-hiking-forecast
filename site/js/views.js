@@ -14,9 +14,9 @@ import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRe
 // ------------------------------------------------------------------ sheet
 const stack = [];
 
-export function openSheet(title, body, { replace = false, onRender, peek = false, quake = false, fav = null } = {}) {
+export function openSheet(title, body, { replace = false, onRender, peek = false, quake = false, fav = null, sub = '' } = {}) {
   const sheet = document.getElementById('sheet');
-  const entry = { title, body, onRender, fav };
+  const entry = { title, body, onRender, fav, sub };
   if (quake) clearPick();
   // peek: a low sheet so the map above stays visible (earthquake view).
   sheet.classList.toggle('peek', peek);
@@ -36,6 +36,9 @@ function renderTop() {
   const e = stack[stack.length - 1];
   if (!e) return;
   document.getElementById('sheet-title').textContent = e.title;
+  const sub = document.getElementById('sheet-sub');
+  sub.textContent = e.sub || '';
+  sub.hidden = !e.sub;
   const body = document.getElementById('sheet-body');
   body.innerHTML = typeof e.body === 'string' ? e.body : e.body.html;
   body.scrollTop = 0;
@@ -538,6 +541,8 @@ export async function showPoint(lat, lon, opts = {}) {
   }, S.settings.thresholds);
 
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+  // Header hint: this place has no CWA forecast of its own (only a chosen forecast spot or a station has).
+  const noForecast = opts.stationId ? '' : peak ? '無氣象署預報・顯示鄰近鄉鎮與鄰近山頭預報' : !spotPick ? '非預報點・顯示鄉鎮與鄰近山頭預報' : '';
   const placeLine = [peak?.tags?.length ? peak.tags.map((t) => S.peakLists[t] || t).join('・') : null, peak?.ele ? `海拔 ${peak.ele} m` : null, town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
   const near = spotsNear.slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
 
@@ -644,6 +649,7 @@ ${main}
   openSheet(title, body, {
     replace: true,
     fav,
+    sub: noForecast,
     onRender: (root) => {
       bindCommon(root);
       bindHistory(root);

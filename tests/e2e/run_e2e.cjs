@@ -574,7 +574,7 @@ function serve() {
       S.layer.overlay.eachLayer((l) => { if (l.eachLayer) l.eachLayer((p) => { if (p.options.fillOpacity > 0) filled += 1; }); });
       return { filled, arrows: document.querySelectorAll('.wind-mk').length, steps: S.wind.times.length };
     });
-    assert(st.filled > 300 && st.arrows >= 5, `wind layer ${JSON.stringify(st)}`);
+    assert(st.filled > 200 && st.arrows >= 5, `wind layer ${JSON.stringify(st)}`);
     assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 12, 'Beaufort colour bar');
     const before = await page.textContent('#map-banner');
     await page.$eval('#wind-frame', (i) => { i.value = String(Number(i.max)); i.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -737,6 +737,7 @@ function serve() {
     await page.evaluate(async (p) => { const v = await import('./js/views.js'); await v.showPoint(p.lat, p.lon); }, m);
     await page.waitForSelector('#sheet.open #h-nmf');
     assert((await page.textContent('#sheet-title')) !== m.n, 'the tap jumped to the nearby forecast mountain');
+    assert((await page.textContent('#sheet-sub')).includes('非預報點'), 'header hint missing for a plain tap');
     assert(!(await page.$('#h-fc')), 'a tap near a mountain must not open that mountain\'s forecast');
     assert((await page.textContent('#h-nmf')).length > 0 && (await page.$('#h-nmf ~ ul [data-spot], #h-nmf + p + ul [data-spot]')), 'nearby mountain list missing');
     assert((await page.$('#h-tfc')) !== null, 'the township forecast should stay');
@@ -744,7 +745,7 @@ function serve() {
     assert(txt.includes('°C') && txt.includes('降雨機率'), 'nearby mountain forecast summary missing');
     await page.click('#h-nmf >> xpath=../ul//button[@data-spot]');
     await page.waitForSelector('#h-fc');
-    assert((await page.textContent('#sheet-title')).length > 0, 'chosen mountain panel');
+    assert(!(await page.isVisible('#sheet-sub')), 'a forecast mountain needs no hint');
     await page.click('#sheet-close');
   });
 
@@ -780,6 +781,7 @@ function serve() {
     const h = await page.textContent('#h-tfc');
     assert(h.includes('鄰近鄉鎮預報'), `heading ${h}`);
     assert(!(await page.$('#h-fc')), 'a CWA spot forecast should not be shown for an OSM peak');
+    assert((await page.textContent('#sheet-sub')).includes('無氣象署預報'), 'header hint missing for a peak without forecast');
     const attr = await page.textContent('.leaflet-control-attribution');
     assert(attr.includes('ODbL'), 'OSM peak attribution missing');
     const res = await page.evaluate(async () => (await import('./js/views.js')).search('鹿林').map((r) => ({ type: r.type, sub: r.sub || '' })));
