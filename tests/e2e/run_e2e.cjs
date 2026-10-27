@@ -214,15 +214,11 @@ function serve() {
     await selectLayer('.chip[data-layer="sat"]');
     await page.waitForSelector('[data-frame]');
     const labels = await page.$$eval('[data-frame]', (b) => b.map((x) => x.textContent));
-    assert(labels.length === 4 && labels[1].includes('色調強化') && labels[3].includes('氣象署原圖'), `sat modes ${labels}`);
+    assert(labels.length === 3 && labels[1].includes('色調強化'), `sat modes ${labels}`);
     await page.click('[data-frame="1"]');
     await page.waitForFunction(() => document.querySelector('#legend .grad'));
     const n = await page.$$eval('img.wx-grid', (x) => x.length);
     assert(n === 1, `satellite overlay images ${n}`);
-    await page.click('[data-frame="3"]');                              // CWA's own colour picture
-    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('色調強化'));
-    assert((await page.$$eval('img.leaflet-image-layer:not(.wx-grid)', (x) => x.length)) >= 1, 'CWA original satellite picture missing');
-    await page.click('[data-frame="0"]');
   });
 
   await check('QPF outlying islands placed at real coordinates (Matsu, Kinmen)', async () => {

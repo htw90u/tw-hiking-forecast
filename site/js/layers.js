@@ -39,11 +39,7 @@ const SAT_MODES = [
   { label: '紅外線（黑白）', key: 'ir', kind: 'irgray' },
   { label: '紅外線（色調強化）', key: 'ir', kind: 'irenh' },
   { label: '可見光', key: 'vis', kind: 'vis' },
-  // CWA's own pre-rendered picture (colour enhancement, with coastlines and grid lines drawn in by CWA).
-  { label: '紅外線（氣象署原圖・彩色）', img: 'sat_006' },
 ];
-/** Satellite modes that can be shown now (the original pictures only when they were downloaded). */
-function satModes() { return SAT_MODES.filter((m) => !m.img || S.sat.some((x) => x.id === m.img)); }
 
 function satGrids() { return S.manifest?.layers?.satellite?.grids || {}; }
 
@@ -57,7 +53,7 @@ const SPACING_KINDS = ['rainacc', 'rainbig'];
 /** Colour-scale kind actually used for the current layer / mode. */
 export function layerKind(id) {
   if (id === 'qpf' && S.layer.qpfMode === 'acc') return 'rainacc';
-  if (id === 'sat' && satGrids().ir) return satModes()[Math.min(S.layer.frame, satModes().length - 1)].kind || 'irenh';
+  if (id === 'sat' && satGrids().ir) return SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].kind;
   return layerDef(id).kind;
 }
 // Layers whose frames are selectable periods (S.layer.period) rather than animation frames.
@@ -99,7 +95,7 @@ export function framesFor(id) {
   }
   if (id === 'sat') {
     const g = satGrids();
-    return g.ir ? satModes().map((m) => g[m.key]?.meta).filter(Boolean) : [];
+    return g.ir ? SAT_MODES.map((m) => g[m.key]?.meta).filter(Boolean) : [];
   }
   if (id === 'rainacc') return (L_.rainacc?.periods || [{ meta: 'grids/rainday.json' }]).map((p) => p.meta);
   if (['qpe1h', 'rainday', 'qpf1h', 'temp'].includes(id)) return [`grids/${id}.json`];
@@ -141,7 +137,6 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   try {
     if (def.kind === 'none') { clearOverlay(); renderLegend(); return; }
     if (id === 'sat' && !satGrids().ir) { await showSatellite(); return; }
-    if (id === 'sat' && satModes()[S.layer.frame]?.img) { await showSatellite(satModes()[S.layer.frame].img); return; }
     if (id === 'tyrain') { showTyphoonRain(); return; }
     if (id === 'wind') { await showWind(keepFrame); return; }
     if (id === 'water') { await showWater(); return; }
@@ -181,10 +176,10 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   }
 }
 
-async function showSatellite(imgId) {
+async function showSatellite() {
   const imgs = S.sat;
   if (!imgs.length) { clearOverlay(); renderLegend(null, '沒有衛星雲圖資料'); return; }
-  const im = (imgId && imgs.find((x) => x.id === imgId)) || imgs[Math.min(S.layer.frame, imgs.length - 1)];
+  const im = imgs[Math.min(S.layer.frame, imgs.length - 1)];
   const [w, s, e, n] = im.bounds;
   const ov = L.imageOverlay(`data/${im.img}?t=${encodeURIComponent(im.time)}`, [[s, w], [n, e]], {
     opacity: layerOpacity('sat'), interactive: false, alt: `${im.label}衛星雲圖 ${fmtTime(im.time)}`,
@@ -770,7 +765,7 @@ export function renderTimeControl(meta) {
     else periods = (L_.qpf?.periods || []).map((p, i) => ({ label: `${fmtTime(p.start)}–${fmtTime(new Date(new Date(p.start).getTime() + 12 * 3600e3).toISOString(), { date: false })}`, i }));
     h += '<div class="seg" role="radiogroup" aria-label="預報時段">' + periods.map((p) => `<button class="seg-btn" role="radio" aria-checked="${p.i === S.layer.period}" data-period="${p.i}">${esc(p.label)}</button>`).join('') + '</div>';
   } else if (id === 'sat') {
-    const list = satGrids().ir ? satModes() : S.sat;
+    const list = satGrids().ir ? SAT_MODES : S.sat;
     h = '<div class="seg" role="radiogroup" aria-label="雲圖種類">' + list.map((x, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.frame}" data-frame="${i}">${esc(x.label)}</button>`).join('') + '</div>';
   } else if (id === 'tyrain') {
     const t = S.typhoon?.tables || {};
