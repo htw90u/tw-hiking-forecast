@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
+from pipeline import aloft, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -445,10 +445,12 @@ def test_peaks_area_and_list_tags(tmp_path):
     log.close()
 
 
-def _fc(t, ws, bf, wd, at=None):
+def _fc(t, ws, bf, wd, at=None, pop=None):
     d = {"風速": {"t": t, "v": {"WindSpeed": ws, "BeaufortScale": bf}}, "風向": {"t": t, "v": {"WindDirection": wd}}}
     if at:
         d["體感溫度"] = {"t": t, "v": {"ApparentTemperature": at}}
+    if pop:
+        d["3小時降雨機率"] = {"t": t, "v": {"ProbabilityOfPrecipitation": pop}}
     return d
 
 
@@ -458,13 +460,16 @@ def test_wind_summary(tmp_path):
     t = ["2026-10-24T12:00:00+08:00", "2026-10-24T15:00:00+08:00"]
     (tmp_path / "towns" / "10014020.json").write_text(json.dumps(
         {"g": "10014020", "n": "成功鎮", "lat": "23.1", "lon": "121.37", "issue3d": "2026-10-24T11:00:00+08:00",
-         "d3": _fc(t, ["6", "11"], ["4", "6"], ["東北風", "偏北風"], ["24", "22"])}), encoding="utf-8")
+         "d3": _fc(t, ["6", "11"], ["4", "6"], ["東北風", "偏北風"], ["24", "22"], [30, 70]),
+         "week": {"紫外線指數": {"t": ["2026-10-24T12:00:00+08:00", "2026-10-25T06:00:00+08:00", "2026-10-25T18:00:00+08:00"],
+                                 "v": {"UVIndex": [4, 7, 0]}}}}), encoding="utf-8")
     (tmp_path / "spots" / "f" / "mountain-D001.json").write_text(json.dumps(
         {"k": "mountain-D001", "n": "玉山", "lat": 23.47, "lon": 120.957, "d3": _fc(t[1:], [14], [7], ["西南風"])}), encoding="utf-8")
     r = wind.build(tmp_path)
     assert (r["times"], r["towns"], r["mountains"]) == (2, 1, 1)
     d = json.loads((tmp_path / "wind.json").read_text(encoding="utf-8"))
-    assert d["towns"]["10014020"] == [[6, 11], [4, 6], [1, 0], [None, None], [24, 22]]  # ws, Beaufort, dir, gust, apparent
+    assert d["towns"]["10014020"] == [[6, 11], [4, 6], [1, 0], [None, None], [24, 22], [30, 70]]  # ws, Beaufort, dir, gust, apparent, rain %
+    assert d["uv"]["10014020"] == [["2026-10-24", 4], ["2026-10-25", 7]]            # first period of each date
     assert d["mountains"][0]["w"][:3] == [[None, 14], [None, 7], [None, 5]]  # missing first step stays empty
     assert d["gustSource"] is None
 
@@ -492,6 +497,39 @@ def test_gusts_open_meteo(tmp_path):
     with pytest.raises(FetchError):
         gusts.build(tmp_path, log, now + timedelta(hours=13), fetch=boom)                          # too old: dropped
     assert not (tmp_path / "gusts.json").exists()
+    log.close()
+
+
+def test_aloft_open_meteo(tmp_path):
+    (tmp_path / "spots").mkdir()
+    (tmp_path / "spots" / "index.json").write_text(json.dumps({"spots": [
+        {"k": "mountain-D001", "c": "mountain", "lat": 23.47, "lon": 120.957}, {"k": "park-1", "c": "park", "lat": 24, "lon": 121}]}), encoding="utf-8")
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 24, 12, tzinfo=TZ)
+    hours = [f"2026-10-24T{h:02d}:00" for h in range(12, 19)]
+    h = {"time": hours, "visibility": [30000.0, 20000, 12000, 9500, 500, None, 8000], "uv_index": [5.0, 4, 3, 2, 0, 0, 0],
+         "freezing_level_height": [4200.0] * 7}
+    for lv in aloft.LEVELS:
+        h[f"wind_speed_{lv}hPa"] = [10.0 + lv / 100] * 7
+        h[f"wind_direction_{lv}hPa"] = [250.0] * 7
+        h[f"geopotential_height_{lv}hPa"] = [float(lv) * 3] * 7
+
+    def fake(pts):
+        assert [p[0] for p in pts] == ["mountain-D001"]                  # mountains only
+        return [{"hourly": h}]
+    r = aloft.build(tmp_path, log, now, fetch=fake)
+    assert r["fresh"] and r["points"] == 1
+    d = json.loads((tmp_path / "aloft.json").read_text(encoding="utf-8"))
+    assert d["times"] == ["2026-10-24T12:00:00+08:00", "2026-10-24T15:00:00+08:00", "2026-10-24T18:00:00+08:00"]
+    p = d["points"]["mountain-D001"]
+    assert p["vis"] == [30.0, 9.5, 8.0] and p["uv"] == [5.0, 2.0, 0.0] and p["fz"] == [4200] * 3
+    assert d["levels"] == [925, 850, 700, 500] and p["ws"][1] == [18.5] * 3 and p["wd"][0] == [250] * 3 and p["z"][3] == [1500] * 3
+
+    def boom(_pts):
+        raise FetchError("offline")
+    assert aloft.build(tmp_path, log, now + timedelta(hours=2), fetch=boom)["fresh"] is False      # API down: keep
+    with pytest.raises(FetchError):
+        aloft.build(tmp_path, log, now + timedelta(hours=13), fetch=boom)                          # too old: dropped
     log.close()
 
 

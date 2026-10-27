@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
+from . import aloft, forecast, geo, grids, gusts, hydro, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "wind", "quakes", "lightning", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "hydro", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -447,6 +447,15 @@ class Builder:
         r = gusts.build(self.out, self.log, now())
         self.manifest["layers"]["gusts"] = {"time": r["time"], "points": r["points"], "source": "Open-Meteo", "license": "CC BY 4.0"}
         return f"{r['points']} points ({'downloaded' if r['fresh'] else 'cached, refreshed hourly'})"
+
+    def task_hydro(self):
+        hydro.probe(self.log)
+        return "probe finished"
+
+    def task_aloft(self):
+        r = aloft.build(self.out, self.log, now())
+        self.manifest["layers"]["aloft"] = {"time": r["time"], "points": r["points"], "source": "Open-Meteo", "license": "CC BY 4.0"}
+        return f"{r['points']} mountains ({'downloaded' if r['fresh'] else 'cached, refreshed hourly'})"
 
     def task_wind(self):
         r = wind.build(self.out)
