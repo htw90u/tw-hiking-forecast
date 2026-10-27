@@ -4,7 +4,7 @@ import { getJSON, fmtTime, esc, normCounty, beaufort, haversineKm, apparentTemp 
 import { loadGrid, renderGrid } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
 import { saveSettings } from './settings.js';
-import { loadAloft, stepOf, compass, levelAlt, altText } from './aloft.js';
+import { loadAloft, stepOf, compass, altText } from './aloft.js';
 
 export const LAYERS = [
   { id: 'radar', label: '雷達回波', kind: 'radar', unit: 'dBZ' },
@@ -245,6 +245,7 @@ function windArrow(fromDeg, bf, colour, title) {
 
 async function showWind(keepFrame) {
   const mode = S.layer.windMode || 'fc';
+  if (mode === 'aloft') { await showWrf(keepFrame); return; }
   const scale = scaleFor('wind', S.settings.palette);
   const col = colourFn(scale);
   const hex = (bf) => { const c = col(bf ?? 0); return c[3] ? `rgb(${c[0]},${c[1]},${c[2]})` : '#ffffff'; };
@@ -267,7 +268,6 @@ async function showWind(keepFrame) {
   if (!w || !w.times?.length) { clearOverlay(); renderLegend(null, '目前沒有風力預報資料'); return; }
   if (!keepFrame || S.layer.frame >= w.times.length) S.layer.frame = windNowIndex(w.times);
   const i = S.layer.frame;
-  if (mode === 'aloft') { await showAloftWind(w, i, hex); return; }
   const towns = L.geoJSON({ type: 'FeatureCollection', features: S.towns }, {
     style: (f) => {
       const r = w.towns[f.properties.TOWNCODE];
@@ -301,33 +301,48 @@ async function showWind(keepFrame) {
   renderTimeControl();
 }
 
-/** Winds on pressure levels at the mountain forecast points (Open-Meteo models). */
-async function showAloftWind(w, i, hex) {
-  const a = await loadAloft();
+// ---------------------------------------------------------------- WRF winds aloft (CWA regional model, pressure levels)
+export async function loadWrf() {
+  if (!S.wrf) S.wrf = await getJSON('wrf.json', { optional: true });
+  return S.wrf;
+}
+
+/** Wind arrows on the WRF grid (u, v in 0.1 m/s) at one pressure level and forecast step; thinned to about 36 px apart. */
+async function showWrf(keepFrame) {
+  const w = await loadWrf();
   if (S.layer.id !== 'wind') return;
-  if (!a?.times?.length) { clearOverlay(); renderLegend(null, '目前沒有高空風預報資料'); return; }
-  const li = Math.min(S.layer.windLevel ?? 1, a.levels.length - 1);
-  const k = stepOf(a.times, w.times[i]);
+  if (!w?.steps?.length) { clearOverlay(); renderLegend(null, '目前沒有氣象署 WRF 高空風場資料'); return; }
+  if (!keepFrame || S.layer.frame >= w.steps.length) {
+    const i = w.steps.findIndex((t) => new Date(t).getTime() >= Date.now() - 3 * 3600e3);   // the step nearest to now (the last one when all are past)
+    S.layer.frame = i < 0 ? w.steps.length - 1 : i;
+  }
+  const li = Math.min(S.layer.wrfLevel ?? 1, w.levels.length - 1);
+  const k = S.layer.frame;
+  const col = colourFn(scaleFor('wind', S.settings.palette));
+  const g = w.grid;
+  const p0 = S.map.latLngToLayerPoint([g.lat0, g.lon0]);
+  const p1 = S.map.latLngToLayerPoint([g.lat0 + g.res, g.lon0 + g.res]);
+  const px = Math.max(1, Math.hypot(p1.x - p0.x, p1.y - p0.y) / Math.SQRT2);
+  const stride = Math.max(1, Math.ceil(36 / px));
+  const bounds = S.map.getBounds().pad(0.1);
   const ov = L.layerGroup();
-  const spotPos = Object.fromEntries(S.spots.map((p) => [p.k, p]));
-  const placed = [];
-  const list = Object.entries(a.points).filter(([key, p]) => spotPos[key] && p.ws[li][k] !== null && p.wd[li][k] !== null)
-    .sort((x, y) => (y[1].ws[li][k] ?? 0) - (x[1].ws[li][k] ?? 0));
-  list.forEach(([key, p]) => {
-    const sp = spotPos[key];
-    const pt = S.map.latLngToLayerPoint([sp.lat, sp.lon]);
-    if (placed.some((q) => q.distanceTo(pt) < 34)) return;
-    placed.push(pt);
-    const ws = p.ws[li][k];
-    const bf = beaufort(ws);
-    L.marker([sp.lat, sp.lon], { icon: windArrow(p.wd[li][k], bf, hex(bf)), keyboard: false, pane: 'spots', zIndexOffset: 200 })
-      .bindTooltip(`${esc(sp.n)}（${altText(levelAlt(p, li))}，${a.levels[li]} hPa）：${esc(compass(p.wd[li][k]))} ${ws} m/s（${bf}級）`).addTo(ov);
-  });
+  for (let r = 0; r < g.ny; r += stride) {
+    for (let c = 0; c < g.nx; c += stride) {
+      const lat = g.lat0 + r * g.res; const lon = g.lon0 + c * g.res;
+      if (!bounds.contains([lat, lon])) continue;
+      const u = w.u[li][k][r * g.nx + c] / 10; const v = w.v[li][k][r * g.nx + c] / 10;
+      const ws = Math.hypot(u, v);
+      const bf = beaufort(ws);
+      const from = (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360;
+      const rgb = col(bf);
+      L.marker([lat, lon], { icon: windArrow(from, bf, `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`), keyboard: false, pane: 'spots', interactive: true })
+        .bindTooltip(`海拔${altText(w.z[li])}（${w.levels[li]} hPa 氣壓層）：${esc(compass(from))} ${ws.toFixed(1)} m/s（${bf}級）`).addTo(ov);
+    }
+  }
   finishOverlay(ov);
-  const t = w.times[i];
-  renderLegend({ label: `高空風（${a.levels[li]} hPa・${altText(levelAlt(Object.values(a.points)[0], li))}）`, start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(),
-    time: a.time, kindOverride: 'wind', src: 'Open-Meteo 數值模式',
-    note: '箭頭為各登山預報點該氣壓層的風（指向風吹去的方向，數字為蒲福風級）。高度為概略值；山頂比高度相近的氣壓層通常風更強。資料來自 Open-Meteo（CC BY 4.0），非氣象署發布。' });
+  renderLegend({ label: `高空風場（WRF・海拔${altText(w.z[li])}｜${w.levels[li]} hPa 氣壓層）`, time: w.steps[k], issued: w.init, kindOverride: 'wind',
+    src: '區域數值模式 WRF 15 km 預報（M-A0061）',
+    note: '箭頭指向風吹去的方向，數字為蒲福風級。氣象署區域數值模式（15 km 網格、每 6 小時一步、最長 72 小時），「海拔」為該氣壓層在臺灣上空的概略高度（hPa 是氣壓，不是高度）；高空風場可看出鋒面、噴流與颱風環流，稜線的實際風速另受地形加強。' });
   renderTimeControl();
 }
 
@@ -680,9 +695,12 @@ export function renderTimeControl(meta) {
     if (id === 'wind') {
       h = '<div class="seg" role="radiogroup" aria-label="風力資料">' + [['fc', '預報'], ['aloft', '高空風'], ['obs', '測站觀測']]
         .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-windmode="${k}">${l}</button>`).join('') + '</div>';
-      if (mode === 'aloft' && S.aloft?.levels) {
-        const p0 = Object.values(S.aloft.points)[0];
-        h += '<div class="seg" role="radiogroup" aria-label="高度">' + S.aloft.levels.map((lv, li) => `<button class="seg-btn" role="radio" aria-checked="${li === (S.layer.windLevel ?? 1)}" data-windlevel="${li}">${esc(altText(p0 ? levelAlt(p0, li) : null))}</button>`).join('') + '</div>';
+      if (mode === 'aloft' && S.wrf?.steps?.length) {
+        const w = S.wrf;
+        h += '<div class="seg" role="radiogroup" aria-label="高空風海拔">' + w.levels.map((lv, li) => `<button class="seg-btn alt" role="radio" aria-checked="${li === (S.layer.wrfLevel ?? 1)}" data-wrflevel="${li}"><b>${esc(altText(w.z[li]))}</b><span class="hpa">${lv} hPa</span></button>`).join('') + '</div>';
+        const t = w.steps[S.layer.frame] || w.steps[0];
+        h += `<label class="range"><span class="sr-only">預報時間</span><input id="wrf-frame" type="range" min="0" max="${w.steps.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+<output id="wrf-time">${esc(fmtTime(t))}</output>`;
       }
     } else if (id === 'visib') {
       h = '<div class="seg" role="radiogroup" aria-label="能見度資料">' + [['obs', '測站觀測'], ['fc', '預報']]
@@ -691,7 +709,7 @@ export function renderTimeControl(meta) {
       const dates = S.wind ? uvDates(S.wind) : [];
       h = '<div class="seg" role="radiogroup" aria-label="日期">' + dates.map((d, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-period="${i}">${esc(d.slice(5).replace('-', '/'))}</button>`).join('') + '</div>';
     }
-    if ((mode === 'fc' || mode === 'aloft') && id !== 'uv' && times.length) {
+    if (mode === 'fc' && id !== 'uv' && times.length) {
       const t = times[S.layer.frame] || times[0];
       h += `<label class="range"><span class="sr-only">預報時間</span><input id="wind-frame" type="range" min="0" max="${times.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wind-time">${esc(fmtTime(t))}</output>`;
@@ -710,12 +728,17 @@ export function renderTimeControl(meta) {
   }
   el.querySelectorAll('[data-windmode]').forEach((b) => b.addEventListener('click', () => {
     S.layer.windMode = b.dataset.windmode;
+    showLayer('wind', { keepFrame: false });   // each mode starts at its own "now" step
+  }));
+  el.querySelectorAll('[data-wrflevel]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.wrfLevel = Number(b.dataset.wrflevel);
     showLayer('wind', { keepFrame: true });
   }));
-  el.querySelectorAll('[data-windlevel]').forEach((b) => b.addEventListener('click', () => {
-    S.layer.windLevel = Number(b.dataset.windlevel);
-    showLayer('wind', { keepFrame: true });
-  }));
+  const rf = el.querySelector('#wrf-frame');
+  if (rf) {
+    rf.addEventListener('input', () => { el.querySelector('#wrf-time').textContent = fmtTime(S.wrf.steps[Number(rf.value)]); });
+    rf.addEventListener('change', () => { S.layer.frame = Number(rf.value); showLayer('wind', { keepFrame: true }); });
+  }
   el.querySelectorAll('[data-vismode]').forEach((b) => b.addEventListener('click', () => {
     S.layer.visMode = b.dataset.vismode;
     showLayer('visib', { keepFrame: true });

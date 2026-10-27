@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 REQUIREMENTS = ROOT / "requirements.txt"
 # import name -> pip requirement name
-MODULES = {"numpy": "numpy", "PIL": "Pillow", "scipy": "scipy"}
+MODULES = {"numpy": "numpy", "PIL": "Pillow", "scipy": "scipy", "pygrib": "pygrib"}
 
 
 def _in_venv() -> bool:

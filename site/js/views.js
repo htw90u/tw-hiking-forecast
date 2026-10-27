@@ -10,6 +10,7 @@ import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
 import { assess, LEVELS } from './safety.js';
 import { loadAloft, aloftCard, sunCard } from './aloft.js';
+import { ensembleCard, bindEnsemble } from './ensemble.js';
 import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRecent, deleteRecent, deleteFav } from './store.js';
 
 // ------------------------------------------------------------------ sheet
@@ -632,7 +633,7 @@ ${townHtml && peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="
 <p class="note">此山不是氣象署登山預報點，以下為所在鄉鎮（${normCounty(town.COUNTYNAME)}${town.TOWNNAME}）的預報；山區氣溫通常較低、風較強，請一併參考鄰近測站。</p>${raw(townHtml)}</section>` : ''}
 ${townHtml && !peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}
 ${mtnFcHtml}
-${aloftHtml}${sunCard(lat, lon, spotPick?.ele ?? peak?.ele ?? station?.alt ?? null)}`;
+${aloftHtml}${ensembleCard()}${sunCard(lat, lon, spotPick?.ele ?? peak?.ele ?? station?.alt ?? null)}`;
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
   const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站（現在）'}</h3>
 ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}</section>`;
@@ -663,6 +664,7 @@ ${main}
     onRender: (root) => {
       bindCommon(root);
       bindHistory(root);
+      bindEnsemble(root, lat, lon, spotPick?.ele ?? peak?.ele ?? station?.alt ?? null);
       root.querySelector('#btn-fav')?.addEventListener('click', () => document.getElementById('sheet-fav').click());
       root.querySelector('#btn-copy')?.addEventListener('click', async (ev) => {
         try { await navigator.clipboard.writeText(`${lat.toFixed(5)}, ${lon.toFixed(5)}`); ev.target.textContent = '已複製'; } catch { ev.target.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; }

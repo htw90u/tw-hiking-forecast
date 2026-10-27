@@ -638,15 +638,6 @@ function serve() {
     await page.click('[data-vismode="fc"]');
     await page.waitForSelector('.vis-mk');
     assert((await page.$$('.vis-mk')).length >= 3, 'visibility forecast markers missing');
-    await selectLayer('.chip[data-layer="wind"]');
-    await page.click('[data-windmode="aloft"]');
-    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('高空風'));
-    assert((await page.$$('#time-ctl [data-windlevel]')).length === 4, 'aloft level buttons missing');
-    await page.click('[data-windlevel="2"]');
-    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('700 hPa'));
-    assert((await page.$$('.wind-mk')).length >= 3, 'aloft wind arrows missing');
-    await page.screenshot({ path: path.join(SHOTS, 'wind-aloft.png') });
-    await page.click('[data-windmode="fc"]');
     const panel = await page.evaluate(async () => {
       const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
       const al = await (await import('./js/aloft.js')).loadAloft();
@@ -658,6 +649,49 @@ function serve() {
     assert(panel.aloft && panel.sun && panel.rows === 4, `point panel cards ${JSON.stringify(panel)}`);
     await page.click('#sheet-close').catch(() => {});
     await selectLayer('.chip[data-layer="radar"]');
+  });
+
+  await check('WRF winds aloft layer: level buttons, time slider, arrows; ensemble forecast card loads on request', async () => {
+    if (!fs.existsSync(path.join(SITE, 'data', 'wrf.json'))) { console.log('SKIP wrf.json not built locally'); } else {
+      await selectLayer('.chip[data-layer="wind"]');
+      assert((await page.$$('.chip[data-layer="wrf"]')).length === 0, 'wind and WRF winds aloft must be one layer');
+      await page.click('[data-windmode="aloft"]');
+      await page.waitForSelector('#time-ctl [data-wrflevel]');
+      assert((await page.$$('#time-ctl [data-wrflevel]')).length === 4, 'WRF level buttons missing');
+      const lab = await page.$eval('#time-ctl [data-wrflevel]', (b) => ({ alt: b.querySelector('b')?.textContent, hpa: b.querySelector('.hpa')?.textContent }));
+      assert(/m$/.test(lab.alt) && /hPa$/.test(lab.hpa), `altitude and hPa must be separate: ${JSON.stringify(lab)}`);
+      await page.waitForSelector('.wind-mk');
+      const n0 = (await page.$$('.wind-mk')).length;
+      assert(n0 > 20, `WRF arrows: ${n0}`);
+      await page.click('[data-wrflevel="3"]');
+      await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('500 hPa'));
+      await page.$eval('#wrf-frame', (i) => { i.value = String(Number(i.max)); i.dispatchEvent(new Event('change', { bubbles: true })); });
+      await page.waitForFunction(() => document.querySelector('#wrf-time') && document.querySelector('#wrf-frame').value === document.querySelector('#wrf-frame').max);
+      await page.screenshot({ path: path.join(SHOTS, 'wrf.png') });
+      await page.click('[data-windmode="fc"]');
+      await page.waitForSelector('#wind-frame');
+      await selectLayer('.chip[data-layer="radar"]');
+    }
+    // Ensemble API (browser side): synthetic answer in the Open-Meteo format, 6 members per model.
+    await ctx.route(/ensemble-api\.open-meteo\.com/, (route) => {
+      const model = new URL(route.request().url()).searchParams.get('models');
+      const time = Array.from({ length: 240 }, (_, i) => new Date(Date.UTC(2026, 9, 27, 0, 0) + i * 3600e3).toISOString().slice(0, 13) + ':00');
+      const hourly = { time };
+      for (let m = 0; m < 6; m++) {
+        const sfx = m === 0 ? '' : `_member${String(m).padStart(2, '0')}`;
+        hourly[`temperature_2m${sfx}`] = time.map((_, i) => 20 + m * 0.5 - i * 0.02);
+        hourly[`precipitation${sfx}`] = time.map((_, i) => (i % 24 === 0 ? m : 0));
+        hourly[`wind_speed_10m${sfx}`] = time.map((_, i) => 3 + m + (i % 5));
+      }
+      route.fulfill({ status: model === 'gfs025' ? 200 : 200, contentType: 'application/json', body: JSON.stringify({ elevation: model === 'gfs025' ? 1000 : 800, hourly }) });
+    });
+    await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.47, 120.957, { spotKey: 'mountain-D001' }); });
+    await page.waitForSelector('#btn-ens');
+    await page.click('#btn-ens');
+    await page.waitForSelector('#ens-out figure.chart');
+    const ens = await page.evaluate(() => ({ charts: document.querySelectorAll('#ens-out figure.chart').length, text: document.querySelector('#ens-out').textContent }));
+    assert(ens.charts === 3 && ens.text.includes('ECMWF') && ens.text.includes('GFS') && ens.text.includes('6 個成員'), `ensemble charts ${JSON.stringify(ens)}`);
+    await page.click('#sheet-close').catch(() => {});
   });
 
   await check('gusts (model) and apparent temperature in the wind layer, forecast tables and station card', async () => {

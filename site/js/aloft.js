@@ -57,7 +57,7 @@ export function aloftCard(a, key, { ele = null, note = '' } = {}) {
     const mx = max(p.ws[li].slice(i0, n8));
     const near = ele !== null && alt !== null && a.levels.every((_, lj) => Math.abs((levelAlt(p, lj) ?? 1e9) - ele) >= Math.abs(alt - ele));
     const bf = ws === null ? '' : `<br><small>${beaufort(ws)}級</small>`;
-    return `<tr${near ? ' class="hl"' : ''}><th scope="row">${esc(altText(alt))}<br><small>${lv} hPa${near ? '・最接近此處' : ''}</small></th>
+    return `<tr${near ? ' class="hl"' : ''}><th scope="row">${esc(altText(alt))}<br><span class="hpa">${lv} hPa</span>${near ? '<small>最接近此處</small>' : ''}</th>
 <td>${wd === null ? '—' : esc(compass(wd))}</td><td>${num(ws)} m/s${bf}</td><td>${num(mx)} m/s${mx === null ? '' : `<br><small>${beaufort(mx)}級</small>`}</td></tr>`;
   }).join('');
   const vis = p.vis.slice(i0, n8); const uv = p.uv.slice(i0, n8 + 0);
@@ -66,7 +66,7 @@ export function aloftCard(a, key, { ele = null, note = '' } = {}) {
   const fog = visMin !== null && visMin < 1 ? '（濃霧）' : visMin !== null && visMin < 2 ? '（有霧）' : '';
   return html`<section class="card" aria-labelledby="h-aloft"><h3 id="h-aloft">高空風、能見度、紫外線</h3>
 ${note ? html`<p class="note">${note}</p>` : ''}
-<table class="kv aloft"><thead><tr><th scope="col">高度</th><th scope="col">風向</th><th scope="col">現在風速</th><th scope="col">24 小時內最大</th></tr></thead><tbody>${raw(rows)}</tbody></table>
+<table class="kv aloft"><thead><tr><th scope="col">海拔／氣壓層</th><th scope="col">風向</th><th scope="col">現在風速</th><th scope="col">24 小時內最大</th></tr></thead><tbody>${raw(rows)}</tbody></table>
 <table class="kv"><tbody>
 <tr><th scope="row">能見度（模式）</th><td>現在 ${num(p.vis[i0], 1)} km</td><td>24 小時內最低 ${num(visMin, 1)} km${fog}</td></tr>
 <tr><th scope="row">紫外線指數（模式）</th><td>24 小時內最高 ${num(max(uv), 1)}</td><td></td></tr>

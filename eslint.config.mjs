@@ -1,7 +1,7 @@
 // Lint config for the web app (run: eslint site/js site/sw.js tests/e2e)
 const browser = {
   window: 'readonly', document: 'readonly', navigator: 'readonly', location: 'readonly', localStorage: 'readonly',
-  fetch: 'readonly', Response: 'readonly', URL: 'readonly', Image: 'readonly', Event: 'readonly', Intl: 'readonly',
+  fetch: 'readonly', Response: 'readonly', URL: 'readonly', URLSearchParams: 'readonly', Image: 'readonly', Event: 'readonly', Intl: 'readonly',
   indexedDB: 'readonly', matchMedia: 'readonly', getComputedStyle: 'readonly', setTimeout: 'readonly',
   clearTimeout: 'readonly', setInterval: 'readonly', clearInterval: 'readonly', console: 'readonly', alert: 'readonly',
   DecompressionStream: 'readonly', AbortController: 'readonly', caches: 'readonly', self: 'readonly', L: 'readonly',

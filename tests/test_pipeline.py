@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import aloft, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
+from pipeline import aloft, wrf, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -647,3 +647,47 @@ def test_satellite_bilinear_resample():
     assert abs(out[j, i] - 1.5) < 1e-5 and near[j, i] in (1.0, 2.0)
     assert np.isfinite(out[~np.isnan(out)]).all() and not np.isnan(out[j, i])
     assert np.isnan(out[0, 0]) or abs(out[0, 0]) < 4              # outside / edge handled without errors
+
+
+class _Msg:
+    def __init__(self, name, level, values, lat, lon, kind="isobaricInhPa"):
+        self.shortName, self.level, self.typeOfLevel = name, level, kind
+        self.values = np.ma.masked_invalid(values)
+        self._ll = (lat, lon)
+
+    def latlons(self):
+        return self._ll
+
+
+def test_wrf_interpolation_and_build(tmp_path):
+    lat, lon = np.meshgrid(np.linspace(15, 32, 120), np.linspace(110, 132, 150), indexing="ij")   # model grid (lat, lon 2-D)
+    msgs = [_Msg("u", 850, lon * 0.1, lat, lon), _Msg("v", 850, lat * 0.1, lat, lon), _Msg("gh", 850, lon * 0 + 1500.0, lat, lon),
+            _Msg("u", 1000, lon * 0, lat, lon), _Msg("t", 850, lon * 0, lat, lon), _Msg("u", 850, lon * 0, lat, lon, kind="surface")]
+    fields, interp = wrf.extract(msgs)
+    assert set(fields) == {("u", 850), ("v", 850), ("gh", 850)}                       # other levels, variables and level types skipped
+    u = fields[("u", 850)]
+    assert u.shape == (wrf.GRID["ny"], wrf.GRID["nx"]) and abs(u[0, 0] - 11.6) < 1e-6 and abs(u[0, 40] - 12.6) < 1e-6   # linear field is exact
+    assert abs(fields[("v", 850)][36, 0] - 2.8) < 1e-6
+
+    def fake_open(path):
+        class G(list):
+            def close(self):
+                pass
+        return G([_Msg(n, lv, (lon * 0.1 if n == "u" else lat * 0.1 if n == "v" else lon * 0 + 1500 * 850 / lv), lat, lon)
+                  for lv in wrf.LEVELS for n in ("u", "v", "gh")])
+    meta = json.dumps({"cwaopendata": {"dataset": {"datasetInfo": {"InitialTime": "202610270000"}}}}).encode()
+    calls = []
+
+    def fetch(key):
+        calls.append(key)
+        return meta if key == wrf.META_KEY else b"x"
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 27, 10, tzinfo=TZ)
+    r = wrf.build(tmp_path, log, fetch, now, open_grib=fake_open)
+    assert r["fresh"] and r["steps"] == 13 and len(calls) == 14
+    d = json.loads((tmp_path / "wrf.json").read_text(encoding="utf-8"))
+    assert d["init"] == "2026-10-27T08:00:00+08:00" and d["steps"][1] == "2026-10-27T14:00:00+08:00" and d["levels"] == [925, 850, 700, 500]
+    assert len(d["u"]) == 4 and len(d["u"][0]) == 13 and len(d["u"][0][0]) == 41 * 37 and d["u"][1][0][0] == 116   # u = 11.6 m/s -> 116 (0.1 m/s)
+    calls.clear()
+    assert wrf.build(tmp_path, log, fetch, now, open_grib=fake_open)["fresh"] is False and calls == [wrf.META_KEY]   # same run: no download
+    log.close()

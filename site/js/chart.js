@@ -54,8 +54,8 @@ export function chart({ title, unit, times, series, zeroBase = false }) {
       g += `<path class="line ${s.cls}${s.dash ? ' dash' : ''}" d="${d}"/>`;
     }
   });
-  const legend = series.map((s) => `<span class="lg ${s.cls}${s.dash ? ' dash' : ''}${s.kind === 'bar' ? ' bar' : ''}">${esc(s.label)}</span>`).join('');
-  const summary = series.map((s) => {
+  const legend = series.filter((s) => !s.noLegend).map((s) => `<span class="lg ${s.cls}${s.dash ? ' dash' : ''}${s.kind === 'bar' ? ' bar' : ''}">${esc(s.label)}</span>`).join('');
+  const summary = series.filter((s) => !s.noLegend).map((s) => {
     const vals = s.values.filter((v) => v !== null && v !== undefined);
     if (!vals.length) return `${s.label} 無資料`;
     const mx = Math.max(...vals);
