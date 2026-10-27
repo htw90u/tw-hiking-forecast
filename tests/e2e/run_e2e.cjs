@@ -694,6 +694,45 @@ function serve() {
     await page.click('#sheet-close').catch(() => {});
   });
 
+  await check('water level, reservoir release and debris-flow layers; hydro card in the point panel', async () => {
+    const h = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const m = S.spots.filter((x) => x.c === 'mountain').slice(0, 8);
+      const f = S.towns[0].properties;
+      return { time: new Date().toISOString(),
+        debris: [{ no: 'T1', level: 'red', type: 'D', county: f.COUNTYNAME, town: f.TOWNNAME, village: '測試村' }],
+        rivers: m.map((x, i) => ({ id: `T${i}`, n: `測試站${i}`, river: '測試溪', lat: x.lat + 0.01, lon: x.lon + 0.01, t: new Date().toISOString(), wl: 1 + i, a1: 7.5, a2: 5.5, a3: 3.5 })),
+        reservoirs: S.spots.filter((x) => x.c === 'reservoir').slice(0, 4).map((x, i) => ({ id: `R${i}`, n: x.n, lat: x.lat, lon: x.lon, t: new Date().toISOString(), wl: 200 + i, vol: 5, cap: 10, inflow: 3, outflow: i * 5, spill: i === 3 ? 8 : 0, plan: i === 2 ? 20 : 0, planT: null })) };
+    });
+    await ctx.route(/data\/hydro\.json/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(h) }));
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.hydro = null; });
+    await selectLayer('.chip[data-layer="water"]');
+    await page.waitForSelector('.vis-mk');
+    const rivers = await page.$$eval('.vis-mk', (e) => e.length);
+    assert(rivers >= 4, `river markers: ${rivers}`);
+    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 4, 'water colour bar');
+    await page.click('[data-watermode="rsv"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('水庫'));
+    assert((await page.$$eval('.vis-mk.alert', (e) => e.length)) >= 1, 'reservoir release markers missing');
+    await selectLayer('.chip[data-layer="debris"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('土石流'));
+    const col = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      let n = 0; S.layer.overlay.eachLayer((g) => { if (g.eachLayer) g.eachLayer((p) => { if (p.options.fillOpacity > 0) n += 1; }); });
+      return n;
+    });
+    assert(col >= 1, `debris-flow alert townships coloured: ${col}`);
+    const card = await page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const r = S.hydro.rivers[0];
+      await v.showPoint(r.lat, r.lon, {});
+      return Boolean(document.querySelector('#h-hydro'));
+    });
+    assert(card, 'hydro card missing in the point panel');
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
   await check('gusts (model) and apparent temperature in the wind layer, forecast tables and station card', async () => {
     const w = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'wind.json'), 'utf-8'));
     w.gustSource = { name: 'Open-Meteo', license: 'CC BY 4.0', time: new Date().toISOString() };

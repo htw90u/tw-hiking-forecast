@@ -449,3 +449,4 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .seg-btn.alt { display: inline-flex; flex-direction: column; align-items: center; gap: .15em; line-height: 1.2; }
 .seg-btn.alt .hpa { margin-left: 0; }
 .kv.aloft th .hpa { display: block; width: max-content; margin: .15em 0 0; }
+.vis-mk.alert { border-width: 3px; }

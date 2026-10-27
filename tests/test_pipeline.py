@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import aloft, wrf, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
+from pipeline import aloft, hydro, wrf, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -690,4 +690,45 @@ def test_wrf_interpolation_and_build(tmp_path):
     assert len(d["u"]) == 4 and len(d["u"][0]) == 13 and len(d["u"][0][0]) == 41 * 37 and d["u"][1][0][0] == 116   # u = 11.6 m/s -> 116 (0.1 m/s)
     calls.clear()
     assert wrf.build(tmp_path, log, fetch, now, open_grib=fake_open)["fresh"] is False and calls == [wrf.META_KEY]   # same run: no download
+    log.close()
+
+
+def test_hydro_parsers(tmp_path):
+    assert hydro.parse_debris([]) == [] and hydro.parse_debris({"errorMessage": "目前無警戒"}) == []
+    d = hydro.parse_debris([{"AlertType": "D", "DebrisNo": "投縣DF001", "AlertLevel": "r", "County": "南投縣", "Town": "信義鄉", "Vill": "同富村"},
+                            {"alerttype": "L", "debrisNo": "L01", "alertlevel": "y"}])
+    assert d[0] == {"no": "投縣DF001", "level": "red", "type": "D", "county": "南投縣", "town": "信義鄉", "village": "同富村"} and d[1]["level"] == "yellow"
+    lon, lat = hydro.tm2_to_lonlat(310928.30, 2790168.45)               # 金山 river station
+    assert abs(lon - 121.60) < 0.02 and abs(lat - 25.22) < 0.02
+    stations = [{"observatoryidentifier": "1010H006_API", "basinidentifier": "1010H006", "observatoryname": "金山", "rivername": "磺溪",
+                 "locationbytwd97_xy": "310928.30 2790168.45", "alertlevel1": "5.5", "alertlevel2": "", "alertlevel3": "4.0"},
+                {"observatoryidentifier": "X_API", "basinidentifier": "X", "observatoryname": "無座標"}]
+    levels = [{"stationid": "1010H006", "observatoryidentifier": "1010H006_API", "checkresult": "true", "datetime": "2026-10-27T18:00:00", "waterlevel": "1.93"},
+              {"stationid": "1010H007", "observatoryidentifier": "1010H007_API", "checkresult": "true", "datetime": "2026-10-27T18:00:00", "waterlevel": "0.13"},
+              {"stationid": "X", "observatoryidentifier": "X_API", "checkresult": "true", "datetime": "2026-10-27T18:00:00", "waterlevel": "1"},
+              {"stationid": "1010H006", "observatoryidentifier": "1010H006_API", "checkresult": "false", "waterlevel": "99"}]
+    r = hydro.parse_rivers(levels, stations)
+    assert len(r) == 1 and r[0]["n"] == "金山" and r[0]["wl"] == 1.93 and r[0]["a1"] == 5.5 and r[0]["a2"] is None and r[0]["t"] == "2026-10-27T18:00:00+08:00"
+    daily = [{"reservoiridentifier": "10201", "reservoirname": "石門水庫", "capacity": "2.5"}, {"reservoiridentifier": "10802", "reservoirname": "羅東攔河堰"}]
+    realtime = [{"reservoiridentifier": "10201", "observationtime": "2026-10-27T07:00:00", "waterlevel": "240.1", "effectivewaterstoragecapacity": "2.0", "totaloutflow": "10"},
+                {"reservoiridentifier": "10201", "observationtime": "2026-10-27T08:00:00", "waterlevel": "240.5", "effectivewaterstoragecapacity": "2.1", "inflowdischarge": "5.5",
+                 "totaloutflow": "30.0", "spillwayoutflow": "12", "predeterminedcrossflow": "50", "predeterminedoutflowtime": "2026-10-27T20:00:00"},
+                {"reservoiridentifier": "99999", "observationtime": "2026-10-27T08:00:00", "waterlevel": "1"}]
+    spots = [{"n": "石門水庫", "c": "reservoir", "lat": 24.81, "lon": 121.24}, {"n": "別處", "c": "park", "lat": 1, "lon": 2}]
+    rs = hydro.parse_reservoirs(realtime, daily, spots)
+    assert len(rs) == 1 and rs[0]["n"] == "石門水庫" and rs[0]["wl"] == 240.5 and rs[0]["spill"] == 12 and rs[0]["plan"] == 50 and rs[0]["lat"] == 24.81   # latest reading only
+    (tmp_path / "spots").mkdir()
+    (tmp_path / "spots" / "index.json").write_text(json.dumps({"spots": spots}), encoding="utf-8")
+    log = Log("t", tmp_path)
+    answers = {hydro.URLS["debris"]: [], hydro.URLS["river_level"]: levels, hydro.URLS["river_station"]: stations,
+               hydro.URLS["reservoir"]: realtime, hydro.URLS["reservoir_daily"]: daily}
+    res = hydro.build(tmp_path, log, datetime(2026, 10, 27, 18, tzinfo=TZ), fetch=answers.__getitem__)
+    assert res == {"debris": 0, "rivers": 1, "reservoirs": 1, "errors": []}
+
+    def flaky(url):
+        if url == hydro.URLS["debris"]:
+            raise FetchError("down")
+        return answers[url]
+    res = hydro.build(tmp_path, log, datetime(2026, 10, 27, 18, 30, tzinfo=TZ), fetch=flaky)
+    assert res["errors"] and json.loads((tmp_path / "hydro.json").read_text(encoding="utf-8"))["debris"] == []   # failed source keeps the last copy
     log.close()

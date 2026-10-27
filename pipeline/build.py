@@ -454,8 +454,11 @@ class Builder:
         return f"model run {r['init']}, {r['steps']} steps ({'downloaded' if r['fresh'] else 'unchanged'})"
 
     def task_hydro(self):
-        hydro.probe(self.log)
-        return "probe finished"
+        r = hydro.build(self.out, self.log, now())
+        self.manifest["layers"]["hydro"] = {"time": now().isoformat(), "debris": r["debris"], "rivers": r["rivers"], "reservoirs": r["reservoirs"]}
+        if r["errors"]:
+            raise RuntimeError("; ".join(r["errors"]))
+        return f"{r['debris']} debris-flow alerts, {r['rivers']} river stations, {r['reservoirs']} reservoirs"
 
     def task_aloft(self):
         r = aloft.build(self.out, self.log, now())

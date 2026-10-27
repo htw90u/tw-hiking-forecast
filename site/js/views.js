@@ -11,6 +11,7 @@ import { chart, dataTable } from './chart.js';
 import { assess, LEVELS } from './safety.js';
 import { loadAloft, aloftCard, sunCard } from './aloft.js';
 import { ensembleCard, bindEnsemble } from './ensemble.js';
+import { loadHydro, hydroCard } from './hydro.js';
 import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRecent, deleteRecent, deleteFav } from './store.js';
 
 // ------------------------------------------------------------------ sheet
@@ -523,7 +524,7 @@ export async function showPoint(lat, lon, opts = {}) {
     sampleLayers(lat, lon),
     spotPick ? getJSON(`spots/f/${spotPick.k}.json`).catch(() => null) : null,
     town ? getJSON(`towns/${town.TOWNCODE}.json`).catch(() => null) : null,
-    Promise.all([loadWind(), loadAloft()]).catch(() => null), // model gusts for the forecast tables; winds aloft
+    Promise.all([loadWind(), loadAloft(), loadHydro()]).catch(() => null), // model gusts for the forecast tables; winds aloft; water level and debris-flow alerts
     ...nearMtns.map(({ it }) => getJSON(`spots/f/${it.k}.json`).catch(() => null)),
   ]);
   // Winds aloft, visibility and UV come from the chosen mountain forecast point, else the nearest one within 12 km.
@@ -610,6 +611,7 @@ ${b ? html`<br><small>${b}</small>` : html`<br><small class="muted">暫無預報
 <div data-panel="td3">${forecastD3(townFc.d3, gustSeries(town.TOWNCODE))}</div>${gustSeries(town.TOWNCODE) ? GUST_NOTE : ''}<div data-panel="tweek" hidden>${forecastWeek(townFc.week)}</div>`
     : '';
 
+  const hydroHtml = hydroCard(S.hydro, lat, lon, town?.COUNTYNAME, town?.TOWNNAME);
   const warnHtml = countyWarn?.hazards?.length
     ? html`<section class="card warn" aria-labelledby="h-warn"><h3 id="h-warn">⚠ ${county} 警特報</h3><ul>${countyWarn.hazards.map((h) => html`<li>${h.ph}${h.sig}（至 ${fmtTime(h.end)}）</li>`)}</ul></section>`
     : '';
@@ -641,10 +643,10 @@ ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).m
   const nearHtml = near.length ? html`<section class="card"><h3>附近景點／山岳</h3><ul>${near}</ul></section>` : '';
   // Station clicked: its observations and the mountains around it come first; safety and alerts follow.
   const main = station
-    ? html`${stationCard(station)}${mountainsCard(station.lat, station.lon)}${histHtml}${riskHtml}${warnHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${qHtml}`
+    ? html`${stationCard(station)}${mountainsCard(station.lat, station.lon)}${histHtml}${riskHtml}${warnHtml}${hydroHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${qHtml}`
     : peak
-      ? html`${riskHtml}${warnHtml}${tyHtml}${rainFcHtml}${nowHtml}${stationsHtml}${mountainsCard(lat, lon, 10, peak.k)}${histHtml}${qHtml}`
-      : html`${riskHtml}${warnHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${histHtml}${qHtml}${nearHtml}`;
+      ? html`${riskHtml}${warnHtml}${hydroHtml}${tyHtml}${rainFcHtml}${nowHtml}${stationsHtml}${mountainsCard(lat, lon, 10, peak.k)}${histHtml}${qHtml}`
+      : html`${riskHtml}${warnHtml}${hydroHtml}${tyHtml}${nowHtml}${rainFcHtml}${stationsHtml}${histHtml}${qHtml}${nearHtml}`;
 
   const body = html`
 <p class="place">${placeLine}</p>

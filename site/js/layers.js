@@ -5,6 +5,7 @@ import { loadGrid, renderGrid } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
 import { saveSettings } from './settings.js';
 import { loadAloft, stepOf, compass, altText } from './aloft.js';
+import { loadHydro, riverStatus, reservoirStatus, riverTip, reservoirTip, townAlerts } from './hydro.js';
 
 export const LAYERS = [
   { id: 'radar', label: '雷達回波', kind: 'radar', unit: 'dBZ' },
@@ -17,6 +18,8 @@ export const LAYERS = [
   { id: 'pop', label: '降雨機率', kind: 'pop', unit: '%' },
   { id: 'uv', label: '紫外線', kind: 'uv', unit: '' },
   { id: 'visib', label: '能見度', kind: 'visib', unit: 'km' },
+  { id: 'water', label: '水位', kind: 'water', unit: 'm' },
+  { id: 'debris', label: '土石流', kind: 'debris', unit: '' },
   { id: 'lightning', label: '閃電', kind: 'ltage' },
   { id: 'sat', label: '衛星雲圖', kind: 'sat' },
   { id: 'tyrain', label: '颱風雨量預測', kind: 'rain', unit: 'mm', typhoonOnly: true },
@@ -136,6 +139,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'sat' && !satGrids().ir) { await showSatellite(); return; }
     if (id === 'tyrain') { showTyphoonRain(); return; }
     if (id === 'wind') { await showWind(keepFrame); return; }
+    if (id === 'water') { await showWater(); return; }
+    if (id === 'debris') { await showDebris(); return; }
     if (id === 'pop') { await showPop(keepFrame); return; }
     if (id === 'uv') { await showUV(); return; }
     if (id === 'visib') { await showVisibility(keepFrame); return; }
@@ -346,6 +351,75 @@ async function showWrf(keepFrame) {
   renderTimeControl();
 }
 
+// ---------------------------------------------------------------- river water level, reservoirs, debris-flow alerts
+/** Round marker with a short text, coloured by status; the worst status is drawn first and crowded markers wait for zoom. */
+function statusMarkers(items, kind, text, tip, pos) {
+  const col = colourFn(scaleFor(kind, S.settings.palette));
+  const ov = L.layerGroup();
+  const placed = [];
+  items.sort((a, b) => b.st - a.st || (b.sort ?? 0) - (a.sort ?? 0)).forEach((it) => {
+    const pt = S.map.latLngToLayerPoint(pos(it));
+    if (it.st === 0 && placed.some((q) => q.distanceTo(pt) < 42)) return;
+    placed.push(pt);
+    const c = col(it.st);
+    const html = `<span class="vis-mk${it.st >= 2 ? ' alert' : ''}" style="--c:rgb(${c[0]},${c[1]},${c[2]})">${esc(text(it))}</span>`;
+    L.marker(pos(it), { icon: L.divIcon({ className: 'vis-wrap', html, iconSize: [40, 20] }), keyboard: false, pane: 'stations', zIndexOffset: it.st * 100 })
+      .bindTooltip(tip(it)).addTo(ov);
+  });
+  return ov;
+}
+
+async function showWater() {
+  const h = await loadHydro();
+  if (S.layer.id !== 'water') return;
+  const mode = S.layer.waterMode || 'river';
+  const list = mode === 'river' ? h?.rivers : h?.reservoirs;
+  if (!list?.length) { clearOverlay(); renderLegend(null, mode === 'river' ? '目前沒有河川水位資料' : '目前沒有水庫資料'); renderTimeControl(); return; }
+  const latest = list.map((r) => r.t).filter(Boolean).sort().pop();
+  let ov;
+  if (mode === 'river') {
+    ov = statusMarkers(list.map((r) => ({ r, st: riverStatus(r), sort: r.wl })), 'water', (x) => x.r.wl.toFixed(1), (x) => riverTip(x.r), (x) => [x.r.lat, x.r.lon]);
+  } else {
+    ov = statusMarkers(list.map((r) => ({ r, st: reservoirStatus(r), sort: r.outflow ?? 0 })), 'rsv', (x) => (x.r.wl === null ? '—' : x.r.wl.toFixed(0)), (x) => reservoirTip(x.r), (x) => [x.r.lat, x.r.lon]);
+  }
+  finishOverlay(ov);
+  renderLegend({ label: mode === 'river' ? '河川水位（水利署）' : '水庫水位與放流（水利署）', time: latest, kindOverride: mode === 'river' ? 'water' : 'rsv',
+    unit: 'm', src: '即時水位資料（未經品管）', license: 'ogdl',
+    note: mode === 'river'
+      ? '數字為水位（公尺），顏色為是否達到該站的警戒水位（正常＝藍；三級＝黃、二級＝橘、一級＝紅；未公告警戒水位的站一律顯示藍色）。水位站只在放大後才全部顯示；溪流水位上漲很快，渡溪前請確認上游天氣。'
+      : '數字為水位（公尺），顏色為放流狀態：灰＝無放流、藍＝放流中（含發電、供水）、橘＝預定洩洪（預洩洪）、紅＝溢洪道洩洪中。只列出能對到氣象署水庫景點位置的水庫。' });
+  renderTimeControl();
+}
+
+async function showDebris() {
+  const h = await loadHydro();
+  if (S.layer.id !== 'debris') return;
+  const alerts = h?.debris;
+  if (alerts === null || alerts === undefined) { clearOverlay(); renderLegend(null, '目前沒有土石流警戒資料'); return; }
+  const col = colourFn(scaleFor('debris', S.settings.palette));
+  const level = (f) => {
+    const a = townAlerts(h, f.properties.COUNTYNAME, f.properties.TOWNNAME);
+    return a.length ? (a.some((x) => x.level === 'red') ? 2 : 1) : 0;
+  };
+  const ov = L.geoJSON({ type: 'FeatureCollection', features: S.towns }, {
+    style: (f) => {
+      const v = level(f);
+      const c = v ? col(v) : null;
+      return { color: v ? '#333' : '#aaa', weight: v ? 1.2 : 0.3, fillColor: c ? `rgb(${c[0]},${c[1]},${c[2]})` : '#fff', fillOpacity: v ? layerOpacity('debris') : 0 };
+    },
+    onEachFeature: (f, layer) => {
+      const a = townAlerts(h, f.properties.COUNTYNAME, f.properties.TOWNNAME);
+      if (a.length) layer.bindTooltip(`${esc(normCounty(f.properties.COUNTYNAME))}${esc(f.properties.TOWNNAME)}：${a.map((x) => `${x.level === 'red' ? '紅色' : '黃色'}警戒${x.village ? `（${esc(x.village)}）` : ''}`).join('、')}`, { sticky: true });
+    },
+  });
+  finishOverlay(L.layerGroup([ov]));
+  renderLegend({ label: alerts.length ? `土石流警戒（${alerts.length} 條溪流）` : '土石流警戒', time: h.time, kindOverride: 'debris', unit: '',
+    src: '農業部農村發展及水土保持署土石流警戒', license: 'ogdl',
+    note: alerts.length ? '色塊為有土石流警戒的鄉鎮（以鄉鎮為單位，並非精確到溪流）。黃色警戒：降雨已達警戒基準，應準備疏散；紅色警戒：已達應疏散的程度。山區步道、林道與溪谷請避開。'
+      : '目前沒有任何土石流警戒（水保署只在發布警戒時才有資料）。豪雨與颱風期間請隨時回來查看。' });
+  renderTimeControl();
+}
+
 // ---------------------------------------------------------------- rain probability, UV, visibility
 /** Township choropleth: colour from value(code) (null = no fill); tooltip text from tip(code). */
 function townChoropleth(scale, value, tip) {
@@ -457,7 +531,7 @@ async function showVisibility(keepFrame) {
   finishOverlay(ov);
   const t = w.times[S.layer.frame];
   renderLegend({ label: '能見度預報（登山預報點）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), time: a.time,
-    kindOverride: 'visib', unit: 'km', src: 'Open-Meteo 數值模式',
+    kindOverride: 'visib', unit: 'km', license: 'open-meteo',
     note: `${fogNote}Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布；模式對山區局部霧氣的掌握有限，僅供參考。` });
   renderTimeControl();
 }
@@ -606,6 +680,9 @@ function legendUnit(kind, unit) {
   if (kind === 'wind') return ['單位', '風級'];
   if (kind === 'ltage') return ['單位', '分鐘前'];
   if (kind === 'pop') return ['單位', '%'];
+  if (kind === 'water') return ['單位', 'm'];
+  if (kind === 'rsv') return ['狀態', '放流'];
+  if (kind === 'debris') return ['等級', '警戒'];
   if (kind === 'uv') return ['單位', '指數'];
   if (kind === 'visib') return ['單位', 'km'];
   if (kind === 'intensity') return ['單位', '震度'];
@@ -646,6 +723,12 @@ export function attribution(meta) {
     return `<div class="attr"><p><strong>中央氣象署 ${esc(year)} 定量降水預報（${esc(meta.src || '')}，發布 ${esc(fmtTime(version))}）</strong></p>
 <p>${esc(OGDL_TEXT)} 政府資料開放授權條款：<a href="${OGDL_URL}" target="_blank" rel="noopener">${OGDL_URL}</a></p>
 <p class="warn-txt">本圖為本網站將上述各時段預報加總計算之衍生資料，非中央氣象署發布之預報，未經中央氣象署審閱。${esc(meta.method || '')}</p></div>`;
+  }
+  if (meta.license === 'ogdl') {
+    return `<p class="src">資料來源：${esc(meta.src || '')}${version ? `（${esc(fmtTime(version))}）` : ''}・依<a href="${OGDL_URL}" target="_blank" rel="noopener">政府資料開放授權條款</a>釋出</p>`;
+  }
+  if (meta.license === 'open-meteo') {
+    return `<p class="src">資料來源：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 數值模式預報${version ? `（${esc(fmtTime(version))} 取得）` : ''}・CC BY 4.0；非氣象署發布</p>`;
   }
   if (meta.license === 'cwa-web') {
     return `<p class="src">資料來源：中央氣象署全球資訊網 ${esc(meta.src || '')}${version ? `（發布 ${esc(fmtTime(version))}）` : ''}・依<a href="${CWA_WEB_TERMS}" target="_blank" rel="noopener">政府網站資料開放宣告</a>引用；本網站將原圖自動對位並依圖例換算為級距，<a href="${esc(meta.url || CWA_WEB_TERMS)}" target="_blank" rel="noopener">原圖</a></p>`;
@@ -689,6 +772,10 @@ export function renderTimeControl(meta) {
     h = '<div class="seg" role="radiogroup" aria-label="雨量預測種類">'
       + (t.rain24 ? `<button class="seg-btn" role="radio" aria-checked="${S.layer.period === 0}" data-period="0">24小時雨量</button>` : '')
       + (t.rainTotal ? `<button class="seg-btn" role="radio" aria-checked="${S.layer.period === 1}" data-period="1">總雨量</button>` : '') + '</div>';
+  } else if (id === 'water') {
+    const mode = S.layer.waterMode || 'river';
+    h = '<div class="seg" role="radiogroup" aria-label="水情資料">' + [['river', '河川水位'], ['rsv', '水庫放流']]
+      .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-watermode="${k}">${l}</button>`).join('') + '</div>';
   } else if (id === 'wind' || id === 'pop' || id === 'visib' || id === 'uv') {
     const mode = id === 'wind' ? (S.layer.windMode || 'fc') : id === 'visib' ? (S.layer.visMode || 'obs') : 'fc';
     const times = S.wind?.times || [];
@@ -739,6 +826,10 @@ export function renderTimeControl(meta) {
     rf.addEventListener('input', () => { el.querySelector('#wrf-time').textContent = fmtTime(S.wrf.steps[Number(rf.value)]); });
     rf.addEventListener('change', () => { S.layer.frame = Number(rf.value); showLayer('wind', { keepFrame: true }); });
   }
+  el.querySelectorAll('[data-watermode]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.waterMode = b.dataset.watermode;
+    showLayer('water', { keepFrame: true });
+  }));
   el.querySelectorAll('[data-vismode]').forEach((b) => b.addEventListener('click', () => {
     S.layer.visMode = b.dataset.vismode;
     showLayer('visib', { keepFrame: true });
