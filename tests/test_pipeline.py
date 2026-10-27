@@ -743,3 +743,26 @@ def test_visible_albedo_night_and_day():
     n = satellite.vis_albedo(night)
     assert satellite.is_dark(n) and not np.isnan(n).any() and n.max() < 0.01                 # uniformly dark, no speckles / white
 
+
+
+def test_hydro_get_json_retries(monkeypatch):
+    import io
+    calls = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=0, context=None):
+        calls.append(1)
+        return Resp(b"" if len(calls) < 3 else b'[{"ok": 1}]')       # two empty answers, then JSON
+    monkeypatch.setattr(hydro.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(hydro.time, "sleep", lambda s: None)
+    assert hydro.get_json("https://example.test/x") == [{"ok": 1}] and len(calls) == 3
+    calls.clear()
+    monkeypatch.setattr(hydro.urllib.request, "urlopen", lambda *a, **k: Resp(b""))
+    with pytest.raises(FetchError):
+        hydro.get_json("https://example.test/x", tries=2)

@@ -9,6 +9,7 @@ Field names are matched case-insensitively and a record that cannot be read is s
 """
 import json
 import math
+import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -27,13 +28,19 @@ URLS = {
 }
 
 
-def get_json(url, timeout=60):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as r:
-            return json.loads(r.read().decode("utf-8-sig"))
-    except Exception as e:  # noqa: BLE001 - network, HTTP or JSON error
-        raise FetchError(f"{url.split('?')[0]}: {e}") from e
+def get_json(url, timeout=60, tries=3):
+    """JSON from a WRA / ARDSWC endpoint; these answer with an empty or truncated body now and then, so try a few times."""
+    err = None
+    for attempt in range(tries):
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as r:
+                return json.loads(r.read().decode("utf-8-sig"))
+        except Exception as e:  # noqa: BLE001 - network, HTTP or JSON error
+            err = e
+            if attempt < tries - 1:
+                time.sleep(3 * 3 ** attempt)
+    raise FetchError(f"{url.split('?')[0]}: {err}") from err
 
 
 # ------------------------------------------------------------------ helpers

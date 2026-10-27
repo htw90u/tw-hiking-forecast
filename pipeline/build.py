@@ -456,9 +456,9 @@ class Builder:
     def task_hydro(self):
         r = hydro.build(self.out, self.log, now())
         self.manifest["layers"]["hydro"] = {"time": now().isoformat(), "debris": r["debris"], "rivers": r["rivers"], "reservoirs": r["reservoirs"]}
-        if r["errors"]:
-            raise RuntimeError("; ".join(r["errors"]))
-        return f"{r['debris']} debris-flow alerts, {r['rivers']} river stations, {r['reservoirs']} reservoirs"
+        # A source that failed keeps its previous copy (hydro.build) and was logged as a warning; the build only fails when all of them did.
+        note = f" (kept the previous copy of: {'; '.join(r['errors'])})" if r["errors"] else ""
+        return f"{r['debris']} debris-flow alerts, {r['rivers']} river stations, {r['reservoirs']} reservoirs{note}"
 
     def task_aloft(self):
         r = aloft.build(self.out, self.log, now())
