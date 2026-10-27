@@ -1,7 +1,7 @@
 """CWA regional WRF winds on pressure levels (M-A0061, 15 km, GRIB2) -> a small lon/lat grid for the map.
 
 One GRIB2 file per forecast hour (about 60 MB each), so the files are only downloaded when a new model run
-(initial time, 00/06/12/18 UTC) appears; wrf.json keeps the winds (u, v in 0.1 m/s) of 4 levels for 6-hourly steps up to 72 h.
+(initial time, 00/06/12/18 UTC) appears; wrf.json keeps the winds (u, v in 0.1 m/s) of 7 pressure levels (925 to 200 hPa) for 6-hourly steps up to 72 h.
 """
 import json
 import os
@@ -14,7 +14,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 
 TZ = ZoneInfo("Asia/Taipei")
-LEVELS = [925, 850, 700, 500]
+LEVELS = [925, 850, 700, 500, 300, 250, 200]   # 300-200 hPa (about 9-12 km): the jet stream
 HOURS = list(range(0, 73, 6))
 GRID = {"lon0": 116.0, "lat0": 19.0, "res": 0.25, "nx": 41, "ny": 37}   # cell centres, row 0 = south
 META_KEY = "Model/M-A0061-000.json"
@@ -79,7 +79,7 @@ def build(out_dir: Path, log, fetch, now: datetime, open_grib=None) -> dict:
     dest = out_dir / "wrf.json"
     init = init_time(json.loads(fetch(META_KEY).decode("utf-8-sig")))
     prev = json.loads(dest.read_text(encoding="utf-8")) if dest.exists() else None
-    if prev and prev.get("initUTC") == init.isoformat():
+    if prev and prev.get("initUTC") == init.isoformat() and prev.get("levels") == LEVELS:   # same run and same levels: nothing to do
         return {"fresh": False, "init": prev["init"], "steps": len(prev["steps"])}
     if open_grib is None:
         import pygrib

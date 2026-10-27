@@ -450,3 +450,6 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 .seg-btn.alt .hpa { margin-left: 0; }
 .kv.aloft th .hpa { display: block; width: max-content; margin: .15em 0 0; }
 .vis-mk.alert { border-width: 3px; }
+/* Seven altitude buttons: one scrollable row, so the map keeps its height on a phone. */
+.seg.levels { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; }
+.seg.levels .seg-btn.alt { flex: none; padding-top: .2em; padding-bottom: .2em; }

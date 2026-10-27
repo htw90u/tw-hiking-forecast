@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import aloft, hydro, wrf, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, stations, wind
+from pipeline import aloft, hydro, wrf, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, satellite, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -686,8 +686,8 @@ def test_wrf_interpolation_and_build(tmp_path):
     r = wrf.build(tmp_path, log, fetch, now, open_grib=fake_open)
     assert r["fresh"] and r["steps"] == 13 and len(calls) == 14
     d = json.loads((tmp_path / "wrf.json").read_text(encoding="utf-8"))
-    assert d["init"] == "2026-10-27T08:00:00+08:00" and d["steps"][1] == "2026-10-27T14:00:00+08:00" and d["levels"] == [925, 850, 700, 500]
-    assert len(d["u"]) == 4 and len(d["u"][0]) == 13 and len(d["u"][0][0]) == 41 * 37 and d["u"][1][0][0] == 116   # u = 11.6 m/s -> 116 (0.1 m/s)
+    assert d["init"] == "2026-10-27T08:00:00+08:00" and d["steps"][1] == "2026-10-27T14:00:00+08:00" and d["levels"] == wrf.LEVELS
+    assert len(d["u"]) == len(wrf.LEVELS) and len(d["u"][0]) == 13 and len(d["u"][0][0]) == 41 * 37 and d["u"][1][0][0] == 116   # u = 11.6 m/s -> 116 (0.1 m/s)
     calls.clear()
     assert wrf.build(tmp_path, log, fetch, now, open_grib=fake_open)["fresh"] is False and calls == [wrf.META_KEY]   # same run: no download
     log.close()
@@ -732,3 +732,13 @@ def test_hydro_parsers(tmp_path):
     res = hydro.build(tmp_path, log, datetime(2026, 10, 27, 18, 30, tzinfo=TZ), fetch=flaky)
     assert res["errors"] and json.loads((tmp_path / "hydro.json").read_text(encoding="utf-8"))["debris"] == []   # failed source keeps the last copy
     log.close()
+
+
+def test_visible_albedo_night_and_day():
+    day = np.array([0, 300, 5000, 9000, 65535, 65531], dtype=np.float32)          # 0 = no data in daytime; 65531 = -5 wrapped
+    a = satellite.vis_albedo(day)
+    assert np.isnan(a[0]) and np.isnan(a[4]) and a[1] == pytest.approx(0.03) and a[3] == pytest.approx(0.9) and a[5] == 0.0
+    assert not satellite.is_dark(a, day)
+    night = np.array([0, 5, 11, 17, 65531, 65525, 65519, 29, 35], dtype=np.float32)   # noise around zero
+    n = satellite.vis_albedo(night)
+    assert satellite.is_dark(n) and not np.isnan(n).any() and n.max() < 0.01                 # uniformly dark, no speckles / white

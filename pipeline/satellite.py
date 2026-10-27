@@ -102,5 +102,19 @@ def ir_celsius(raw):
 
 
 def vis_albedo(raw):
-    """Albedo stored as percent x 100 -> fraction (0..~1.2)."""
-    return np.where((raw <= 0) | (raw >= 65535), np.nan, raw / 10000.0)
+    """Albedo stored as percent x 100 -> fraction (0..~1.2).
+
+    Values just below zero are stored wrapped around (65531 = -5), so 60000..65534 means "about zero" and only 65535 is no data.
+    At night the whole picture is such noise around zero: there 0 is a valid (dark) value too, so the picture is uniformly black
+    instead of speckled (see is_dark).
+    """
+    out = raw / 10000.0
+    out = np.where(raw >= 65535, np.nan, np.where(raw >= 60000, 0.0, out))
+    dark = is_dark(out, raw)
+    return np.where((raw <= 0) & (not dark), np.nan, out)
+
+
+def is_dark(albedo, raw=None) -> bool:
+    """True when (almost) nothing in the visible picture is lit: night, so the picture carries no information."""
+    ok = ~np.isnan(albedo) if raw is None else (~np.isnan(albedo)) & (raw > 0)
+    return bool(ok.any() and np.percentile(albedo[ok], 99) < 0.03)

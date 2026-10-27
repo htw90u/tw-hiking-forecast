@@ -214,11 +214,15 @@ function serve() {
     await selectLayer('.chip[data-layer="sat"]');
     await page.waitForSelector('[data-frame]');
     const labels = await page.$$eval('[data-frame]', (b) => b.map((x) => x.textContent));
-    assert(labels.length === 3 && labels[1].includes('色調強化'), `sat modes ${labels}`);
+    assert(labels.length === 4 && labels[1].includes('色調強化') && labels[3].includes('氣象署原圖'), `sat modes ${labels}`);
     await page.click('[data-frame="1"]');
     await page.waitForFunction(() => document.querySelector('#legend .grad'));
     const n = await page.$$eval('img.wx-grid', (x) => x.length);
     assert(n === 1, `satellite overlay images ${n}`);
+    await page.click('[data-frame="3"]');                              // CWA's own colour picture
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('色調強化'));
+    assert((await page.$$eval('img.leaflet-image-layer:not(.wx-grid)', (x) => x.length)) >= 1, 'CWA original satellite picture missing');
+    await page.click('[data-frame="0"]');
   });
 
   await check('QPF outlying islands placed at real coordinates (Matsu, Kinmen)', async () => {
@@ -657,7 +661,7 @@ function serve() {
       assert((await page.$$('.chip[data-layer="wrf"]')).length === 0, 'wind and WRF winds aloft must be one layer');
       await page.click('[data-windmode="aloft"]');
       await page.waitForSelector('#time-ctl [data-wrflevel]');
-      assert((await page.$$('#time-ctl [data-wrflevel]')).length === 4, 'WRF level buttons missing');
+      assert((await page.$$('#time-ctl [data-wrflevel]')).length === 7, 'WRF level buttons missing');
       const lab = await page.$eval('#time-ctl [data-wrflevel]', (b) => ({ alt: b.querySelector('b')?.textContent, hpa: b.querySelector('.hpa')?.textContent }));
       assert(/m$/.test(lab.alt) && /hPa$/.test(lab.hpa), `altitude and hPa must be separate: ${JSON.stringify(lab)}`);
       await page.waitForSelector('.wind-mk');
@@ -922,7 +926,8 @@ function serve() {
         for (let i = 0; i < d.length; i += 4 * 7) if (d[i + 3]) set.add(d[i]);
         return set.size;
       };
-      return { vis: await levels('grids/sat_vis.json', 'vis'), ir: await levels('grids/sat_ir.json', 'irgray') };
+      const night = Boolean((await L2.getGrid('grids/sat_vis.json')).meta?.note);   // at night the visible picture is uniformly black
+      return { vis: night ? 99 : await levels('grids/sat_vis.json', 'vis'), ir: await levels('grids/sat_ir.json', 'irgray') };
     });
     assert(r.vis >= 60 && r.ir >= 60, `satellite images look posterised: ${JSON.stringify(r)}`);
   });

@@ -568,9 +568,11 @@ class Builder:
                 raw, geo_ = satellite.read_geotiff(self.f.get(f"Observation/{ds_id}.gtif.zip").read_bytes())
                 arr = satellite.resample(conv(raw), geo_)   # convert first: invalid raw values become NaN, then bilinear
                 g = satellite.GRID
+                extra = {"label": label, "unit": unit, "time": t, "src": ds_id}
+                if key == "vis" and satellite.is_dark(arr):
+                    extra["note"] = "目前為夜間，可見光衛星沒有資料（畫面全黑），夜間請改用紅外線。"
                 grids.write_layer(self.out / "grids", f"sat_{key}", {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"],
-                                                                      "res": g["res"]}, scale, offset,
-                                  {"label": label, "unit": unit, "time": t, "src": ds_id})
+                                                                      "res": g["res"]}, scale, offset, extra)
                 layers[key] = {"meta": f"grids/sat_{key}.json", "time": t}
             except Exception as e:  # noqa: BLE001
                 self.log.warn(f"satellite {ds_id}: {e}")
