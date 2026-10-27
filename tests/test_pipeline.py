@@ -742,3 +742,4 @@ def test_visible_albedo_night_and_day():
     night = np.array([0, 5, 11, 17, 65531, 65525, 65519, 29, 35], dtype=np.float32)   # noise around zero
     n = satellite.vis_albedo(night)
     assert satellite.is_dark(n) and not np.isnan(n).any() and n.max() < 0.01                 # uniformly dark, no speckles / white
+

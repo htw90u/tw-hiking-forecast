@@ -70,7 +70,7 @@ function setBasemap() {
 // on a rounded square in the category group's colour; mountains use the triangle pins below.
 const SPOT_GLYPHS = {
   beach: 'M3 12a9 9 0 0 1 18 0z M12 12v7a2 2 0 0 0 4 0',
-  park: 'M12 3a5 5 0 0 1 5 5 4 4 0 0 1-1 7.5H8A4 4 0 0 1 7 8a5 5 0 0 1 5-5z M12 15.5V21',
+  park: 'M6 19a3.2 3.2 0 1 0 .01 0z M18 19a3.2 3.2 0 1 0 .01 0z M6 19l3.5-8h6.5l2 8 M9.5 11l3 8 M8 7.5h3 M14.5 11 13 7h3',   // bicycle (CWA "公園綠地" = cycling routes)
   farm: 'M3 21V10l9-6 9 6v11z M9 21v-6h6v6',
   fishing: 'M3 12c3-4 8-5 12-3l5-3v12l-5-3c-4 2-9 1-12-3z M8 11h.01',
   coast: 'M2 13c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2 M2 18c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2',

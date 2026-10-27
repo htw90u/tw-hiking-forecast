@@ -6,7 +6,7 @@ from pathlib import Path
 # The value is (12h one-week dataset, 3-day dataset) for the Chinese edition.
 SPOT_CATEGORIES = [
     ("beach", "海水浴場", "F-B0053-003", "F-B0053-005"),
-    ("park", "公園綠地", "F-B0053-009", "F-B0053-011"),
+    ("park", "自行車道", "F-B0053-009", "F-B0053-011"),   # CWA calls it 公園綠地; all 118 spots are cycling routes (English names "<place>_Biking_<route>")
     ("farm", "農場與森林", "F-B0053-015", "F-B0053-017"),
     ("fishing", "海釣點", "F-B0053-021", "F-B0053-023"),
     ("coast", "海岸遊憩", "F-B0053-027", "F-B0053-029"),
