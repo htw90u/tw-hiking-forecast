@@ -213,6 +213,11 @@ class Archive:
         self.dirty_months.clear()
         self.processed_path.write_text(json.dumps(sorted(self.processed)))
 
+    def wind_ids(self, now: datetime, days: int = 31) -> set:
+        """Station ids that reported a wind speed during the last ``days`` days."""
+        first = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H")
+        return {sid for (hk, sid), rec in self.rows.items() if hk >= first and rec.get("WS") is not None}
+
     def export_station_files(self, out_dir: Path, now: datetime, days: int = 31) -> int:
         """Write data/hist/<sid>.json with the last ``days`` days of hourly values."""
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -239,6 +244,18 @@ class Archive:
             doc = {"id": sid, "start": hours[0], "step": 3600, "n": len(hours), "fields": fields}
             (out_dir / f"{sid}.json").write_text(json.dumps(doc, separators=(",", ":")))
         return len(series)
+
+
+def flag_wind_faults(stations_list: list, wind_ids: set) -> int:
+    """Set ``wf`` = 1 on weather stations that have no wind now but did report wind recently (sensor fault)."""
+    n = 0
+    for s in stations_list:
+        if s.get("k") != "rain" and s.get("WS") is None and s["id"] in wind_ids:
+            s["wf"] = 1
+            n += 1
+        else:
+            s.pop("wf", None)
+    return n
 
 
 def _fmt(v: float) -> str:

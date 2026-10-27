@@ -197,8 +197,12 @@ function stationLine(s, d) {
   if (s.R1h !== undefined) parts.push(`時雨量 ${fmtNum(s.R1h)}`);
   if (s.R24h !== undefined) parts.push(`24h ${fmtNum(s.R24h)}`);
   // Not every station has every sensor: say so instead of leaving the value out silently.
-  const missing = s.k === 'rain' ? ['溫度', '風力'] : [s.T === undefined ? '溫度' : null, s.WS === undefined ? '風力' : null].filter(Boolean);
-  if (missing.length) parts.push(`無${missing.join('、')}觀測`);
+  // A rain gauge only measures rain; any other station that shows nothing right now may have a faulty or serviced sensor, so say "no data now".
+  if (s.k === 'rain') parts.push('雨量站（只觀測雨量）');
+  else {
+    if (s.T === undefined) parts.push('溫度暫無資料');
+    if (s.WS === undefined) parts.push(s.wf ? '風力儀器故障' : '無風力觀測');
+  }
   return html`<li><button class="link" data-station="${s.id}">${s.n}</button>
 <span class="meta">${d.toFixed(1)} km・${s.alt !== undefined ? `${Math.round(s.alt)} m` : '海拔不明'}${s.k === 'rain' ? '・雨量站' : ''}</span>
 <span class="vals">${parts.join('｜') || '—'}</span></li>`;
@@ -407,6 +411,8 @@ async function loadArchiveRows(sid, fromMs, toMs) {
 }
 
 async function renderHistory(container, sid, range) {
+  const stInfo = S.stations.find((x) => x.id === sid);
+  const isRainGauge = stInfo?.k === 'rain';
   const box = container.querySelector('#hist-out');
   box.innerHTML = '<p class="loading" role="status">載入歷史資料…</p>';
   let h;
@@ -453,7 +459,7 @@ async function renderHistory(container, sid, range) {
   let out = '';
   if (T && T.some((v) => v !== null)) out += chart({ title: '溫度', unit: '°C', times: tt, series: [{ label: '氣溫', values: T, kind: 'line', cls: 's1' }] });
   if (R && R.some((v) => v !== null)) out += chart({ title: '時雨量', unit: 'mm', times: tt, zeroBase: true, series: [{ label: '每小時雨量', values: R, kind: 'bar', cls: 's2' }] });
-  if (!((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null)))) out += '<p class="note">此測站沒有風力觀測（雨量站或未裝風速計），所以沒有風速圖。</p>';
+  if (!((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null)))) out += `<p class="note">${isRainGauge ? '這是自動雨量站，只觀測雨量，所以沒有風速圖。' : (stInfo?.wf ? '此站風力儀器故障（氣象署回報無風向、風力、陣風），所以沒有風速圖。可改選其他測站。' : '此期間沒有風力資料（該站未裝風速計或儀器維護中），所以沒有風速圖。可改選其他測站。')}</p>`;
   if ((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null))) {
     out += chart({
       title: '風速', unit: 'm/s', times: tt, zeroBase: true,
@@ -473,7 +479,7 @@ async function renderHistory(container, sid, range) {
 }
 
 function historyBlock(stations, selected) {
-  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站，無風力' : it.WS === undefined ? '・無風力觀測' : ''}）</option>`).join('');
+  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站' : it.WS === undefined ? (it.wf ? '・風力儀器故障' : '・無風力觀測') : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
@@ -591,8 +597,8 @@ export async function showPoint(lat, lon, opts = {}) {
   const nearMtns = spotPick || opts.stationId ? [] : nearest(S.spots, lat, lon, { limit: 60, maxKm: 15 }).filter((x) => x.it.c === 'mountain').slice(0, 3);
   const stationsNear = nearest(S.stations, lat, lon, { limit: 8, maxKm: 35 });
   const weatherSt = stationsNear.filter((x) => x.it.k !== 'rain');
-  // The observation charts start with the nearest station that measures wind (then temperature), so wind and gusts are there when any station near has them.
-  const histDefault = opts.stationId || (weatherSt.find((x) => x.it.WS !== undefined && x.it.T !== undefined) || weatherSt.find((x) => x.it.WS !== undefined) || weatherSt[0])?.it.id || stationsNear[0]?.it.id;
+  // The observation charts start with the nearest weather station.
+  const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
 
   // The panel waits only for what it needs to be useful: the forecasts, the model gusts and a few small grids for the safety assessment.
   // Everything else (winds aloft, water level, ~200 grid files for the rain / temperature / satellite values) is loaded after it is shown.
