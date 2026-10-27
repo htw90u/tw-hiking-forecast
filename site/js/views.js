@@ -191,6 +191,7 @@ function lvBadge(level) {
 function stationLine(s, d) {
   const parts = [];
   if (s.T !== undefined) parts.push(`${fmtNum(s.T)}°C`);
+  if (s.RH !== undefined) parts.push(`濕度 ${fmtNum(s.RH, 0)}%`);
   if (s.WS !== undefined) parts.push(`風 ${windDir(s.WD)} ${fmtNum(s.WS)}`);
   if (s.G !== undefined) parts.push(`陣風 ${fmtNum(s.G)}`);
   if (s.R1h !== undefined) parts.push(`時雨量 ${fmtNum(s.R1h)}`);
@@ -465,7 +466,7 @@ function historyBlock(stations, selected) {
   const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km${it.k === 'rain' ? '・雨量站' : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
-  return raw(`<details class="sub" data-sub="hist"><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
+  return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
 <label class="field">測站（距離） <select id="hist-sid">${opts}</select></label>
 <div class="seg" role="radiogroup" aria-label="期間">
 <button class="seg-btn" role="radio" aria-checked="true" data-range="24">24 小時</button>
@@ -535,7 +536,7 @@ export async function showPoint(lat, lon, opts = {}) {
   openSheet('查詢中…', loading);
 
   const town = findTown(lat, lon);
-  const spotsNear = nearest(S.spots, lat, lon, { limit: 8, maxKm: 6 });
+  const spotsNear = nearest(S.spots, lat, lon, { limit: 12, maxKm: 6 });
   // An OSM peak or a plain map tap has no CWA forecast of its own: the township forecast and the forecasts of
   // the nearest CWA mountains are shown instead. A spot's own forecast only opens when that spot was chosen
   // (its marker, search result or favourite), never by guessing from a nearby tap.
@@ -581,7 +582,9 @@ export async function showPoint(lat, lon, opts = {}) {
   // Header hint: this place has no CWA forecast of its own (only a chosen forecast spot or a station has).
   const noForecast = opts.stationId ? '' : peak ? '無氣象署預報・顯示鄰近鄉鎮與鄰近山頭預報' : !spotPick ? '非預報點・顯示鄉鎮與鄰近山頭預報' : '';
   const placeLine = [peak?.tags?.length ? peak.tags.map((t) => S.peakLists[t] || t).join('・') : null, peak?.ele ? `海拔 ${eleText(peak)}${peak.est ? '（地形模型估計）' : ''}` : null, town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
-  const near = spotsNear.slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
+  // The list of nearby places leaves out the place itself: the chosen spot and its duplicates under other categories (same name, same spot).
+  const isSelf = ({ it, d }) => it.k === spotPick?.k || (d < 0.3 && [spotPick?.n, peak?.n, opts.label].some((n) => n && (it.n === n || it.n.includes(n) || n.includes(it.n))));
+  const near = spotsNear.filter((x) => !isSelf(x)).slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
 
   const vrow = (label, k, unit, digits = 1, empty = '無資料') => {
     const x = vals[k];
@@ -621,7 +624,7 @@ export async function showPoint(lat, lon, opts = {}) {
   const fcHtml = spotPick && spotFc
     ? `<p class="muted">${esc(spotFc.n)}（${esc(S.spotCats.find((c) => c.id === spotFc.c)?.label || '')}）・發布 ${esc(fmtTime(spotFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="d3">未來3天(逐3小時)</button><button role="tab" class="tab" aria-selected="false" data-tab="week">一週(逐12小時)</button></div>
-<div data-panel="d3">${forecastD3(spotFc.d3, gustSeries(spotFc.k))}</div>${gustSeries(spotFc.k) ? GUST_NOTE : ''}<div data-panel="week" hidden>${forecastWeek(spotFc.week)}</div>`
+<div data-panel="d3">${forecastD3(spotFc.d3, gustSeries(spotFc.k))}${gustSeries(spotFc.k) ? GUST_NOTE : ''}</div><div data-panel="week" hidden>${forecastWeek(spotFc.week)}</div>`
     : '';
   // Forecasts of the nearest CWA hiking-forecast mountains (the tapped point is not one of them).
   const mtnFcHtml = nearMtns.length ? html`<section class="card" aria-labelledby="h-nmf"><h3 id="h-nmf">鄰近山頭預報</h3>
@@ -634,7 +637,7 @@ ${b ? html`<br><small>${b}</small>` : html`<br><small class="muted">暫無預報
   const townHtml = townFc
     ? `<p class="muted">${esc(normCounty(town.COUNTYNAME))}${esc(townFc.n)} 鄉鎮預報・發布 ${esc(fmtTime(townFc.issue3d || townFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="td3">未來3天</button><button role="tab" class="tab" aria-selected="false" data-tab="tweek">一週</button></div>
-<div data-panel="td3">${forecastD3(townFc.d3, gustSeries(town.TOWNCODE))}</div>${gustSeries(town.TOWNCODE) ? GUST_NOTE : ''}<div data-panel="tweek" hidden>${forecastWeek(townFc.week)}</div>`
+<div data-panel="td3">${forecastD3(townFc.d3, gustSeries(town.TOWNCODE))}${gustSeries(town.TOWNCODE) ? GUST_NOTE : ''}</div><div data-panel="tweek" hidden>${forecastWeek(townFc.week)}</div>`
     : '';
 
   const hydroHtml = hydroCard(S.hydro, lat, lon, town?.COUNTYNAME, town?.TOWNNAME);

@@ -544,17 +544,45 @@ function updateStatus() {
   document.getElementById('btn-alerts').setAttribute('aria-label', n ? `警特報與災害，${n} 項生效中` : '警特報與災害');
 }
 
+// ---- search history (what was searched for): kept in this browser, newest first, each entry can be deleted
+const SEARCH_HISTORY_KEY = 'hikingwx.searchHistory.v1';
+const SEARCH_HISTORY_MAX = 10;
+function loadSearchHistory() {
+  try { const a = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY)); return Array.isArray(a) ? a.filter((x) => typeof x === 'string' && x) : []; } catch { return []; }
+}
+function saveSearchHistory(a) {
+  try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(a.slice(0, SEARCH_HISTORY_MAX))); } catch { /* storage blocked: history is simply not kept */ }
+}
+function rememberSearch(q) {
+  const t = q.trim();
+  if (t) saveSearchHistory([t, ...loadSearchHistory().filter((x) => x.toLowerCase() !== t.toLowerCase())]);
+}
+
 function bindSearch() {
   const input = document.getElementById('q');
   const list = document.getElementById('q-results');
   let results = [];
+  const showHistory = () => {
+    const hist = loadSearchHistory();
+    results = [];
+    list.innerHTML = hist.length
+      ? hist.map((q, i) => `<li role="option" class="hist" id="qh-${i}" tabindex="-1" data-h="${i}"><span class="tag">最近搜尋</span>${esc(q)}<button type="button" class="hist-del" data-hdel="${i}" aria-label="刪除搜尋紀錄：${esc(q)}" title="刪除">✕</button></li>`).join('')
+        + '<li role="option" class="hist-clear" tabindex="-1" data-hclear>清除全部搜尋紀錄</li>'
+      : '';
+    list.hidden = !hist.length;
+    input.setAttribute('aria-expanded', String(!list.hidden));
+  };
   const choose = (r) => {
+    rememberSearch(input.value);
     list.hidden = true;
     input.value = r.label;
     flyTo(r.lat, r.lon, 12);
     showPoint(r.lat, r.lon, { spotKey: r.spot, stationId: r.station, peak: r.peak, label: r.type === '鄉鎮' ? r.label : undefined });
   };
+  input.addEventListener('focus', () => { if (!input.value.trim()) showHistory(); });
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#search-form')) { list.hidden = true; input.setAttribute('aria-expanded', 'false'); } });
   input.addEventListener('input', () => {
+    if (!input.value.trim()) { showHistory(); return; }
     results = search(input.value);
     list.innerHTML = results.map((r, i) => `<li role="option" id="qr-${i}" tabindex="-1" data-i="${i}"><span class="tag">${esc(r.type)}</span>${esc(r.label)}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}<button type="button" class="fav-btn" data-fav="${i}" aria-pressed="false" aria-label="加入收藏：${esc(favTitle(r))}" title="加入收藏">☆</button></li>`).join('');
     list.hidden = !results.length;
@@ -571,6 +599,17 @@ function bindSearch() {
     b.title = on ? '取消收藏' : '加入收藏';
   }));
   list.addEventListener('click', async (e) => {
+    const del = e.target.closest('[data-hdel]');
+    if (del) {
+      e.stopPropagation();
+      saveSearchHistory(loadSearchHistory().filter((_, i) => i !== Number(del.dataset.hdel)));
+      showHistory();
+      input.focus();
+      return;
+    }
+    if (e.target.closest('[data-hclear]')) { saveSearchHistory([]); showHistory(); input.focus(); return; }
+    const h = e.target.closest('[data-h]');
+    if (h) { input.value = loadSearchHistory()[Number(h.dataset.h)] || ''; input.dispatchEvent(new Event('input')); input.focus(); return; }
     const star = e.target.closest('[data-fav]');
     if (star) {
       e.stopPropagation();
@@ -583,13 +622,15 @@ function bindSearch() {
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && results[0]) { e.preventDefault(); choose(results[0]); }
-    if (e.key === 'ArrowDown' && results.length) { e.preventDefault(); list.querySelector('li')?.focus(); }
+    if (e.key === 'ArrowDown' && !list.hidden) { e.preventDefault(); list.querySelector('li')?.focus(); }
     if (e.key === 'Escape') { list.hidden = true; }
   });
   list.addEventListener('keydown', (e) => {
     const li = document.activeElement.closest('li');
     if (!li) return;
-    if (e.key === 'Enter' && !document.activeElement.matches('.fav-btn')) choose(results[Number(li.dataset.i)]);
+    if (e.key === 'Enter' && !document.activeElement.matches('.fav-btn, .hist-del')) {
+      if (li.dataset.i !== undefined) choose(results[Number(li.dataset.i)]); else li.click();
+    }
     if (e.key === 'ArrowDown') (li.nextElementSibling || li).focus();
     if (e.key === 'ArrowUp') (li.previousElementSibling || input).focus();
     if (e.key === 'Escape') { list.hidden = true; input.focus(); }

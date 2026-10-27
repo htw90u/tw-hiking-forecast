@@ -263,7 +263,6 @@ function serve() {
     const box = await page.locator('#map').boundingBox();
     await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.4);
     await page.waitForSelector('#sheet.open #h-risk', { timeout: 20000 });
-    await page.click('details.sub[data-sub="hist"] > summary');          // the observation data load when the section is opened
     await page.waitForSelector('#hist-out figure.chart, #hist-out p', { timeout: 20000 });
     const title = await page.textContent('#sheet-title');
     assert(title && title !== '查詢中…', `title ${title}`);
@@ -766,6 +765,87 @@ function serve() {
     assert((await page.$$eval('details.pcard:not([open])', (e) => e.length)) === 0, 'expand all');
     await page.screenshot({ path: path.join(SHOTS, 'point-cards.png') });
     await page.evaluate(() => localStorage.removeItem('hikingwx.cards.v1'));
+    await page.click('#sheet-close').catch(() => {});
+  });
+
+  await check('gust note belongs to the 3-day tab only, not the one-week tab', async () => {
+    await page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const sp = S.spots.find((x) => x.c === 'mountain');
+      await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k });
+    });
+    await page.waitForSelector('[data-panel="d3"] table');
+    const r = await page.evaluate(() => {
+      const inD3 = document.querySelector('[data-panel="d3"] .note')?.textContent.includes('陣風：Open-Meteo') ?? false;
+      const outside = [...document.querySelectorAll('#sheet-body .note')].filter((n) => n.textContent.includes('陣風：Open-Meteo') && !n.closest('[data-panel]')).length;
+      const inWeek = document.querySelector('[data-panel="week"]')?.textContent.includes('陣風：Open-Meteo') ?? false;
+      return { inD3, outside, inWeek, hasGust: Boolean(document.querySelector('[data-panel="d3"]')?.textContent.includes('陣風')) };
+    });
+    assert(r.outside === 0 && !r.inWeek && (!r.hasGust || r.inD3), `gust note placement ${JSON.stringify(r)}`);
+    await page.click('#sheet-close').catch(() => {});
+  });
+
+  await check('observation data open by default with temperature, rain, wind and humidity charts', async () => {
+    await page.evaluate(() => localStorage.removeItem('hikingwx.cards.v1'));
+    const sid = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js'); const v = await import('./js/views.js');
+      for (const st of S.stations.filter((x) => x.T !== undefined && x.RH !== undefined && x.WS !== undefined && x.k !== 'rain').slice(0, 60)) {
+        const h = await fetch(`data/hist/${st.id}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        if (h && ['T', 'RH', 'WS'].every((f) => h.fields[f]?.some((x) => x !== null))) { await v.showPoint(st.lat, st.lon, { stationId: st.id, label: `${st.n}測站` }); return st.id; }
+      }
+      return null;
+    });
+    if (!sid) { console.log('SKIP no station with a history series locally'); return; }
+    await page.waitForSelector('#hist-out figure.chart', { timeout: 20000 });
+    assert(await page.$eval('details.sub[data-sub="hist"]', (d) => d.open), 'the observation data section should be open by default');
+    const titles = await page.$$eval('#hist-out figure.chart figcaption strong', (e) => e.map((x) => x.textContent));
+    assert(['溫度', '風速', '相對濕度'].every((t) => titles.includes(t)), `charts ${titles}`);
+    const line = await page.$eval('[data-card="stations"] ul.stations, [data-card="station"]', (e) => e.textContent);
+    assert(line.includes('%') || line.includes('濕度') || (await page.$('[data-card="station"] .tile')), 'humidity missing from the station values');
+    await page.click('#sheet-close').catch(() => {});
+  });
+
+  await check('search history: remembered, shown on an empty box, deletable one by one and all', async () => {
+    await page.evaluate(() => localStorage.removeItem('hikingwx.searchHistory.v1'));
+    await page.fill('#q', '玉山');
+    await page.waitForSelector('#q-results li[data-i]');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#sheet.open', { timeout: 20000 });
+    await page.click('#sheet-close').catch(() => {});
+    await page.fill('#q', '');
+    await page.focus('#q');
+    await page.waitForSelector('#q-results li.hist');
+    assert((await page.textContent('#q-results li.hist')).includes('玉山'), 'the search was not remembered');
+    await page.fill('#q', '鹿林');
+    await page.waitForSelector('#q-results li[data-i]');
+    await page.keyboard.press('Enter');
+    await page.click('#sheet-close').catch(() => {});
+    await page.fill('#q', '');
+    await page.focus('#q');
+    await page.waitForFunction(() => document.querySelectorAll('#q-results li.hist').length === 2);
+    assert((await page.$eval('#q-results li.hist', (e) => e.textContent)).includes('鹿林'), 'newest search first');
+    await page.click('#q-results li.hist [data-hdel="0"]');                    // delete the newest one
+    await page.waitForFunction(() => document.querySelectorAll('#q-results li.hist').length === 1);
+    assert((await page.$eval('#q-results li.hist', (e) => e.textContent)).includes('玉山'), 'the wrong entry was deleted');
+    await page.click('#q-results li.hist .tag, #q-results li.hist');           // choosing an entry searches again
+    await page.waitForSelector('#q-results li[data-i]');
+    assert((await page.inputValue('#q')) === '玉山', 'history entry should fill the search box');
+    await page.fill('#q', '');
+    await page.focus('#q');
+    await page.click('#q-results .hist-clear');
+    assert((await page.evaluate(() => JSON.parse(localStorage.getItem('hikingwx.searchHistory.v1') || '[]').length)) === 0, 'clear all');
+    await page.keyboard.press('Escape');
+  });
+
+  await check('nearby places do not list the place itself', async () => {
+    const r = await page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const sp = S.spots.find((x) => x.c === 'forest' || x.c === 'np') || S.spots.find((x) => x.c === 'mountain');
+      await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k });
+      const names = [...document.querySelectorAll('[data-card="near"] li button')].map((b) => b.textContent);
+      return { name: sp.n, names, keys: [...document.querySelectorAll('[data-card="near"] li button')].map((b) => b.dataset.spot), key: sp.k };
+    });
+    assert(!r.keys.includes(r.key) && !r.names.includes(r.name), `the place lists itself: ${JSON.stringify(r)}`);
     await page.click('#sheet-close').catch(() => {});
   });
 

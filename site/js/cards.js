@@ -62,7 +62,7 @@ export function cardize(sections, opts) {
 /** Restore saved open / closed states, remember changes, and wire the expand-all / collapse-all and jump buttons. */
 export function bindCards(root) {
   const state = load();
-  const cards = [...root.querySelectorAll('details.pcard')];
+  const cards = [...root.querySelectorAll('details.pcard, details.sub[data-card]')];
   cards.forEach((d) => {
     const s = state[d.dataset.card];
     if (d.dataset.alert) d.open = true;
