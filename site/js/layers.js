@@ -95,6 +95,14 @@ export function framesFor(id) {
   return [];
 }
 
+/** Coast and county outlines (dark halo + light line) so Taiwan and the islands stay visible on the satellite picture. */
+function outlines() {
+  if (!S.map.getPane('outline')) S.map.createPane('outline').style.zIndex = 410;
+  const data = { type: 'FeatureCollection', features: S.counties };
+  const mk = (style) => L.geoJSON(data, { pane: 'outline', interactive: false, style: { fill: false, lineJoin: 'round', ...style } });
+  return [mk({ color: '#000', weight: 2.2, opacity: 0.35 }), mk({ color: '#fff', weight: 0.9, opacity: 0.9 })];
+}
+
 function clearOverlay() {
   if (S.layer.overlay) { S.map.removeLayer(S.layer.overlay); S.layer.overlay = null; }
 }
@@ -143,6 +151,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
       return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
         { opacity: layerOpacity(id), interactive: false, className: 'wx-grid' });
     }));
+    if (id === 'sat') outlines().forEach((o) => ov.addLayer(o));
     if (!S.layer.hidden) ov.addTo(S.map);
     clearOverlay();
     S.layer.overlay = ov;

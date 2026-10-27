@@ -781,6 +781,18 @@ function serve() {
     assert(r.vis >= 60 && r.ir >= 60, `satellite images look posterised: ${JSON.stringify(r)}`);
   });
 
+  await check('satellite layer draws county / island outlines above the picture', async () => {
+    await page.evaluate(async () => { const L2 = await import('./js/layers.js'); await L2.showLayer('sat'); });
+    await page.waitForTimeout(800);
+    const n = await page.evaluate(async () => {
+      const St = await import('./js/state.js');
+      let c = 0; St.S.layer.overlay.eachLayer((l) => { if (l.options?.pane === 'outline') c++; });
+      return c;
+    });
+    assert(n === 2, `satellite outline layers missing (${n})`);
+    await page.screenshot({ path: path.join(SHOTS, 'sat-outline.png') });
+  });
+
   await check('layer bar collapses for a larger map and comes back from the map button; state persists', async () => {
     const h0 = (await page.locator('#map').boundingBox()).height;
     await page.click('#btn-bar-hide');
