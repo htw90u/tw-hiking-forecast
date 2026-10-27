@@ -687,7 +687,7 @@ function serve() {
     });
     await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.47, 120.957, { spotKey: 'mountain-D001' }); });
     await page.waitForSelector('#btn-ens');
-    await page.click('#btn-ens');
+    await page.click('#btn-ens-jump');       // shortcut at the top of the panel loads the same forecast
     await page.waitForSelector('#ens-out figure.chart');
     const ens = await page.evaluate(() => ({ charts: document.querySelectorAll('#ens-out figure.chart').length, text: document.querySelector('#ens-out').textContent }));
     assert(ens.charts === 3 && ens.text.includes('ECMWF') && ens.text.includes('GFS') && ens.text.includes('6 個成員'), `ensemble charts ${JSON.stringify(ens)}`);

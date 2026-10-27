@@ -650,6 +650,7 @@ ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).m
 
   const body = html`
 <p class="place">${placeLine}</p>
+<p class="jump"><button type="button" class="btn" id="btn-ens-jump">系集預報（10 天）</button></p>
 ${main}
 <div class="actions"><button class="btn" id="btn-fav">☆ 收藏</button>
 <a class="btn" target="_blank" rel="noopener" href="https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${lat.toFixed(3)},${lon.toFixed(3)},11">在 Windy 開啟</a>

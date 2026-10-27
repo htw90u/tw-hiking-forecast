@@ -110,6 +110,11 @@ export function ensembleCard() {
 export function bindEnsemble(root, lat, lon, ele = null) {
   const b = root.querySelector('#btn-ens');
   if (!b) return;
+  // Shortcut at the top of the panel: scroll to the card and load the forecast.
+  root.querySelector('#btn-ens-jump')?.addEventListener('click', () => {
+    root.querySelector('#h-ens')?.scrollIntoView({ block: 'start' });
+    if (!b.disabled && !root.querySelector('#ens-out figure')) b.click();
+  });
   b.addEventListener('click', async () => {
     const out = root.querySelector('#ens-out');
     b.disabled = true;
