@@ -841,7 +841,7 @@ export function renderTimeControl(meta) {
   }
   el.querySelectorAll('[data-qpfmode]').forEach((b) => b.addEventListener('click', () => {
     if (b.getAttribute('aria-disabled') === 'true') {
-      renderLegend(null, '氣象署網站每日都有6小時定量降水預報圖，但開放資料平台目前只在陸上颱風警報期間提供6小時格點資料；平時請使用12小時版本。');
+      renderLegend(null, '目前無法取得6小時定量降水預報（氣象署網站的預報圖暫時讀不到）；請先使用12小時版本。');
       return;
     }
     S.layer.qpfMode = b.dataset.qpfmode;

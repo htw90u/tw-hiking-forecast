@@ -13,7 +13,7 @@ import { loadAloft, aloftCard, sunCard, levelAlt as levelAltOf, compass as compa
 import { sunTimes, twDate } from './sun.js';
 import { ensembleCard, bindEnsemble } from './ensemble.js';
 import { loadHydro, hydroCard, townAlerts } from './hydro.js';
-import { cardize, bindCards, GROUPS } from './cards.js';
+import { cardize, bindCards, jumpToGroup, GROUPS } from './cards.js';
 import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRecent, deleteRecent, deleteFav } from './store.js';
 
 // ------------------------------------------------------------------ sheet
@@ -196,6 +196,9 @@ function stationLine(s, d) {
   if (s.G !== undefined) parts.push(`陣風 ${fmtNum(s.G)} m/s（${beaufort(s.G)}級）`);
   if (s.R1h !== undefined) parts.push(`時雨量 ${fmtNum(s.R1h)}`);
   if (s.R24h !== undefined) parts.push(`24h ${fmtNum(s.R24h)}`);
+  // Not every station has every sensor: say so instead of leaving the value out silently.
+  const missing = s.k === 'rain' ? ['溫度', '風力'] : [s.T === undefined ? '溫度' : null, s.WS === undefined ? '風力' : null].filter(Boolean);
+  if (missing.length) parts.push(`無${missing.join('、')}觀測`);
   return html`<li><button class="link" data-station="${s.id}">${s.n}</button>
 <span class="meta">${d.toFixed(1)} km・${s.alt !== undefined ? `${Math.round(s.alt)} m` : '海拔不明'}${s.k === 'rain' ? '・雨量站' : ''}</span>
 <span class="vals">${parts.join('｜') || '—'}</span></li>`;
@@ -450,6 +453,7 @@ async function renderHistory(container, sid, range) {
   let out = '';
   if (T && T.some((v) => v !== null)) out += chart({ title: '溫度', unit: '°C', times: tt, series: [{ label: '氣溫', values: T, kind: 'line', cls: 's1' }] });
   if (R && R.some((v) => v !== null)) out += chart({ title: '時雨量', unit: 'mm', times: tt, zeroBase: true, series: [{ label: '每小時雨量', values: R, kind: 'bar', cls: 's2' }] });
+  if (!((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null)))) out += '<p class="note">此測站沒有風力觀測（雨量站或未裝風速計），所以沒有風速圖。</p>';
   if ((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null))) {
     out += chart({
       title: '風速', unit: 'm/s', times: tt, zeroBase: true,
@@ -514,18 +518,27 @@ export function dbzToRate(dbz) {
 
 function qpf12Metas() { return (S.manifest?.layers?.qpf?.periods || []).map((p) => p.meta); }
 
-async function sampleLayers(lat, lon) {
+/**
+ * Values of the map grids at a point. `core` = what the safety assessment needs (a handful of small files), `rest` = everything
+ * else (rain accumulations, QPF periods, temperature, cloud-top temperature ...): about 200 requests that the panel does not wait for.
+ */
+async function sampleLayers(lat, lon, which = 'all') {
   const out = {};
-  const jobs = [
+  const core = [
     ['radar', framesFor('radar').slice(-1)[0]], ['qpe1h', 'grids/qpe1h.json'], ['rainday', 'grids/rainday.json'],
+    ['qpf0', qpf12Metas()[0]],
+    ...(S.manifest?.layers?.rainacc?.periods || []).filter((p) => p.id === '24h').map((p) => ['acc_24h', p.meta]),
+  ];
+  const rest = [
     ['qpf1h', 'grids/qpf1h.json'], ['temp', 'grids/temp.json'],
-    ...qpf12Metas().map((p, i) => [`qpf${i}`, p]),
+    ...qpf12Metas().map((p, i) => [`qpf${i}`, p]).slice(1),
     ...(S.manifest?.layers?.qpf6?.periods || []).map((p, i) => [`qpf6_${i}`, p.meta]),
     ...(S.manifest?.layers?.qpfacc?.periods || []).flatMap((p) => [[`qacc${p.hours}`, p.meta],
       [`qacc${p.hours}_lo`, p.meta.replace('.json', '_lo.json')], [`qacc${p.hours}_hi`, p.meta.replace('.json', '_hi.json')]]),
-    ...(S.manifest?.layers?.rainacc?.periods || []).filter((p) => p.id !== 'day').map((p) => [`acc_${p.id}`, p.meta]),
+    ...(S.manifest?.layers?.rainacc?.periods || []).filter((p) => p.id !== 'day' && p.id !== '24h').map((p) => [`acc_${p.id}`, p.meta]),
     ['satir', S.manifest?.layers?.satellite?.grids?.ir?.meta],
-  ].filter(([, p]) => p);
+  ];
+  const jobs = (which === 'core' ? core : which === 'rest' ? rest : [...core, ...rest]).filter(([, p]) => p);
   await Promise.all(jobs.map(async ([k, p]) => {
     try {
       const g = await getGrid(p);
@@ -533,6 +546,33 @@ async function sampleLayers(lat, lon) {
     } catch { /* layer unavailable offline */ }
   }));
   return out;
+}
+
+let pointToken = 0;
+
+/** Swap in the cards that changed between two builds of the panel (new data arrived): keeps the open / closed state, adds new cards in order. */
+function patchPanel(prev, next) {
+  const root = document.getElementById('sheet-body');
+  const cardId = (h) => h.match(/data-card="([^"]+)"/)?.[1];
+  let anchor = null;
+  next.order.forEach((k) => {
+    const h = next.cardsOut[k];
+    if (!h) return;
+    const el = root.querySelector(`details.pcard[data-card="${cardId(h)}"]`);
+    if (el && prev.cardsOut[k] === h) { anchor = el; return; }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = h;
+    const fresh = tmp.firstElementChild;
+    bindCommon(tmp);
+    bindCards(tmp);
+    if (el) { fresh.open = el.open; el.replaceWith(fresh); } else if (anchor) anchor.after(fresh); else root.querySelector('details.pcard')?.before(fresh);
+    anchor = fresh;
+  });
+  const chips = root.querySelector('.pjump');
+  if (chips && prev.chips !== next.chips) {
+    chips.innerHTML = next.chips;
+    chips.querySelectorAll('[data-jump]').forEach((b) => b.addEventListener('click', () => jumpToGroup(root, b.dataset.jump)));
+  }
 }
 
 export async function showPoint(lat, lon, opts = {}) {
@@ -553,19 +593,15 @@ export async function showPoint(lat, lon, opts = {}) {
   const weatherSt = stationsNear.filter((x) => x.it.k !== 'rain');
   const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
 
+  // The panel waits only for what it needs to be useful: the forecasts, the model gusts and a few small grids for the safety assessment.
+  // Everything else (winds aloft, water level, ~200 grid files for the rain / temperature / satellite values) is loaded after it is shown.
   const [vals, spotFc, townFc, , ...mtnFcs] = await Promise.all([
-    sampleLayers(lat, lon),
+    sampleLayers(lat, lon, 'core'),
     spotPick ? getJSON(`spots/f/${spotPick.k}.json`).catch(() => null) : null,
     town ? getJSON(`towns/${town.TOWNCODE}.json`).catch(() => null) : null,
-    Promise.all([loadWind(), loadAloft(), loadHydro()]).catch(() => null), // model gusts for the forecast tables; winds aloft; water level and debris-flow alerts
+    loadWind().catch(() => null), // model gusts for the forecast tables
     ...nearMtns.map(({ it }) => getJSON(`spots/f/${it.k}.json`).catch(() => null)),
   ]);
-  // Winds aloft, visibility and UV come from the chosen mountain forecast point, else the nearest one within 12 km.
-  const aloftSpot = spotPick?.c === 'mountain' ? { it: spotPick, d: 0 } : nearest(S.spots, lat, lon, { limit: 60, maxKm: 12 }).find((x) => x.it.c === 'mountain');
-  const aloftHtml = aloftSpot && S.aloft
-    ? aloftCard(S.aloft, aloftSpot.it.k, { ele: spotPick?.ele ?? peak?.ele ?? null,
-      note: aloftSpot.d > 0.5 ? `此處沒有登山預報，以下為最近的預報山頭「${aloftSpot.it.n}」（距此 ${aloftSpot.d.toFixed(1)} km${aloftSpot.it.ele ? `，海拔 ${aloftSpot.it.ele} m` : ''}）的數值。` : '' })
-    : '';
   const nearFc = nearMtns[0] && nearMtns[0].d <= 10 ? mtnFcs[0] : null; // wind of the nearest mountain, for the risk list
 
   const county = normCounty(town?.COUNTYNAME);
@@ -592,6 +628,16 @@ export async function showPoint(lat, lon, opts = {}) {
   const isSelf = ({ it, d }) => it.k === spotPick?.k || (d < 0.3 && [spotPick?.n, peak?.n, opts.label].some((n) => n && (it.n === n || it.n.includes(n) || n.includes(it.n))));
   const near = spotsNear.filter((x) => !isSelf(x)).slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
 
+  const station = opts.stationId ? S.stations.find((x) => x.id === opts.stationId) : null;
+  const eleHere = spotPick?.ele ?? peak?.ele ?? station?.alt ?? null;
+  // Everything that depends on the late data (grid samples, winds aloft, water) is built here: once with what the panel waited for, again when the rest has arrived.
+  const build = (vals) => {
+  // Winds aloft, visibility and UV come from the chosen mountain forecast point, else the nearest one within 12 km.
+  const aloftSpot = spotPick?.c === 'mountain' ? { it: spotPick, d: 0 } : nearest(S.spots, lat, lon, { limit: 60, maxKm: 12 }).find((x) => x.it.c === 'mountain');
+  const aloftHtml = aloftSpot && S.aloft
+    ? aloftCard(S.aloft, aloftSpot.it.k, { ele: spotPick?.ele ?? peak?.ele ?? null,
+      note: aloftSpot.d > 0.5 ? `此處沒有登山預報，以下為最近的預報山頭「${aloftSpot.it.n}」（距此 ${aloftSpot.d.toFixed(1)} km${aloftSpot.it.ele ? `，海拔 ${aloftSpot.it.ele} m` : ''}）的數值。` : '' })
+    : '';
   const vrow = (label, k, unit, digits = 1, empty = '無資料') => {
     const x = vals[k];
     if (!x) return '';
@@ -653,7 +699,6 @@ ${b ? html`<br><small>${b}</small>` : html`<br><small class="muted">暫無預報
   const tyHtml = S.typhoon?.active ? html`<section class="card warn"><h3>颱風警報中</h3><button class="btn" data-open="typhoon">查看颱風路徑、風力與雨量預測</button></section>` : '';
   const qHtml = quakesNear.length ? html`<section class="card"><h3>近 3 天 50 km 內地震</h3><ul>${quakesNear.map((q) => html`<li><button class="link" data-quake="${q.time}">${fmtTime(q.time)} 規模 ${q.mag}</button> <span class="meta">距此 ${q.d.toFixed(0)} km・最大震度 ${intText(q.maxInt)}</span></li>`)}</ul></section>` : '';
 
-  const station = opts.stationId ? S.stations.find((x) => x.id === opts.stationId) : null;
   const riskHtml = html`<section class="card risk ${LEVELS[risk.level].cls}" aria-labelledby="h-risk"><h3 id="h-risk">登山安全評估</h3>
 ${risk.reasons.length ? html`<ul>${risk.reasons.map((r) => html`<li>${lvBadge(r.lv)} ${r.text}</li>`)}</ul>` : html`<p>目前未觸發警示條件。</p>`}
 <p class="note">依門檻自動判斷，僅供參考；請以現場狀況與官方資訊為準。門檻可在「設定」調整。</p></section>`;
@@ -662,7 +707,7 @@ ${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1�
 </tbody></table></section>`;
   const accHtml = accRows ? html`<section class="card" aria-labelledby="h-acc"><h3 id="h-acc">累積雨量（雨量站內插估計）</h3><table class="kv"><tbody>${raw(accRows)}</tbody></table></section>` : '';
   const qpfHtml = qpfRows ? html`<section class="card" aria-labelledby="h-qpf"><h3 id="h-qpf">定量降水預報（每12小時）</h3><table class="kv"><tbody>${raw(qpfRows)}</tbody></table></section>` : '';
-  const qpf6Html = qpf6Rows ? html`<section class="card" aria-labelledby="h-qpf6"><h3 id="h-qpf6">定量降水預報（每6小時・颱風警報期間）</h3><table class="kv"><tbody>${raw(qpf6Rows)}</tbody></table></section>` : '';
+  const qpf6Html = qpf6Rows ? html`<section class="card" aria-labelledby="h-qpf6"><h3 id="h-qpf6">定量降水預報（每6小時${S.manifest?.layers?.qpf6?.source === 'cwa-web' ? '' : '・颱風警報期間'}）</h3><table class="kv"><tbody>${raw(qpf6Rows)}</tbody></table></section>` : '';
   const qaccHtml = qaccRows ? html`<section class="card" aria-labelledby="h-qacc"><h3 id="h-qacc">未來累積降水（由12小時預報加總）</h3><table class="kv"><tbody>${raw(qaccRows)}</tbody></table>${raw(accMeta ? attribution(accMeta) : '')}</section>` : '';
   const spotFcCard = fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地點預報</h3>${raw(fcHtml)}</section>` : '';
   const townCard = townHtml && peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄰近鄉鎮預報</h3>
@@ -678,7 +723,6 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
   const [briefD3, briefGust] = spotFc ? [spotFc.d3, gustSeries(spotFc.k)] : townFc ? [townFc.d3, gustSeries(town.TOWNCODE)] : nearFc ? [nearFc.d3, gustSeries(nearFc.k)] : [null, null];
   const brief = fcBrief(briefD3, briefGust);
   const ws0 = weatherSt[0]?.it;
-  const eleHere = spotPick?.ele ?? peak?.ele ?? station?.alt ?? null;
   const rainSum = [vals.acc_24h?.v != null ? `過去 24 小時 ${fmtNum(vals.acc_24h.v, 1)} mm` : null, vals.qacc24?.v != null ? `未來 24 小時約 ${fmtNum(vals.qacc24.v, 0)} mm` : null].filter(Boolean).join('・');
   const nowSum = [vals.radar ? (vals.radar.v === null ? '雷達無回波' : `雷達 ${fmtNum(vals.radar.v, 0)} dBZ`) : null, vals.qpe1h?.v != null ? `1 小時雨量 ${fmtNum(vals.qpe1h.v, 1)} mm` : null,
     vals.satir?.v != null ? `雲頂 ${fmtNum(vals.satir.v, 0)}°C` : null].filter(Boolean).join('・');
@@ -729,16 +773,20 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
 <div class="pill"><b>${brief?.pop != null ? `${brief.pop}%` : '—'}</b>降雨機率</div>
 <div class="pill"><b>${sT !== null ? `${fmtNum(sT, 0)}°C` : '—'}</b>${brief?.AT != null ? `體感 ${brief.AT}°` : '氣溫'}</div>
 <div class="pill ${(brief?.bf ?? 0) >= 6 ? 'lv1' : ''}"><b>${bf(brief?.bf ?? (ws0?.WS !== undefined ? beaufort(ws0.WS) : null))}</b>${brief?.g != null ? `陣風 ${beaufort(brief.g)} 級` : '風力'}</div></div>`;
-  const jump = html`<div class="pjump" role="group" aria-label="跳到區段">${raw(groupsPresent.map((g) => `<button type="button" class="g-${g}" data-jump="${g}">${GROUPS[g].label}</button>`).join(''))}</div>
+  const jumpChips = groupsPresent.map((g) => `<button type="button" class="g-${g}" data-jump="${g}">${GROUPS[g].label}</button>`).join('');
+  const jump = html`<div class="pjump" role="group" aria-label="跳到區段">${raw(jumpChips)}</div>
 <div class="ptools"><button type="button" id="btn-ens-jump">系集預報</button><button type="button" data-cards="open">全部展開</button><button type="button" data-cards="close">全部收合</button></div>`;
   const windy = `https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${lat.toFixed(3)},${lon.toFixed(3)},11`;
-
-  const body = html`
+  return { cardsOut, present, order, strip, jump, windy, chips: jumpChips };
+  };
+  const bodyOf = ({ cardsOut, present, strip, jump, windy }) => html`
 <div class="ptbar"><p class="place">${placeLine}</p>
 <div class="acts"><a class="ab" target="_blank" rel="noopener" href="${windy}">🌀 Windy</a><button type="button" class="ab" id="btn-copy">⌖ 座標</button><button type="button" class="ab fav" id="btn-fav" aria-pressed="false">☆ 收藏</button></div></div>
 ${strip}${jump}
 ${raw(present.map((k) => cardsOut[k]).join(''))}
 <p class="src">資料來源：中央氣象署開放資料。資料更新 ${fmtTime(S.manifest?.built)}</p>`;
+  let built = build(vals);
+  let body = bodyOf(built);
 
   const id = pointId(lat, lon);
   // What is needed to reopen exactly this selection from the favourites list.
@@ -759,6 +807,16 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
     },
   });
   showPick(lat, lon);
+  // The slow part: winds aloft, water, and the rest of the grid values; the cards that depend on them are swapped in when they arrive.
+  const token = ++pointToken;
+  const mark = document.querySelector('#sheet-body details.pcard[data-card="risk"]');
+  const late = await Promise.all([loadAloft(), loadHydro(), sampleLayers(lat, lon, 'rest')]).catch(() => null);
+  if (late && token === pointToken && mark?.isConnected) {
+    const next = build({ ...vals, ...late[2] });
+    patchPanel(built, next);
+    built = next;
+    body = bodyOf(next);
+  }
   // Snapshot for offline viewing (history charts render after; store the static part).
   saveRecent({ id, lat, lon, title, html: body.html, dataTime: S.manifest?.built });
 }

@@ -76,12 +76,16 @@ export function bindCards(root) {
   });
   root.querySelectorAll('[data-cards]').forEach((b) => b.addEventListener('click', () => {
     const open = b.dataset.cards === 'open';
-    cards.forEach((d) => { if (!d.dataset.alert || open) d.open = open; });
+    // look the cards up now: some may have been swapped in after the panel was first shown
+    root.querySelectorAll('details.pcard, details.sub[data-card]').forEach((d) => { if (!d.dataset.alert || open) d.open = open; });
   }));
-  root.querySelectorAll('[data-jump]').forEach((b) => b.addEventListener('click', () => {
-    const d = root.querySelector(`details.pcard[data-grp="${b.dataset.jump}"]`);
-    if (!d) return;
-    d.open = true;
-    d.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }));
+  root.querySelectorAll('[data-jump]').forEach((b) => b.addEventListener('click', () => jumpToGroup(root, b.dataset.jump)));
+}
+
+/** Open the first card of a group and scroll to it. */
+export function jumpToGroup(root, grp) {
+  const d = root.querySelector(`details.pcard[data-grp="${grp}"]`);
+  if (!d) return;
+  d.open = true;
+  d.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }

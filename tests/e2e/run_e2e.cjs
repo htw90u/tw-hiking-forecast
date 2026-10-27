@@ -267,9 +267,12 @@ function serve() {
     const title = await page.textContent('#sheet-title');
     assert(title && title !== '查詢中…', `title ${title}`);
     assert(!(await page.textContent('#sheet-body')).includes('鄉鎮不明'), 'unknown-township text should not be shown');
+    await page.waitForFunction(() => document.querySelector('#sheet-body')?.textContent.includes('雲頂溫度'), null, { timeout: 20000 });   // the grid values arrive after the panel is shown
     const body = await page.textContent('#sheet-body');
     assert(body.includes('雲頂溫度'), 'point panel lacks cloud-top temperature');
     assert(body.includes('未來累積降水') && body.includes('非中央氣象署發布之預報'), 'point panel lacks derived totals with disclaimer');
+    const q6 = await page.evaluate(async () => ({ src: (await import('./js/state.js')).S.manifest?.layers?.qpf6?.source, head: document.querySelector('#h-qpf6')?.textContent || '' }));
+    if (q6.src === 'cwa-web' && q6.head) assert(!q6.head.includes('颱風'), `6-hour QPF from the CWA website must not be labelled as typhoon-period data: ${q6.head}`);
     await page.screenshot({ path: path.join(SHOTS, 'point-mobile.png') });
   });
 
