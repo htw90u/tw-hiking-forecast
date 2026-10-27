@@ -4,6 +4,7 @@ import { getJSON, fmtTime, esc, normCounty, beaufort, haversineKm, apparentTemp 
 import { loadGrid, renderGrid } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
 import { saveSettings } from './settings.js';
+import { loadAloft, stepOf, compass, levelAlt, altText } from './aloft.js';
 
 export const LAYERS = [
   { id: 'radar', label: '雷達回波', kind: 'radar', unit: 'dBZ' },
@@ -13,6 +14,9 @@ export const LAYERS = [
   { id: 'qpf', label: '定量降水預報', kind: 'rain', unit: 'mm/12h' },
   { id: 'temp', label: '溫度', kind: 'temp', unit: '°C' },
   { id: 'wind', label: '風力', kind: 'wind' },
+  { id: 'pop', label: '降雨機率', kind: 'pop', unit: '%' },
+  { id: 'uv', label: '紫外線', kind: 'uv', unit: '' },
+  { id: 'visib', label: '能見度', kind: 'visib', unit: 'km' },
   { id: 'lightning', label: '閃電', kind: 'ltage' },
   { id: 'sat', label: '衛星雲圖', kind: 'sat' },
   { id: 'tyrain', label: '颱風雨量預測', kind: 'rain', unit: 'mm', typhoonOnly: true },
@@ -132,6 +136,9 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'sat' && !satGrids().ir) { await showSatellite(); return; }
     if (id === 'tyrain') { showTyphoonRain(); return; }
     if (id === 'wind') { await showWind(keepFrame); return; }
+    if (id === 'pop') { await showPop(keepFrame); return; }
+    if (id === 'uv') { await showUV(); return; }
+    if (id === 'visib') { await showVisibility(keepFrame); return; }
     if (id === 'lightning') { await showLightning(); return; }
     const frames = framesFor(id);
     const path = PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
@@ -260,6 +267,7 @@ async function showWind(keepFrame) {
   if (!w || !w.times?.length) { clearOverlay(); renderLegend(null, '目前沒有風力預報資料'); return; }
   if (!keepFrame || S.layer.frame >= w.times.length) S.layer.frame = windNowIndex(w.times);
   const i = S.layer.frame;
+  if (mode === 'aloft') { await showAloftWind(w, i, hex); return; }
   const towns = L.geoJSON({ type: 'FeatureCollection', features: S.towns }, {
     style: (f) => {
       const r = w.towns[f.properties.TOWNCODE];
@@ -290,6 +298,152 @@ async function showWind(keepFrame) {
   const t = w.times[i];
   renderLegend({ label: '風力預報（蒲福風級）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: w.issue, kindOverride: 'wind',
     note: `色塊為鄉鎮預報（平地），箭頭為登山預報點，指向風吹去的方向，數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布。` : '目前沒有陣風預報資料。'}6 級以上山區行走困難，8 級以上請避免稜線。` });
+  renderTimeControl();
+}
+
+/** Winds on pressure levels at the mountain forecast points (Open-Meteo models). */
+async function showAloftWind(w, i, hex) {
+  const a = await loadAloft();
+  if (S.layer.id !== 'wind') return;
+  if (!a?.times?.length) { clearOverlay(); renderLegend(null, '目前沒有高空風預報資料'); return; }
+  const li = Math.min(S.layer.windLevel ?? 1, a.levels.length - 1);
+  const k = stepOf(a.times, w.times[i]);
+  const ov = L.layerGroup();
+  const spotPos = Object.fromEntries(S.spots.map((p) => [p.k, p]));
+  const placed = [];
+  const list = Object.entries(a.points).filter(([key, p]) => spotPos[key] && p.ws[li][k] !== null && p.wd[li][k] !== null)
+    .sort((x, y) => (y[1].ws[li][k] ?? 0) - (x[1].ws[li][k] ?? 0));
+  list.forEach(([key, p]) => {
+    const sp = spotPos[key];
+    const pt = S.map.latLngToLayerPoint([sp.lat, sp.lon]);
+    if (placed.some((q) => q.distanceTo(pt) < 34)) return;
+    placed.push(pt);
+    const ws = p.ws[li][k];
+    const bf = beaufort(ws);
+    L.marker([sp.lat, sp.lon], { icon: windArrow(p.wd[li][k], bf, hex(bf)), keyboard: false, pane: 'spots', zIndexOffset: 200 })
+      .bindTooltip(`${esc(sp.n)}（${altText(levelAlt(p, li))}，${a.levels[li]} hPa）：${esc(compass(p.wd[li][k]))} ${ws} m/s（${bf}級）`).addTo(ov);
+  });
+  finishOverlay(ov);
+  const t = w.times[i];
+  renderLegend({ label: `高空風（${a.levels[li]} hPa・${altText(levelAlt(Object.values(a.points)[0], li))}）`, start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(),
+    time: a.time, kindOverride: 'wind', src: 'Open-Meteo 數值模式',
+    note: '箭頭為各登山預報點該氣壓層的風（指向風吹去的方向，數字為蒲福風級）。高度為概略值；山頂比高度相近的氣壓層通常風更強。資料來自 Open-Meteo（CC BY 4.0），非氣象署發布。' });
+  renderTimeControl();
+}
+
+// ---------------------------------------------------------------- rain probability, UV, visibility
+/** Township choropleth: colour from value(code) (null = no fill); tooltip text from tip(code). */
+function townChoropleth(scale, value, tip) {
+  const col = colourFn(scale);
+  return L.geoJSON({ type: 'FeatureCollection', features: S.towns }, {
+    style: (f) => {
+      const v = value(f.properties.TOWNCODE);
+      const c = v === null || v === undefined ? null : col(v);
+      return { color: '#555', weight: 0.5, fillColor: c?.[3] ? `rgb(${c[0]},${c[1]},${c[2]})` : '#fff', fillOpacity: c?.[3] ? layerOpacity(S.layer.id) : 0 };
+    },
+    onEachFeature: (f, layer) => {
+      const t = tip(f.properties.TOWNCODE);
+      if (t) layer.bindTooltip(`${esc(normCounty(f.properties.COUNTYNAME))}${esc(f.properties.TOWNNAME)}：${t}`, { sticky: true });
+    },
+  });
+}
+
+async function showPop(keepFrame) {
+  const w = await loadWind();
+  if (S.layer.id !== 'pop') return;
+  if (!w?.times?.length) { clearOverlay(); renderLegend(null, '目前沒有降雨機率預報資料'); return; }
+  if (!keepFrame || S.layer.frame >= w.times.length) S.layer.frame = windNowIndex(w.times);
+  const i = S.layer.frame;
+  const ov = L.layerGroup();
+  townChoropleth(scaleFor('pop', S.settings.palette), (g) => w.towns[g]?.[5]?.[i] ?? null, (g) => {
+    const v = w.towns[g]?.[5]?.[i];
+    return v === null || v === undefined ? '無預報' : `${v}%`;
+  }).addTo(ov);
+  finishOverlay(ov);
+  const t = w.times[i];
+  renderLegend({ label: '降雨機率（鄉鎮・3 小時）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: w.issue,
+    kindOverride: 'pop', unit: '%', src: '鄉鎮天氣預報',
+    note: '機率為該 3 小時內「出現降雨」的可能性（降雨機率 30% 表示 10 次類似天氣約 3 次下雨），並非雨勢大小；雨量請看雨量圖層。10% 以下不著色。' });
+  renderTimeControl();
+}
+
+/** Dates (YYYY-MM-DD) with a township UV forecast, in order. */
+function uvDates(w) {
+  const set = new Set();
+  Object.values(w.uv || {}).forEach((l) => l.forEach(([d]) => set.add(d)));
+  return [...set].sort();
+}
+
+const UV_LEVEL = (v) => (v >= 11 ? '危險級' : v >= 8 ? '過量級' : v >= 6 ? '高量級' : v >= 3 ? '中量級' : '低量級');
+
+async function showUV() {
+  const w = await loadWind();
+  if (S.layer.id !== 'uv') return;
+  const dates = w ? uvDates(w) : [];
+  if (!dates.length) { clearOverlay(); renderLegend(null, '目前沒有紫外線預報資料'); return; }
+  const di = Math.min(S.layer.period, dates.length - 1);
+  const d = dates[di];
+  const at = (g) => w.uv[g]?.find((x) => x[0] === d)?.[1] ?? null;
+  const ov = L.layerGroup();
+  townChoropleth(scaleFor('uv', S.settings.palette), at, (g) => { const v = at(g); return v === null ? '無預報' : `UV ${v}（${UV_LEVEL(v)}）`; }).addTo(ov);
+  finishOverlay(ov);
+  renderLegend({ label: `紫外線指數預報（${d.slice(5).replace('-', '/')}）`, time: w.issue, kindOverride: 'uv', unit: '', src: '鄉鎮天氣預報',
+    note: '為當日白天最大值（天氣晴朗時）。分級：0–2 低量級、3–5 中量級、6–7 高量級、8–10 過量級、11 以上危險級。3 以上建議防曬，6 以上減少正午曝曬，8 以上盡量避開。海拔每升高 1,000 m 紫外線約增加 10%，雪地與水面會再反射，高山請加強防護。' });
+  renderTimeControl();
+}
+
+/** Visibility text of a station ("10", ">30", "0.8") -> km, or null. */
+function visKm(s) {
+  const n = parseFloat(String(s).replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+async function showVisibility(keepFrame) {
+  const mode = S.layer.visMode || 'obs';
+  const w = await loadWind();
+  if (S.layer.id !== 'visib') return;
+  if (w?.times?.length && (!keepFrame || S.layer.frame >= w.times.length)) S.layer.frame = windNowIndex(w.times);
+  const scale = scaleFor('visib', S.settings.palette);
+  const col = colourFn(scale);
+  const rgb = (v) => { const c = col(v); return `rgb(${c[0]},${c[1]},${c[2]})`; };
+  const ov = L.layerGroup();
+  const fog = (S.warnings?.counties || []).flatMap((c) => c.hazards.filter((h) => /霧/.test(h.ph)).map((h) => `${normCounty(c.county)}${h.ph}${h.sig || ''}`));
+  const fogNote = fog.length ? `目前有濃霧特報：${fog.join('、')}。` : '';
+  if (mode === 'obs') {
+    S.stations.filter((s) => s.vis !== undefined && visKm(s.vis) !== null).forEach((s) => {
+      const v = visKm(s.vis);
+      const html = `<span class="vis-mk" style="--c:${rgb(v)}">${esc(String(s.vis))}</span>`;
+      L.marker([s.lat, s.lon], { icon: L.divIcon({ className: 'vis-wrap', html, iconSize: [34, 20] }), keyboard: false, pane: 'stations' })
+        .bindTooltip(`${esc(s.n)}：能見度 ${esc(String(s.vis))} km${v < 1 ? '（濃霧）' : v < 2 ? '（有霧）' : ''}`).addTo(ov);
+    });
+    finishOverlay(ov);
+    renderLegend({ label: '能見度（測站觀測）', time: S.manifest?.layers?.stations?.time, kindOverride: 'visib', unit: 'km',
+      note: `${fogNote}能見度只有有人員觀測的局屬測站才提供；山區沒有測站的地方請看「預報」模式（數值模式）。分級：低於 1 km 濃霧、1–2 km 有霧、2–5 km 能見度差、5–10 km 普通、10–20 km 良好、20 km 以上極佳。山區濃霧容易迷途，請放慢速度並確認航跡。` });
+    renderTimeControl();
+    return;
+  }
+  const a = await loadAloft();
+  if (S.layer.id !== 'visib') return;
+  if (!a?.times?.length || !w?.times?.length) { clearOverlay(); renderLegend(null, '目前沒有能見度預報資料'); return; }
+  const k = stepOf(a.times, w.times[S.layer.frame]);
+  const spotPos = Object.fromEntries(S.spots.map((p) => [p.k, p]));
+  // Poorest visibility first; markers closer than 40 px to one already drawn wait until the map is zoomed in.
+  const placed = [];
+  Object.entries(a.points).filter(([key, p]) => spotPos[key] && p.vis[k] !== null).sort((x, y) => x[1].vis[k] - y[1].vis[k]).forEach(([key, p]) => {
+    const v = p.vis[k];
+    const sp = spotPos[key];
+    const pt = S.map.latLngToLayerPoint([sp.lat, sp.lon]);
+    if (placed.some((q) => q.distanceTo(pt) < 40)) return;
+    placed.push(pt);
+    const html = `<span class="vis-mk" style="--c:${rgb(v)}">${v >= 30 ? '>30' : v.toFixed(v < 10 ? 1 : 0)}</span>`;
+    L.marker([sp.lat, sp.lon], { icon: L.divIcon({ className: 'vis-wrap', html, iconSize: [34, 20] }), keyboard: false, pane: 'spots' })
+      .bindTooltip(`${esc(sp.n)}：能見度約 ${v} km${v < 1 ? '（濃霧）' : v < 2 ? '（有霧）' : ''}`).addTo(ov);
+  });
+  finishOverlay(ov);
+  const t = w.times[S.layer.frame];
+  renderLegend({ label: '能見度預報（登山預報點）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), time: a.time,
+    kindOverride: 'visib', unit: 'km', src: 'Open-Meteo 數值模式',
+    note: `${fogNote}Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布；模式對山區局部霧氣的掌握有限，僅供參考。` });
   renderTimeControl();
 }
 
@@ -436,6 +590,9 @@ ${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm
 function legendUnit(kind, unit) {
   if (kind === 'wind') return ['單位', '風級'];
   if (kind === 'ltage') return ['單位', '分鐘前'];
+  if (kind === 'pop') return ['單位', '%'];
+  if (kind === 'uv') return ['單位', '指數'];
+  if (kind === 'visib') return ['單位', 'km'];
   if (kind === 'intensity') return ['單位', '震度'];
   if (kind === 'vis') return ['單位', '反照率'];
   if (kind === 'irgray' || kind === 'irenh') return ['單位', '°C'];
@@ -517,12 +674,24 @@ export function renderTimeControl(meta) {
     h = '<div class="seg" role="radiogroup" aria-label="雨量預測種類">'
       + (t.rain24 ? `<button class="seg-btn" role="radio" aria-checked="${S.layer.period === 0}" data-period="0">24小時雨量</button>` : '')
       + (t.rainTotal ? `<button class="seg-btn" role="radio" aria-checked="${S.layer.period === 1}" data-period="1">總雨量</button>` : '') + '</div>';
-  } else if (id === 'wind') {
-    const mode = S.layer.windMode || 'fc';
+  } else if (id === 'wind' || id === 'pop' || id === 'visib' || id === 'uv') {
+    const mode = id === 'wind' ? (S.layer.windMode || 'fc') : id === 'visib' ? (S.layer.visMode || 'obs') : 'fc';
     const times = S.wind?.times || [];
-    h = '<div class="seg" role="radiogroup" aria-label="風力資料">' + [['fc', '預報'], ['obs', '測站觀測']]
-      .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-windmode="${k}">${l}</button>`).join('') + '</div>';
-    if (mode === 'fc' && times.length) {
+    if (id === 'wind') {
+      h = '<div class="seg" role="radiogroup" aria-label="風力資料">' + [['fc', '預報'], ['aloft', '高空風'], ['obs', '測站觀測']]
+        .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-windmode="${k}">${l}</button>`).join('') + '</div>';
+      if (mode === 'aloft' && S.aloft?.levels) {
+        const p0 = Object.values(S.aloft.points)[0];
+        h += '<div class="seg" role="radiogroup" aria-label="高度">' + S.aloft.levels.map((lv, li) => `<button class="seg-btn" role="radio" aria-checked="${li === (S.layer.windLevel ?? 1)}" data-windlevel="${li}">${esc(altText(p0 ? levelAlt(p0, li) : null))}</button>`).join('') + '</div>';
+      }
+    } else if (id === 'visib') {
+      h = '<div class="seg" role="radiogroup" aria-label="能見度資料">' + [['obs', '測站觀測'], ['fc', '預報']]
+        .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-vismode="${k}">${l}</button>`).join('') + '</div>';
+    } else if (id === 'uv') {
+      const dates = S.wind ? uvDates(S.wind) : [];
+      h = '<div class="seg" role="radiogroup" aria-label="日期">' + dates.map((d, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-period="${i}">${esc(d.slice(5).replace('-', '/'))}</button>`).join('') + '</div>';
+    }
+    if ((mode === 'fc' || mode === 'aloft') && id !== 'uv' && times.length) {
       const t = times[S.layer.frame] || times[0];
       h += `<label class="range"><span class="sr-only">預報時間</span><input id="wind-frame" type="range" min="0" max="${times.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wind-time">${esc(fmtTime(t))}</output>`;
@@ -543,10 +712,18 @@ export function renderTimeControl(meta) {
     S.layer.windMode = b.dataset.windmode;
     showLayer('wind', { keepFrame: true });
   }));
+  el.querySelectorAll('[data-windlevel]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.windLevel = Number(b.dataset.windlevel);
+    showLayer('wind', { keepFrame: true });
+  }));
+  el.querySelectorAll('[data-vismode]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.visMode = b.dataset.vismode;
+    showLayer('visib', { keepFrame: true });
+  }));
   const wf = el.querySelector('#wind-frame');
   if (wf) {
     wf.addEventListener('input', () => { el.querySelector('#wind-time').textContent = fmtTime(S.wind.times[Number(wf.value)]); });
-    wf.addEventListener('change', () => { S.layer.frame = Number(wf.value); showLayer('wind', { keepFrame: true }); });
+    wf.addEventListener('change', () => { S.layer.frame = Number(wf.value); showLayer(id, { keepFrame: true }); });
   }
   el.querySelectorAll('[data-qpfmode]').forEach((b) => b.addEventListener('click', () => {
     if (b.getAttribute('aria-disabled') === 'true') {

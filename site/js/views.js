@@ -9,6 +9,7 @@ import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
 import { assess, LEVELS } from './safety.js';
+import { loadAloft, aloftCard, sunCard } from './aloft.js';
 import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRecent, deleteRecent, deleteFav } from './store.js';
 
 // ------------------------------------------------------------------ sheet
@@ -279,15 +280,17 @@ function forecastWeek(week) {
   const amn = el(week, '最低體感溫度');
   const WS = el(week, '風速');
   const WD = el(week, '風向');
+  const UV = el(week, '紫外線指數');
   const rows = pop.t.map((t, i) => {
     const h = new Date(t).getHours();
     return `<tr><th scope="row">${esc(fmtTime(t, { weekday: true }).replace(/ \d\d:\d\d$/, ''))} ${h < 12 ? '白天' : '晚上'}</th>
 <td>${esc(valueAt(wx, 'Weather', t) ?? '—')}</td><td>${pop.v.ProbabilityOfPrecipitation[i] ?? '—'}%</td>
 <td>${valueAt(mn, 'MinTemperature', t) ?? '—'}–${valueAt(mx, 'MaxTemperature', t) ?? '—'}°</td>
 <td>${valueAt(amn, 'MinApparentTemperature', t) ?? '—'}–${valueAt(amx, 'MaxApparentTemperature', t) ?? '—'}°</td>
-<td>${esc(valueAt(WD, 'WindDirection', t) ?? '')} ${valueAt(WS, 'BeaufortScale', t) ?? '—'}級</td></tr>`;
+<td>${esc(valueAt(WD, 'WindDirection', t) ?? '')} ${valueAt(WS, 'BeaufortScale', t) ?? '—'}級</td>
+<td>${valueAt(UV, 'UVIndex', t) ?? '—'}</td></tr>`;
   }).join('');
-  return `<div class="scroll"><table class="fc week"><thead><tr><th scope="col">時段</th><th scope="col">天氣</th><th scope="col">降雨機率</th><th scope="col">溫度</th><th scope="col">體感</th><th scope="col">風</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="scroll"><table class="fc week"><thead><tr><th scope="col">時段</th><th scope="col">天氣</th><th scope="col">降雨機率</th><th scope="col">溫度</th><th scope="col">體感</th><th scope="col">風</th><th scope="col">紫外線</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function minApparent(fc) {
@@ -519,9 +522,15 @@ export async function showPoint(lat, lon, opts = {}) {
     sampleLayers(lat, lon),
     spotPick ? getJSON(`spots/f/${spotPick.k}.json`).catch(() => null) : null,
     town ? getJSON(`towns/${town.TOWNCODE}.json`).catch(() => null) : null,
-    loadWind().catch(() => null), // model gusts for the forecast tables
+    Promise.all([loadWind(), loadAloft()]).catch(() => null), // model gusts for the forecast tables; winds aloft
     ...nearMtns.map(({ it }) => getJSON(`spots/f/${it.k}.json`).catch(() => null)),
   ]);
+  // Winds aloft, visibility and UV come from the chosen mountain forecast point, else the nearest one within 12 km.
+  const aloftSpot = spotPick?.c === 'mountain' ? { it: spotPick, d: 0 } : nearest(S.spots, lat, lon, { limit: 60, maxKm: 12 }).find((x) => x.it.c === 'mountain');
+  const aloftHtml = aloftSpot && S.aloft
+    ? aloftCard(S.aloft, aloftSpot.it.k, { ele: spotPick?.ele ?? peak?.ele ?? null,
+      note: aloftSpot.d > 0.5 ? `此處沒有登山預報，以下為最近的預報山頭「${aloftSpot.it.n}」（距此 ${aloftSpot.d.toFixed(1)} km${aloftSpot.it.ele ? `，海拔 ${aloftSpot.it.ele} m` : ''}）的數值。` : '' })
+    : '';
   const nearFc = nearMtns[0] && nearMtns[0].d <= 10 ? mtnFcs[0] : null; // wind of the nearest mountain, for the risk list
 
   const county = normCounty(town?.COUNTYNAME);
@@ -622,7 +631,8 @@ ${fcHtml ? html`<section class="card" aria-labelledby="h-fc"><h3 id="h-fc">地�
 ${townHtml && peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄰近鄉鎮預報</h3>
 <p class="note">此山不是氣象署登山預報點，以下為所在鄉鎮（${normCounty(town.COUNTYNAME)}${town.TOWNNAME}）的預報；山區氣溫通常較低、風較強，請一併參考鄰近測站。</p>${raw(townHtml)}</section>` : ''}
 ${townHtml && !peak ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : ''}
-${mtnFcHtml}`;
+${mtnFcHtml}
+${aloftHtml}${sunCard(lat, lon, spotPick?.ele ?? peak?.ele ?? station?.alt ?? null)}`;
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
   const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站（現在）'}</h3>
 ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}</section>`;

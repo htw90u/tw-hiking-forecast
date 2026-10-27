@@ -587,6 +587,79 @@ function serve() {
     await selectLayer('.chip[data-layer="radar"]');
   });
 
+  await check('sun times: sunrise / sunset formulas match known Taipei values', async () => {
+    const r = await page.evaluate(async () => {
+      const { sunTimes } = await import('./js/sun.js');
+      return { jun: sunTimes(25.033, 121.565, 2026, 6, 21), dec: sunTimes(25.033, 121.565, 2026, 12, 21),
+        hi: sunTimes(23.47, 120.957, 2026, 10, 27, 3952), lo: sunTimes(23.47, 120.957, 2026, 10, 27) };
+    });
+    const mins = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+    const near = (a, b) => Math.abs(mins(a) - mins(b)) <= 3;
+    assert(near(r.jun.rise, '05:04') && near(r.jun.set, '18:46'), `June solstice ${JSON.stringify(r.jun)}`);
+    assert(near(r.dec.rise, '06:34') && near(r.dec.set, '17:09'), `December solstice ${JSON.stringify(r.dec)}`);
+    const gain = mins(r.lo.rise) - mins(r.hi.rise);
+    assert(gain >= 4 && gain <= 8 && mins(r.hi.set) > mins(r.lo.set), `elevation effect ${JSON.stringify(r)}`);   // dip 0.0293 deg x sqrt(3952 m) = 1.84 deg
+    assert(mins(r.jun.dawn) < mins(r.jun.rise) && mins(r.jun.dusk) > mins(r.jun.set), 'civil twilight order');
+  });
+
+  await check('rain probability, UV and visibility layers; winds aloft; point card with sun times and aloft winds', async () => {
+    // Winds aloft come from the pipeline (Open-Meteo, CI only): give the app a synthetic file when the local build has none.
+    const real = fs.existsSync(path.join(SITE, 'data', 'aloft.json'));
+    if (!real) {
+      const a = await page.evaluate(async () => {
+        const { S } = await import('./js/state.js');
+        const w = S.wind || await (await fetch('data/wind.json')).json();
+        const pts = {};
+        w.mountains.slice(0, 40).forEach((m, i) => {
+          const n = w.times.length; const col = (f) => Array.from({ length: n }, (_, j) => f(j));
+          pts[m.k] = { vis: col((j) => [0.5, 4, 12, 30][(i + j) % 4]), uv: col(() => 6), fz: col(() => 4300),
+            ws: [800, 1500, 3000, 5600].map((_, li) => col((j) => 3 + ((i + j + li) % 12))), wd: [0, 1, 2, 3].map((li) => col((j) => (j * 20 + li * 40) % 360)),
+            z: [800, 1500, 3000, 5600].map((z) => col(() => z)) };
+        });
+        return { time: new Date().toISOString(), levels: [925, 850, 700, 500], times: w.times, points: pts };
+      });
+      await ctx.route(/data\/aloft\.json/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(a) }));
+    }
+    const filled = () => page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      let n = 0; S.layer.overlay.eachLayer((l) => { if (l.eachLayer) l.eachLayer((p) => { if (p.options.fillOpacity > 0) n += 1; }); });
+      return n;
+    });
+    await selectLayer('.chip[data-layer="pop"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('降雨機率'));
+    assert((await filled()) > 100, 'rain probability layer has no coloured townships');
+    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 9, 'rain probability colour bar');
+    await selectLayer('.chip[data-layer="uv"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('紫外線'));
+    assert((await filled()) > 100, 'UV layer has no coloured townships');
+    assert((await page.$$('#time-ctl [data-period]')).length >= 3, 'UV date buttons missing');
+    await selectLayer('.chip[data-layer="visib"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('能見度'));
+    await page.click('[data-vismode="fc"]');
+    await page.waitForSelector('.vis-mk');
+    assert((await page.$$('.vis-mk')).length >= 3, 'visibility forecast markers missing');
+    await selectLayer('.chip[data-layer="wind"]');
+    await page.click('[data-windmode="aloft"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('高空風'));
+    assert((await page.$$('#time-ctl [data-windlevel]')).length === 4, 'aloft level buttons missing');
+    await page.click('[data-windlevel="2"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('700 hPa'));
+    assert((await page.$$('.wind-mk')).length >= 3, 'aloft wind arrows missing');
+    await page.screenshot({ path: path.join(SHOTS, 'wind-aloft.png') });
+    await page.click('[data-windmode="fc"]');
+    const panel = await page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const al = await (await import('./js/aloft.js')).loadAloft();
+      const key = Object.keys(al.points)[0];
+      const sp = S.spots.find((x) => x.k === key);
+      await v.showPoint(sp.lat, sp.lon, { spotKey: key });
+      return { aloft: Boolean(document.querySelector('#h-aloft')), sun: Boolean(document.querySelector('#h-sun')), rows: document.querySelectorAll('#h-aloft ~ table.aloft tbody tr').length };
+    });
+    assert(panel.aloft && panel.sun && panel.rows === 4, `point panel cards ${JSON.stringify(panel)}`);
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
   await check('gusts (model) and apparent temperature in the wind layer, forecast tables and station card', async () => {
     const w = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'wind.json'), 'utf-8'));
     w.gustSource = { name: 'Open-Meteo', license: 'CC BY 4.0', time: new Date().toISOString() };

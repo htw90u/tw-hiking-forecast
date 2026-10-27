@@ -41,6 +41,24 @@ const LT_LABELS = ['10 分鐘內', '10–20 分鐘前', '20–40 分鐘前', '40
 const CWA_LT = ['#ff1744', '#ff9100', '#ffd600', '#9e9e9e'];
 const CVD_LT = ['#440154', '#31688e', '#35b779', '#bdbdbd'];
 
+// Rain probability (%): value = 3-hour probability; below 10 % stays transparent.
+const POP_BOUNDS = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+const CWA_POP = ['#e8f4fb', '#cfe8f7', '#aad4f0', '#82bde8', '#5aa3de', '#3b86d0', '#2468bd', '#164aa0', '#0b2f7a'];
+const POP_LABELS = POP_BOUNDS.map((b) => `${b}%`);
+const CONTRAST_POP = ['#ffffff', '#ffffff', '#ffff00', '#ffff00', '#ffaa00', '#ffaa00', '#ff0000', '#b00000', '#000000'];
+// UV index classes (WHO / CWA): 低量級 0-2, 中量級 3-5, 高量級 6-7, 過量級 8-10, 危險級 11+.
+const UV_BOUNDS = [0, 3, 6, 8, 11];
+const UV_LABELS = ['0–2', '3–5', '6–7', '8–10', '11+'];
+const CWA_UV = ['#4caf50', '#ffd600', '#ff9100', '#e53935', '#8e24aa'];
+const CVD_UV = ['#fde725', '#5ec962', '#21918c', '#3b528b', '#440154'];
+const CONTRAST_UV = ['#ffffff', '#ffff00', '#ffaa00', '#ff0000', '#000000'];
+// Visibility (km): fog below 1 km (CWA definition of 濃霧), mist 1-2 km.
+const VISIB_BOUNDS = [0, 1, 2, 5, 10, 20];
+const VISIB_LABELS = ['< 1', '1–2', '2–5', '5–10', '10–20', '≥ 20'];
+const CWA_VISIB = ['#7b1fa2', '#e53935', '#ff9800', '#ffd54f', '#81c784', '#4fc3f7'];
+const CVD_VISIB = ['#440154', '#3b528b', '#21918c', '#5ec962', '#b5de2b', '#fde725'];
+const CONTRAST_VISIB = ['#000000', '#b00000', '#ff0000', '#ffaa00', '#ffff00', '#ffffff'];
+
 // "大間距" (wide-interval) rainfall classes for large totals, up to 2000 mm. Chosen by the user only; the default
 // is CWA's original small-interval scale above. This ramp changes hue family every few classes (blue -> green ->
 // yellow/orange -> red -> purple -> magenta -> lilac -> blue-grey -> near black) so that classes above 300 mm
@@ -117,6 +135,9 @@ export const SCALES = {
   rainacc: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   wind: { cwa: zip(BF_BOUNDS, CWA_BF, BF_LABELS), cvd: zip(BF_BOUNDS, CVD_BF, BF_LABELS), contrast: zip(BF_BOUNDS, CONTRAST_BF, BF_LABELS) },
   ltage: { cwa: zip(LT_BOUNDS, CWA_LT, LT_LABELS), cvd: zip(LT_BOUNDS, CVD_LT, LT_LABELS), contrast: zip(LT_BOUNDS, CWA_LT, LT_LABELS) },
+  pop: { cwa: zip(POP_BOUNDS, CWA_POP, POP_LABELS), cvd: zip(POP_BOUNDS, resample(VIRIDIS17, 9), POP_LABELS), contrast: zip(POP_BOUNDS, CONTRAST_POP, POP_LABELS) },
+  uv: { cwa: zip(UV_BOUNDS, CWA_UV, UV_LABELS), cvd: zip(UV_BOUNDS, CVD_UV, UV_LABELS), contrast: zip(UV_BOUNDS, CONTRAST_UV, UV_LABELS) },
+  visib: { cwa: zip(VISIB_BOUNDS, CWA_VISIB, VISIB_LABELS), cvd: zip(VISIB_BOUNDS, CVD_VISIB, VISIB_LABELS), contrast: zip(VISIB_BOUNDS, CONTRAST_VISIB, VISIB_LABELS) },
   rainbig: { cwa: zip(BIG_BOUNDS, BIG_RAIN), cvd: zip(BIG_BOUNDS, BIG_CVD), contrast: zip(BIG_BOUNDS, BIG_CONTRAST) },
   intensity: {
     cwa: zip(INT_BOUNDS, CWA_INT, INT_LABELS), cvd: zip(INT_BOUNDS, CVD_INT, INT_LABELS), contrast: zip(INT_BOUNDS, CONTRAST_INT, INT_LABELS),

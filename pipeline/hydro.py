@@ -9,6 +9,7 @@ import urllib.request
 
 from .fetch import SSL_CTX, USER_AGENT
 
+OPENAPI = "https://opendata.wra.gov.tw/api/v2/openapi.get"
 CANDIDATES = {
     "debris": ["https://246.ardswc.gov.tw/webService/GetAlertData.ashx",
                "https://246.swcb.gov.tw/webService/GetAlertData.ashx"],
@@ -25,7 +26,26 @@ CANDIDATES = {
 }
 
 
+def probe_openapi(log, timeout=40):
+    """List the WRA open-data endpoints about water level, reservoirs and stations."""
+    try:
+        req = urllib.request.Request(OPENAPI, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as r:
+            doc = json.loads(r.read().decode("utf-8-sig"))
+    except Exception as e:  # noqa: BLE001
+        log.info(f"probe openapi: {type(e).__name__} {e}")
+        return
+    paths = doc.get("paths", {})
+    log.info(f"probe openapi: {len(paths)} paths")
+    for path, ops in paths.items():
+        text = json.dumps(ops, ensure_ascii=False)
+        if any(k in text for k in ("水位", "水庫", "放流", "測站", "Reservoir", "WaterLevel")):
+            summary = next((v.get("summary") for v in ops.values() if isinstance(v, dict) and v.get("summary")), "")
+            log.info(f"probe openapi: {path} | {summary}")
+
+
 def probe(log, timeout=40):
+    probe_openapi(log)
     for name, urls in CANDIDATES.items():
         for url in urls:
             try:

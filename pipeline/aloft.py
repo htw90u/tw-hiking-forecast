@@ -6,6 +6,7 @@ level. Values are kept for every 3rd hour (the same steps as the CWA forecasts).
 when the API is unreachable the previous file is kept for up to 12 hours.
 """
 import json
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -19,7 +20,8 @@ TZ = ZoneInfo("Asia/Taipei")
 LEVELS = [925, 850, 700, 500]
 REFRESH = timedelta(minutes=55)
 KEEP = timedelta(hours=12)
-CHUNK = 25  # locations per request (every location asks for 15 hourly variables)
+CHUNK = 20  # locations per request (every location asks for 15 hourly variables)
+TRIES = 4   # attempts per request: the API sometimes answers with a TLS handshake timeout
 HOURLY = ["visibility", "uv_index", "freezing_level_height"] + [
     f"{v}_{lv}hPa" for lv in LEVELS for v in ("wind_speed", "wind_direction", "geopotential_height")]
 
@@ -33,7 +35,7 @@ def points(out_dir: Path) -> list:
             if s.get("c") == "mountain"]
 
 
-def fetch_open_meteo(pts, timeout=90):
+def fetch_open_meteo(pts, timeout=40):
     """One Open-Meteo response object per point (hourly values, local time)."""
     out = []
     for i in range(0, len(pts), CHUNK):
@@ -43,12 +45,17 @@ def fetch_open_meteo(pts, timeout=90):
             "hourly": ",".join(HOURLY), "wind_speed_unit": "ms", "timezone": "Asia/Taipei", "forecast_days": 4,
         })
         req = urllib.request.Request(f"{API}?{q}", headers={"User-Agent": USER_AGENT})
-        try:
-            with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as r:
-                data = json.loads(r.read().decode("utf-8"))
-        except Exception as e:  # noqa: BLE001 - network, HTTP or JSON error
-            raise FetchError(f"Open-Meteo: {e}") from e
+        for attempt in range(TRIES):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                break
+            except Exception as e:  # noqa: BLE001 - network, HTTP or JSON error
+                if attempt == TRIES - 1:
+                    raise FetchError(f"Open-Meteo: {e}") from e
+                time.sleep(3 * 3 ** attempt)
         out.extend(data if isinstance(data, list) else [data])
+        time.sleep(0.5)
     if len(out) != len(pts):
         raise FetchError(f"Open-Meteo returned {len(out)} locations for {len(pts)}")
     return out
