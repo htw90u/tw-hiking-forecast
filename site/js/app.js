@@ -36,15 +36,34 @@ function thunderforestKey() {
   return (S.settings.tfKey || S.manifest?.config?.thunderforestKey || '').trim();
 }
 
+// Thunderforest maps stop answering when the free monthly tile quota is used up. After enough failed tiles the map switches
+// to the Taiwan e-map for a while (remembered, so a reload does not hammer the service again).
+const TF_RETRY_MS = 6 * 3600e3;
+const TF_OVER_KEY = 'hikingwx.tfOver.v1';
+
+function tfOverQuota(key) {
+  try {
+    const o = JSON.parse(localStorage.getItem(TF_OVER_KEY) || 'null');
+    return Boolean(o && o.key === key && Date.now() - o.t < TF_RETRY_MS);
+  } catch { return false; }
+}
+
+function markTfOverQuota(key) {
+  try { localStorage.setItem(TF_OVER_KEY, JSON.stringify({ key, t: Date.now() })); } catch { /* storage blocked: only this visit falls back */ }
+}
+
 function setBasemap() {
   const s = S.settings;
   let key = s.basemap;
   S.baseNotice = '';
-  // Thunderforest maps without an API key only return "API Key Required" tiles: show the topo map instead.
   const tf = BASEMAPS[key]?.tf;
   if (tf && !thunderforestKey()) {
-    key = 'topo';
-    S.baseNotice = `${tf} 需要 Thunderforest API key（設定 → 底圖），目前先以等高線地形圖顯示。`;
+    // Thunderforest maps without an API key only return "API Key Required" tiles.
+    key = 'emap';
+    S.baseNotice = `${tf} 需要 Thunderforest API key（設定 → 底圖），目前先以臺灣通用電子地圖顯示。`;
+  } else if (tf && tfOverQuota(key)) {
+    key = 'emap';
+    S.baseNotice = `Thunderforest 圖磚額度已用完或暫時無法載入，已改用臺灣通用電子地圖（約 6 小時後再試）。`;
   }
   const def = BASEMAPS[key] || BASEMAPS.topo;
   const url = key === 'custom' ? s.customTile : def.url;
@@ -55,9 +74,17 @@ function setBasemap() {
       crossOrigin: !def.tf, apikey: thunderforestKey() });
     if (def.tf) {
       let errors = 0;
+      let loads = 0;
+      let tripped = false;
+      baseLayer.on('tileload', () => { loads += 1; });
       baseLayer.on('tileerror', () => {
         errors += 1;
-        if (errors === 6) { S.baseNotice = `${def.tf} 圖磚載入失敗：請確認 API key 是否正確或額度是否用完。`; updateStatus(); }
+        // Several failures and (almost) no successes: the quota is used up, the key is wrong or the service is down.
+        if (!tripped && errors >= 4 && loads <= errors / 3) {
+          tripped = true;
+          markTfOverQuota(key);
+          setBasemap();
+        }
       });
     }
     baseLayer.addTo(S.map);
@@ -696,7 +723,7 @@ function openSettings() {
   body.querySelector('#set-smooth').addEventListener('change', (e) => { s.smooth = e.target.checked; save(); showLayer(S.layer.id, { keepFrame: true }); });
   body.querySelector('#set-bold').addEventListener('change', (e) => { s.boldText = e.target.checked; save(); });
   body.querySelector('#set-motion').addEventListener('change', (e) => { s.reduceMotion = e.target.checked; save(); if (s.reduceMotion) stopAnimation(); });
-  body.querySelector('#set-base').addEventListener('change', (e) => { s.basemap = e.target.value; save(); setBasemap(); });
+  body.querySelector('#set-base').addEventListener('change', (e) => { s.basemap = e.target.value; try { localStorage.removeItem(TF_OVER_KEY); } catch { /* ignore */ } save(); setBasemap(); });
   body.querySelector('#set-custom').addEventListener('change', (e) => {
     const v = e.target.value.trim();
     if (v && !/^https:\/\/.+\{z\}.+\{x\}.+\{y\}|^https:\/\/.+\{z\}.+\{y\}.+\{x\}/.test(v)) { e.target.setCustomValidity('網址需為 https 並包含 {z} {x} {y}'); e.target.reportValidity(); return; }

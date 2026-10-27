@@ -192,8 +192,8 @@ function stationLine(s, d) {
   const parts = [];
   if (s.T !== undefined) parts.push(`${fmtNum(s.T)}°C`);
   if (s.RH !== undefined) parts.push(`濕度 ${fmtNum(s.RH, 0)}%`);
-  if (s.WS !== undefined) parts.push(`風 ${windDir(s.WD)} ${fmtNum(s.WS)}`);
-  if (s.G !== undefined) parts.push(`陣風 ${fmtNum(s.G)}`);
+  if (s.WS !== undefined) parts.push(`風 ${windDir(s.WD)} ${fmtNum(s.WS)} m/s（${beaufort(s.WS)}級）`);
+  if (s.G !== undefined) parts.push(`陣風 ${fmtNum(s.G)} m/s（${beaufort(s.G)}級）`);
   if (s.R1h !== undefined) parts.push(`時雨量 ${fmtNum(s.R1h)}`);
   if (s.R24h !== undefined) parts.push(`24h ${fmtNum(s.R24h)}`);
   return html`<li><button class="link" data-station="${s.id}">${s.n}</button>
@@ -455,19 +455,25 @@ async function renderHistory(container, sid, range) {
       title: '風速', unit: 'm/s', times: tt, zeroBase: true,
       series: [{ label: '平均風', values: WS || [], kind: 'line', cls: 's3' }, { label: '陣風', values: G || [], kind: 'line', cls: 's4', dash: true }],
     });
+    const mx = (a) => { const v = (a || []).filter((x) => x !== null && x !== undefined); return v.length ? Math.max(...v) : null; };
+    const [mw, mg] = [mx(WS), mx(G)];
+    out += `<p class="note">${[mw !== null ? `平均風最大 ${fmtNum(mw)} m/s（${beaufort(mw)}級）` : null, mg !== null ? `陣風最大 ${fmtNum(mg)} m/s（${beaufort(mg)}級）` : null].filter(Boolean).join('・')}。數據表另有逐時風向。</p>`;
   }
   if (RH && RH.some((v) => v !== null)) out += chart({ title: '相對濕度', unit: '%', times: tt, series: [{ label: '濕度', values: RH, kind: 'line', cls: 's1' }] });
-  const cols = [['氣溫°C', T], ['時雨量mm', R], ['風速m/s', WS], ['陣風m/s', G], ['濕度%', RH]].filter(([, v]) => v).map(([label, values]) => ({ label, values }));
+  const WD = pick('WD');
+  const lvl = (a) => a && a.map((v) => (v === null || v === undefined ? null : beaufort(v)));
+  const dirs = WD && WD.map((v) => (v === null || v === undefined ? null : windDir(v)));
+  const cols = [['氣溫°C', T], ['時雨量mm', R], ['風向', dirs], ['風速m/s', WS], ['風力級', lvl(WS)], ['陣風m/s', G], ['陣風級', lvl(G)], ['濕度%', RH]].filter(([, v]) => v).map(([label, values]) => ({ label, values }));
   out += dataTable(tt, cols);
   box.innerHTML = out || '<p>此期間沒有資料。</p>';
 }
 
 function historyBlock(stations, selected) {
-  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km${it.k === 'rain' ? '・雨量站' : ''}）</option>`).join('');
+  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站' : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
-<label class="field">測站（距離） <select id="hist-sid">${opts}</select></label>
+<label class="field">測站（距離・海拔） <select id="hist-sid">${opts}</select></label>
 <div class="seg" role="radiogroup" aria-label="期間">
 <button class="seg-btn" role="radio" aria-checked="true" data-range="24">24 小時</button>
 <button class="seg-btn" role="radio" aria-checked="false" data-range="72">3 天</button>

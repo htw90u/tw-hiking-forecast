@@ -800,6 +800,9 @@ function serve() {
     assert(await page.$eval('details.sub[data-sub="hist"]', (d) => d.open), 'the observation data section should be open by default');
     const titles = await page.$$eval('#hist-out figure.chart figcaption strong', (e) => e.map((x) => x.textContent));
     assert(['溫度', '風速', '相對濕度'].every((t) => titles.includes(t)), `charts ${titles}`);
+    assert(/海拔/.test(await page.$eval('#hist-sid', (e) => e.selectedOptions[0].textContent)), 'station elevation missing in the observation selector');
+    const head = await page.$$eval('#hist-out details.tbl th[scope="col"]', (e) => e.map((x) => x.textContent));
+    assert(['風向', '風速m/s', '風力級', '陣風m/s', '陣風級'].every((c) => head.includes(c)), `data table columns ${head}`);
     const line = await page.$eval('[data-card="stations"] ul.stations, [data-card="station"]', (e) => e.textContent);
     assert(line.includes('%') || line.includes('濕度') || (await page.$('[data-card="station"] .tile')), 'humidity missing from the station values');
     await page.click('#sheet-close').catch(() => {});
@@ -1104,7 +1107,7 @@ function serve() {
     await page.click('#sheet-close');
   });
 
-  await check('OpenCycleMap without a key falls back to the topo map with a notice', async () => {
+  await check('OpenCycleMap without a key falls back to the Taiwan e-map with a notice', async () => {
     await page.click('#btn-settings');
     await page.fill('#set-tfkey', '');
     await page.dispatchEvent('#set-tfkey', 'change');
@@ -1196,6 +1199,40 @@ function serve() {
     assert((await page.textContent('.base-note')).includes('Outdoors'), 'keyless notice does not name the map');
     await page.click('#btn-settings');
     await page.selectOption('#set-base', 'topo');
+    await page.keyboard.press('Escape');
+    await ctx.unroute(/tile\.thunderforest\.com/);
+  });
+
+  await check('Thunderforest quota used up: the map falls back to the Taiwan e-map and remembers it for a while', async () => {
+    const seen = [];
+    await ctx.route(/tile\.thunderforest\.com/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 429, contentType: 'text/plain', body: 'quota exceeded' }); });
+    await page.evaluate(() => localStorage.removeItem('hikingwx.tfOver.v1'));
+    await page.click('#btn-settings');
+    await page.waitForSelector('#set-tfkey');
+    await page.fill('#set-tfkey', 'QUOTAKEY');                // a key no earlier test used, so no tile comes from the browser cache
+    await page.dispatchEvent('#set-tfkey', 'change');
+    await page.selectOption('#set-base', 'outdoors');
+    await page.keyboard.press('Escape');
+    const state = () => page.evaluate(() => ({ note: document.querySelector('.base-note')?.textContent || '', over: localStorage.getItem('hikingwx.tfOver.v1'), base: JSON.parse(localStorage.getItem('hikingwx.settings.v1') || '{}').basemap,
+      imgs: [...document.querySelectorAll('.leaflet-tile-pane img')].map((i) => i.src.slice(8, 40)).slice(0, 4) }));
+    try {
+      await page.waitForFunction(() => document.querySelector('.base-note')?.textContent.includes('額度'), null, { timeout: 20000 });
+      await page.waitForFunction(() => [...document.querySelectorAll('.leaflet-tile-pane img')].some((i) => i.src.includes('nlsc.gov.tw')), null, { timeout: 15000 });
+    } catch (e) { throw new Error(`${e.message.split('\n')[0]} state=${JSON.stringify(await state())} requests=${seen.length}`); }
+    assert((await page.evaluate(() => Boolean(localStorage.getItem('hikingwx.tfOver.v1')))), 'the fallback was not remembered');
+    seen.length = 0;
+    await page.reload();                                      // within the retry window: no more requests to the exhausted service
+    await page.waitForSelector('body.ready');
+    await page.waitForTimeout(1500);
+    assert(seen.length === 0, `Thunderforest was asked again after the quota fallback: ${seen.length} requests`);
+    assert((await page.textContent('.base-note')).includes('額度'), 'notice missing after reload');
+    await page.click('#btn-settings');
+    await page.selectOption('#set-base', 'topo');             // choosing a map clears the fallback
+    await page.keyboard.press('Escape');
+    assert((await page.evaluate(() => localStorage.getItem('hikingwx.tfOver.v1'))) === null, 'choosing a map should clear the fallback');
+    await page.click('#btn-settings');
+    await page.fill('#set-tfkey', '');
+    await page.dispatchEvent('#set-tfkey', 'change');
     await page.keyboard.press('Escape');
     await ctx.unroute(/tile\.thunderforest\.com/);
   });

@@ -8,7 +8,8 @@ export const DEFAULTS = {
   layerBar: true,        // bottom layer bar shown (false = collapsed for a larger map)
   theme: 'auto',         // auto | light | dark | contrast
   palette: 'cwa',        // cwa | cvd (color-vision-deficiency safe) | contrast
-  basemap: 'topo',       // topo | emap | photo | osm | custom
+  basemap: 'outdoors',   // outdoors | landscape | cycle | topo | emap | photo | osm | custom (Thunderforest maps fall back to emap)
+  basemapVer: 2,         // bumped when the default basemap changes: everyone gets the new default once
   customTile: '',
   tfKey: '',             // personal Thunderforest API key (OpenCycleMap); overrides the site key
   reduceMotion: false,
@@ -34,6 +35,8 @@ export function loadSettings() {
   // Older saves had every label off by default: take the new defaults once.
   s.labels = saved.labelsVer === DEFAULTS.labelsVer ? { ...DEFAULTS.labels, ...(saved.labels || {}) } : { ...DEFAULTS.labels };
   s.labelsVer = DEFAULTS.labelsVer;
+  if (saved.basemapVer !== DEFAULTS.basemapVer) s.basemap = DEFAULTS.basemap;   // new default basemap (taken once)
+  s.basemapVer = DEFAULTS.basemapVer;
   s.thresholds = { ...DEFAULTS.thresholds, ...(saved.thresholds || {}) };
   if (s.layer === 'rainday') s.layer = 'rainacc'; // renamed layer
   if (s.rainSpacing !== 'big') s.rainSpacing = 'small'; // the former 'auto' switched scales by itself
