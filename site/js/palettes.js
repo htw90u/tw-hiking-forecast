@@ -91,14 +91,24 @@ function ramp(stops, from, to, step) {
 // Infrared: cold cloud tops bright, warm surface dark (like CWA's B/W IR image).
 // Stretched like a weather-service IR image: warm sea / land (20-35 °C) is dark, low cloud mid grey, high cloud white.
 const IR_GRAY = ramp([[-90, [255, 255, 255]], [-60, [246, 246, 246]], [-30, [208, 208, 208]], [0, [140, 140, 140]], [20, [70, 70, 70]], [40, [12, 12, 12]]], -90, 40, 2);
-// Enhanced IR: grey for warm/low clouds, colours for cold convective tops.
-const IR_ENH = ramp([[-90, [255, 255, 255]], [-80, [255, 0, 255]], [-70, [255, 0, 0]], [-60, [255, 160, 0]],
-  [-50, [255, 255, 0]], [-40, [0, 200, 0]], [-30, [0, 120, 255]], [-20, [150, 210, 255]], [-19.9, [210, 210, 210]], [40, [20, 20, 20]]], -90, 40, 2);
+// Enhanced IR in CWA's colours: the whole range is coloured, dark blue for the warm sea and land, lighter blue and
+// cyan for low cloud, green around 0 to -30 °C, yellow, orange and red for cold convective tops. Down to about
+// -5 °C the stops were read off CWA's own colour image (O-C0042-006) matched pixel by pixel with the numeric
+// brightness temperature of the same time; the colder end follows the usual convention (red, magenta, white).
+const IR_ENH = ramp([[-90, [255, 255, 255]], [-65, [255, 255, 255]], [-55, [255, 0, 255]], [-46, [190, 0, 0]], [-40, [255, 0, 0]],
+  [-37, [255, 140, 0]], [-34, [255, 255, 0]], [-30, [120, 230, 0]], [-20, [7, 225, 7]], [-8, [1, 171, 6]], [-2, [0, 160, 0]],
+  [0, [0, 155, 130]], [1.5, [0, 150, 250]], [4, [0, 146, 255]], [6, [0, 137, 255]], [8, [0, 128, 255]], [10, [0, 117, 255]],
+  [12, [0, 106, 255]], [14, [0, 93, 255]], [16, [0, 78, 255]], [18, [0, 69, 255]], [20, [0, 59, 255]], [22, [0, 49, 255]],
+  [24, [0, 44, 253]], [25, [0, 1, 239]], [27, [0, 1, 221]], [40, [0, 0, 150]]], -90, 40, 1);
 const IR_CVD = ramp([[-90, [253, 231, 37]], [-60, [94, 201, 98]], [-40, [33, 145, 140]], [-20, [59, 82, 139]],
   [-19.9, [200, 200, 200]], [40, [20, 20, 20]]], -90, 40, 2);
 const IR_CONTRAST = ramp([[-90, [255, 255, 0]], [-40, [255, 255, 255]], [-20, [160, 160, 160]], [40, [0, 0, 0]]], -90, 40, 2);
 // Visible albedo (fraction): dark sea -> bright cloud, with a gamma to lift thin cloud.
-const VIS_GRAY = ramp([[0, [10, 10, 10]], [0.15, [90, 90, 90]], [0.4, [180, 180, 180]], [0.8, [255, 255, 255]]], 0, 0.8, 0.02);
+// Grey levels follow CWA's visible image (measured against O-C0042-008 for albedo 0 to 0.55): dark sea about 30, a steep
+// rise through thin cloud, flattening for thick cloud; thicker cloud is extended to white.
+const VIS_STOPS = [[0, 30], [0.05, 49], [0.1, 61], [0.15, 76], [0.2, 89], [0.25, 99], [0.3, 108], [0.35, 116], [0.4, 123],
+  [0.45, 129], [0.5, 134], [0.6, 150], [0.7, 178], [0.8, 215], [1, 255]];
+const VIS_GRAY = ramp(VIS_STOPS.map(([v, g]) => [v, [g, g, g]]), 0, 1, 0.02);
 
 export const SCALES = {
   rain: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },

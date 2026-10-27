@@ -587,3 +587,25 @@ def test_missing_peak_elevations_estimated(tmp_path):
     peaks.build(tmp_path, log, now, fetch=lambda _log: OVERPASS_SAMPLE, lists_dir=lists)
     assert any(r[3] is None for r in json.loads((tmp_path / "peaks.json").read_text(encoding="utf-8"))["peaks"])
     log.close()
+
+
+def test_satellite_bilinear_resample():
+    from pipeline import satellite
+    # A flat 4x4 'image' with a gradient in x; geo as a trivial projection is not available, so test the sampler through a
+    # stub lcc: identity-like geo where lcc_forward is replaced by a linear map.
+    arr = np.tile(np.arange(4, dtype=np.float32), (4, 1))          # value = column index
+    arr[0, 0] = np.nan                                            # a missing pixel must not poison neighbours
+    geo = {"x0": 0.0, "y0": 4.0, "sx": 1.0, "sy": 1.0}
+    orig = satellite.lcc_forward
+    satellite.lcc_forward = lambda lon, lat, g: (lon, lat)       # x = lon, y = lat (metres == degrees here)
+    try:
+        grid = {"lon0": 0.5, "lat0": 0.5, "res": 0.5, "nx": 7, "ny": 7}
+        out = satellite.resample(arr, geo, grid)
+        near = satellite.resample(arr, geo, grid, bilinear=False)
+    finally:
+        satellite.lcc_forward = orig
+    # cell centre at x = 2.0 is the pixel boundary between columns 1 and 2: bilinear gives 1.5, nearest gives a whole number
+    j = int(round((1.5 - 0.5) / 0.5)); i = int(round((2.0 - 0.5) / 0.5))
+    assert abs(out[j, i] - 1.5) < 1e-5 and near[j, i] in (1.0, 2.0)
+    assert np.isfinite(out[~np.isnan(out)]).all() and not np.isnan(out[j, i])
+    assert np.isnan(out[0, 0]) or abs(out[0, 0]) < 4              # outside / edge handled without errors

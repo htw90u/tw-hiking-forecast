@@ -14,8 +14,9 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-# Output grid (cell centres) around Taiwan, WGS84.
-GRID = {"lon0": 116.0, "lat0": 19.0, "res": 0.02, "nx": 551, "ny": 476}
+# Output grid (cell centres) around Taiwan, WGS84. The source pixels are about 1.9 km, so 0.01 degree (1.1 km) cells
+# with bilinear sampling keep all the detail (0.02 degree nearest-pixel sampling threw part of it away).
+GRID = {"lon0": 116.0, "lat0": 19.0, "res": 0.01, "nx": 1101, "ny": 951}
 
 A = 6378137.0
 INV_F = 298.257223563
@@ -59,18 +60,38 @@ def lcc_forward(lon, lat, geo):
     return geo["fe"] + rho * np.sin(theta), geo["fn"] + rho0 - rho * np.cos(theta)
 
 
-def resample(arr, geo, grid=GRID):
-    """Nearest-pixel resample to the lon/lat grid (row 0 = south); NaN outside the image."""
+def resample(arr, geo, grid=GRID, bilinear=True):
+    """Resample converted values (NaN = no data) to the lon/lat grid (row 0 = south); NaN outside the image.
+
+    Bilinear between the four nearest source pixel centres (NaN neighbours are left out of the average), so the
+    picture is smooth instead of blocky; bilinear=False takes the single nearest pixel.
+    """
     lons = grid["lon0"] + np.arange(grid["nx"]) * grid["res"]
     lats = grid["lat0"] + np.arange(grid["ny"]) * grid["res"]
     lon2, lat2 = np.meshgrid(lons, lats)
     x, y = lcc_forward(lon2, lat2, geo)
-    col = np.floor((x - geo["x0"]) / geo["sx"]).astype(int)
-    row = np.floor((geo["y0"] - y) / geo["sy"]).astype(int)
+    fc = (x - geo["x0"]) / geo["sx"] - 0.5      # fractional pixel index of the pixel centres
+    fr = (geo["y0"] - y) / geo["sy"] - 0.5
     h, w = arr.shape
-    ok = (col >= 0) & (col < w) & (row >= 0) & (row < h)
     out = np.full(lon2.shape, np.nan, np.float32)
-    out[ok] = arr[row[ok], col[ok]]
+    if not bilinear:
+        col, row = np.floor(fc + 0.5).astype(int), np.floor(fr + 0.5).astype(int)
+        ok = (col >= 0) & (col < w) & (row >= 0) & (row < h)
+        out[ok] = arr[row[ok], col[ok]]
+        return out
+    c0, r0 = np.floor(fc).astype(int), np.floor(fr).astype(int)
+    tx, ty = fc - c0, fr - r0
+    inside = (fc >= -0.5) & (fc <= w - 0.5) & (fr >= -0.5) & (fr <= h - 0.5)
+    num = np.zeros(lon2.shape, np.float64)
+    den = np.zeros(lon2.shape, np.float64)
+    for dc, dr, wt in ((0, 0, (1 - tx) * (1 - ty)), (1, 0, tx * (1 - ty)), (0, 1, (1 - tx) * ty), (1, 1, tx * ty)):
+        c, r = np.clip(c0 + dc, 0, w - 1), np.clip(r0 + dr, 0, h - 1)
+        v = arr[r, c]
+        good = ~np.isnan(v)
+        num += np.where(good, v * wt, 0.0)
+        den += np.where(good, wt, 0.0)
+    ok = inside & (den > 0.5)       # keep cells whose neighbourhood is mostly valid
+    out[ok] = (num[ok] / den[ok]).astype(np.float32)
     return out
 
 

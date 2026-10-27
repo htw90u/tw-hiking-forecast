@@ -116,6 +116,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   document.querySelectorAll('.chip[data-layer]').forEach((b) => {
     b.setAttribute('aria-checked', String(b.dataset.layer === id));
   });
+  const slider = document.getElementById('opacity');
+  if (slider) { slider.value = String(layerOpacity(id)); slider.setAttribute('aria-valuetext', `${Math.round(layerOpacity(id) * 100)}%`); }
   renderTimeControl();
   try {
     if (def.kind === 'none') { clearOverlay(); renderLegend(); return; }
@@ -139,7 +141,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
       const [w, s, e, n] = g.bounds;
       return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
-        { opacity: S.settings.opacity, interactive: false, className: 'wx-grid' });
+        { opacity: layerOpacity(id), interactive: false, className: 'wx-grid' });
     }));
     if (!S.layer.hidden) ov.addTo(S.map);
     clearOverlay();
@@ -159,7 +161,7 @@ async function showSatellite() {
   const im = imgs[Math.min(S.layer.frame, imgs.length - 1)];
   const [w, s, e, n] = im.bounds;
   const ov = L.imageOverlay(`data/${im.img}?t=${encodeURIComponent(im.time)}`, [[s, w], [n, e]], {
-    opacity: S.settings.opacity, interactive: false, alt: `${im.label}衛星雲圖 ${fmtTime(im.time)}`,
+    opacity: layerOpacity('sat'), interactive: false, alt: `${im.label}衛星雲圖 ${fmtTime(im.time)}`,
   });
   ov.addTo(S.map);
   clearOverlay();
@@ -344,8 +346,13 @@ export function setWeatherVisible(on) {
   if (!on && S.map.hasLayer(ov)) S.map.removeLayer(ov);
 }
 
+/** Weather layers default to 70 % so the map shows through; the satellite picture defaults to 100 % (it is a picture, not a thin overlay). */
+export function layerOpacity(id = S.layer.id) {
+  return id === 'sat' ? (S.settings.satOpacity ?? 1) : S.settings.opacity;
+}
+
 export function setOpacity(v) {
-  S.settings.opacity = v;
+  if (S.layer.id === 'sat') S.settings.satOpacity = v; else S.settings.opacity = v;
   const ov = S.layer.overlay;
   if (!ov) return;
   if (ov.setOpacity) ov.setOpacity(v);

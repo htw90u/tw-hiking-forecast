@@ -17,6 +17,7 @@ export const DEFAULTS = {
   ui: 'text',            // text (readable labels) | icon (icon tiles and tab bar)
   layer: 'radar',
   opacity: 0.7,
+  satOpacity: 1,         // satellite picture opacity (own value: see layers.js layerOpacity)
   overlays: { stations: true, mountains: true, peaks: true, spots: false, quakes: true, typhoon: true },
   labels: { mountains: true, peaks: true, spots: true, stations: false }, // names drawn on the map
   labelsVer: 2,          // bumped when the label defaults change

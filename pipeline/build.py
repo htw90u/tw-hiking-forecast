@@ -549,7 +549,7 @@ class Builder:
                 meta = self.f.get_json(f"Observation/{ds_id}.json")["cwaopendata"]["dataset"]
                 t = meta.get("ObsTime", {}).get("Datetime") or meta.get("DateTime")
                 raw, geo_ = satellite.read_geotiff(self.f.get(f"Observation/{ds_id}.gtif.zip").read_bytes())
-                arr = conv(satellite.resample(raw, geo_))
+                arr = satellite.resample(conv(raw), geo_)   # convert first: invalid raw values become NaN, then bilinear
                 g = satellite.GRID
                 grids.write_layer(self.out / "grids", f"sat_{key}", {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"],
                                                                       "res": g["res"]}, scale, offset,
