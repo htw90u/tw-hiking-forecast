@@ -41,7 +41,7 @@ pipeline/ (Python)  ── 轉成精簡格式 ──►  site/data/  ──►  
    ├ satellite.py 向日葵亮度溫度／反照率 GeoTIFF（蘭伯特投影）→ 經緯度網格
    ├ stations.py 測站即時值 + 逐時歷史封存（月檔 CSV.gz）
    ├ forecast.py 景點/鄉鎮預報
-   ├ gusts.py    陣風預報（Open-Meteo 數值模式，每小時更新；氣象署預報沒有陣風）
+   ├ gusts.py    鄉鎮陣風預報（Open-Meteo 數值模式，每小時更新；氣象署預報沒有陣風；登山預報點不提供，因模式網格高度遠低於山頂會低估）
    ├ hydro.py    水利署河川水位／水庫水情與水保署土石流警戒（hydro.json）
    ├ wrf.py      氣象署 WRF 區域模式（M-A0061 GRIB2，pygrib）高空風場，新模式起報才下載（wrf.json）
    ├ aloft.py    登山預報點高空風、能見度、紫外線、凍結高度（Open-Meteo 數值模式，每小時更新；aloft.json）

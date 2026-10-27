@@ -69,7 +69,7 @@ def build(out_dir: Path) -> dict:
     mtns = []
     for f in sorted((out_dir / "spots" / "f").glob("mountain-*.json")):
         doc = json.loads(f.read_text(encoding="utf-8"))
-        mtns.append((doc, _series(doc, gp.get(doc.get("k")))))
+        mtns.append((doc, _series(doc)))   # no model gusts at summits (see gusts.points)
     times = sorted({t for _, s in list(towns.values()) + mtns for t in s})
     if not times:
         raise ValueError("no wind forecast in the township / spot files")

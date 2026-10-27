@@ -1,4 +1,4 @@
-"""Wind-gust forecasts for the mountain forecast points and townships from Open-Meteo.
+"""Wind-gust forecasts for the townships from Open-Meteo.
 
 CWA's township and hiking forecasts give mean wind only, so gusts come from the
 Open-Meteo forecast API (numerical weather models, CC BY 4.0, free for non-commercial
@@ -22,13 +22,9 @@ CHUNK = 100  # locations per request
 
 
 def points(out_dir: Path) -> list:
-    """[(key, lat, lon)]: mountain forecast spots ('mountain-D001') and townships (geocode)."""
+    """[(geocode, lat, lon)] of the townships. Mountain forecast points are left out on purpose: the model's grid cell (about 10 km, its
+    own terrain height) is far lower and smoother than a summit, so its gusts come out below the CWA mean wind there."""
     pts = []
-    idx = out_dir / "spots" / "index.json"
-    if idx.exists():
-        for s in json.loads(idx.read_text(encoding="utf-8")).get("spots", []):
-            if s.get("c") == "mountain":
-                pts.append((s["k"], s["lat"], s["lon"]))
     for f in sorted((out_dir / "towns").glob("*.json")):
         d = json.loads(f.read_text(encoding="utf-8"))
         try:

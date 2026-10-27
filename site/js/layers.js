@@ -302,7 +302,7 @@ async function showWind(keepFrame) {
   finishOverlay(ov);
   const t = w.times[i];
   renderLegend({ label: '風力預報（蒲福風級）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: w.issue, kindOverride: 'wind',
-    note: `色塊為鄉鎮預報（平地），箭頭為登山預報點，指向風吹去的方向，數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布。` : '目前沒有陣風預報資料。'}6 級以上山區行走困難，8 級以上請避免稜線。` });
+    note: `色塊為鄉鎮預報（平地），箭頭為登山預報點，指向風吹去的方向，數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風僅提供鄉鎮（平地），為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布；登山預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。` : '目前沒有陣風預報資料。'}6 級以上山區行走困難，8 級以上請避免稜線。` });
   renderTimeControl();
 }
 

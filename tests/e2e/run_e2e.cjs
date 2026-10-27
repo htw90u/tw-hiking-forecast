@@ -859,25 +859,37 @@ function serve() {
     const w = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'wind.json'), 'utf-8'));
     w.gustSource = { name: 'Open-Meteo', license: 'CC BY 4.0', time: new Date().toISOString() };
     const fill = (cols) => { cols[3] = cols[0].map((v) => (v === null ? null : v * 2 + 1)); };
-    Object.values(w.towns).forEach(fill);
-    w.mountains.forEach((m) => fill(m.w));
+    Object.values(w.towns).forEach(fill);                 // model gusts exist for townships only (summits get none)
     await ctx.route(/data\/wind\.json/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(w) }));
     await page.reload();
     await page.waitForSelector('body.ready');
     const tip = await page.evaluate(async () => {
       const { S } = await import('./js/state.js'); const l = await import('./js/layers.js');
       await l.loadWind();
+      const cols = Object.values(S.wind.towns).find((c) => c[0].some((v) => v !== null));
+      const i = cols[0].findIndex((v) => v !== null);
       const m = S.wind.mountains.find((x) => x.w[0].some((v) => v !== null));
-      const i = m.w[0].findIndex((v) => v !== null);
-      return l.windText(m.w, i);
+      return { town: l.windText(cols, i), mountain: l.windText(m.w, m.w[0].findIndex((v) => v !== null)) };
     });
-    assert(tip.includes('陣風') && tip.includes('體感'), `wind tooltip text: ${tip}`);
-    const spot = await page.evaluate(async () => (await import('./js/state.js')).S.wind.mountains[0]);
-    await page.evaluate(async (sp) => { const v = await import('./js/views.js'); await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k }); }, spot);
+    assert(tip.town.includes('陣風') && tip.town.includes('體感'), `township wind tooltip text: ${tip.town}`);
+    assert(!tip.mountain.includes('陣風'), `a summit must not show model gusts: ${tip.mountain}`);
+    // a township point shows the gust row with its source; a summit's own forecast table has none
+    const tp = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const code = Object.keys(S.wind.towns).find((c) => S.wind.towns[c][0].some((v) => v !== null));
+      const d = await (await fetch(`data/towns/${code}.json`)).json();
+      return { lat: Number(d.lat), lon: Number(d.lon) };
+    });
+    await page.evaluate(async (p) => { const v = await import('./js/views.js'); await v.showPoint(p.lat, p.lon); }, tp);
     await page.waitForSelector('#sheet.open table.fc');
     const t = await page.textContent('#sheet-body');
-    assert(t.includes('陣風') && t.includes('Open-Meteo'), 'gust row / source note missing from the forecast table');
+    assert(t.includes('陣風') && t.includes('Open-Meteo') && t.includes('平地'), 'gust row / source note missing from the township forecast table');
     assert(t.includes('體感'), 'apparent temperature missing');
+    await page.click('#sheet-close');
+    const spot = await page.evaluate(async () => (await import('./js/state.js')).S.wind.mountains[0]);
+    await page.evaluate(async (sp) => { const v = await import('./js/views.js'); await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k }); }, spot);
+    await page.waitForSelector('#sheet.open [data-panel="d3"] table.fc');
+    assert(!(await page.textContent('[data-card="fc"] [data-panel="d3"] table.fc')).includes('陣風'), 'a mountain forecast table must not carry model gusts');
     await page.click('#sheet-close');
     const st = await page.evaluate(async () => (await import('./js/state.js')).S.stations.find((s) => s.T !== undefined && s.RH !== undefined && s.WS !== undefined));
     if (st) {

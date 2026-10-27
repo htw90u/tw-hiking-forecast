@@ -248,7 +248,7 @@ function gustSeries(key) {
   const w = S.wind;
   if (!w || !w.gustSource || !key) return null;
   const cols = w.mountains.find((m) => m.k === key)?.w || w.towns[key];
-  if (!cols || !cols[3]) return null;
+  if (!cols || !cols[3] || !cols[3].some((g) => g !== null)) return null;
   return Object.fromEntries(w.times.map((t, i) => [t, cols[3][i]]));
 }
 
@@ -327,7 +327,7 @@ function minApparent(fc) {
   return vals.length ? Math.min(...vals) : null;
 }
 
-const GUST_NOTE = '<p class="note">陣風：Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布；氣象署鄉鎮與登山預報只提供平均風。</p>';
+const GUST_NOTE = '<p class="note">陣風：Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布，為鄉鎮所在約 10 km 網格的平地值；氣象署鄉鎮與登山預報只提供平均風，山區預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。</p>';
 
 /** One-line summary of a hiking forecast for the next 24 h: weather, temperature, rain chance, wind. */
 function mtnBrief(fc, key) {
@@ -473,7 +473,7 @@ async function renderHistory(container, sid, range) {
 }
 
 function historyBlock(stations, selected) {
-  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站' : ''}）</option>`).join('');
+  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站，無風力' : it.WS === undefined ? '・無風力觀測' : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
@@ -591,7 +591,8 @@ export async function showPoint(lat, lon, opts = {}) {
   const nearMtns = spotPick || opts.stationId ? [] : nearest(S.spots, lat, lon, { limit: 60, maxKm: 15 }).filter((x) => x.it.c === 'mountain').slice(0, 3);
   const stationsNear = nearest(S.stations, lat, lon, { limit: 8, maxKm: 35 });
   const weatherSt = stationsNear.filter((x) => x.it.k !== 'rain');
-  const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
+  // The observation charts start with the nearest station that measures wind (then temperature), so wind and gusts are there when any station near has them.
+  const histDefault = opts.stationId || (weatherSt.find((x) => x.it.WS !== undefined && x.it.T !== undefined) || weatherSt.find((x) => x.it.WS !== undefined) || weatherSt[0])?.it.id || stationsNear[0]?.it.id;
 
   // The panel waits only for what it needs to be useful: the forecasts, the model gusts and a few small grids for the safety assessment.
   // Everything else (winds aloft, water level, ~200 grid files for the rain / temperature / satellite values) is loaded after it is shown.
@@ -617,7 +618,8 @@ export async function showPoint(lat, lon, opts = {}) {
     warnings: countyWarn?.hazards || [], typhoon: ty,
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
     lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc || nearFc),
-    gustFc: maxGust24(gustSeries(spotFc?.k || nearFc?.k) || gustSeries(town?.TOWNCODE)),
+    // Model gusts describe the township's flat grid cell: they say nothing about a ridge, so a spot or a peak only uses the CWA mean wind.
+    gustFc: spotFc || nearFc || peak ? null : maxGust24(gustSeries(town?.TOWNCODE)),
   }, S.settings.thresholds);
 
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
