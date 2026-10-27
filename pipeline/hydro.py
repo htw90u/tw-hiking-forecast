@@ -11,18 +11,12 @@ from .fetch import SSL_CTX, USER_AGENT
 
 OPENAPI = "https://opendata.wra.gov.tw/api/v2/openapi.get"
 CANDIDATES = {
-    "debris": ["https://246.ardswc.gov.tw/webService/GetAlertData.ashx",
-               "https://246.swcb.gov.tw/webService/GetAlertData.ashx"],
-    "river-level": ["https://opendata.wra.gov.tw/api/v2/1602CA19-B224-4CC3-AA31-11B6D9F8D4A2?format=JSON",
-                    "https://opendata.wra.gov.tw/Service/OpenData.aspx?format=json&id=1602CA19-B224-4CC3-AA31-11B6D9F8D4A2",
-                    "https://fhy.wra.gov.tw/Api/v2/Water/RealTimeInfo",
-                    "https://fhy.wra.gov.tw/WraApi/v1/Water/RealTimeInfo"],
-    "river-station": ["https://fhy.wra.gov.tw/Api/v2/Water/Station",
-                      "https://fhy.wra.gov.tw/WraApi/v1/Water/Station"],
-    "reservoir": ["https://opendata.wra.gov.tw/api/v2/2be9044c-6e44-4856-aad5-dd108c2e6679?format=JSON",
-                  "https://opendata.wra.gov.tw/Service/OpenData.aspx?format=json&id=2be9044c-6e44-4856-aad5-dd108c2e6679"],
-    "reservoir-station": ["https://fhy.wra.gov.tw/Api/v2/Reservoir/Station",
-                          "https://fhy.wra.gov.tw/WraApi/v1/Reservoir/Station?$top=200"],
+    "debris": ["https://246.ardswc.gov.tw/webService/GetAlertData.ashx"],
+    # UUIDs from the WRA OpenAPI index (https://opendata.wra.gov.tw/api/v2/openapi.get)
+    "river-level": ["https://opendata.wra.gov.tw/api/v2/73c4c3de-4045-4765-abeb-89f9f9cd5ff0?format=JSON"],
+    "river-station": ["https://opendata.wra.gov.tw/api/v2/c4acc691-7416-40ca-9464-292c0c00da92?format=JSON"],
+    "reservoir": ["https://opendata.wra.gov.tw/api/v2/2be9044c-6e44-4856-aad5-dd108c2e6679?format=JSON"],
+    "reservoir-daily": ["https://opendata.wra.gov.tw/api/v2/51023e88-4c76-4dbc-bbb9-470da690d539?format=JSON"],
 }
 
 
@@ -39,7 +33,7 @@ def probe_openapi(log, timeout=40):
     log.info(f"probe openapi: {len(paths)} paths")
     for path, ops in paths.items():
         text = json.dumps(ops, ensure_ascii=False)
-        if any(k in text for k in ("水位", "水庫", "放流", "測站", "Reservoir", "WaterLevel")):
+        if any(k in text for k in ("水位", "水庫", "放流", "測站", "座標", "Reservoir", "WaterLevel")):
             summary = next((v.get("summary") for v in ops.values() if isinstance(v, dict) and v.get("summary")), "")
             log.info(f"probe openapi: {path} | {summary}")
 
@@ -67,6 +61,6 @@ def probe(log, timeout=40):
                     for k, v in list(data.items())[:3]:
                         log.info(f"probe {name}:   {k} -> {json.dumps(v, ensure_ascii=False)[:500]}")
                 else:
-                    log.info(f"probe {name}: list of {len(data)}; first {json.dumps(data[:2], ensure_ascii=False)[:700]}")
+                    log.info(f"probe {name}: list of {len(data)}; first {json.dumps(data[:2], ensure_ascii=False)[:1200]}")
             except ValueError:
                 log.info(f"probe {name}: not JSON: {text[:300]!r}")

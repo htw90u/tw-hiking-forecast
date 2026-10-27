@@ -598,7 +598,7 @@ function serve() {
     assert(near(r.jun.rise, '05:04') && near(r.jun.set, '18:46'), `June solstice ${JSON.stringify(r.jun)}`);
     assert(near(r.dec.rise, '06:34') && near(r.dec.set, '17:09'), `December solstice ${JSON.stringify(r.dec)}`);
     const gain = mins(r.lo.rise) - mins(r.hi.rise);
-    assert(gain >= 4 && gain <= 8 && mins(r.hi.set) > mins(r.lo.set), `elevation effect ${JSON.stringify(r)}`);   // dip 0.0293 deg x sqrt(3952 m) = 1.84 deg
+    assert(gain >= 7 && gain <= 11 && mins(r.hi.set) > mins(r.lo.set), `elevation effect ${JSON.stringify(r)}`);   // dip 0.0293 deg x sqrt(3952 m) = 1.84 deg
     assert(mins(r.jun.dawn) < mins(r.jun.rise) && mins(r.jun.dusk) > mins(r.jun.set), 'civil twilight order');
   });
 
