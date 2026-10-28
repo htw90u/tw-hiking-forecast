@@ -40,8 +40,8 @@ export const OGDL_URL = 'https://data.gov.tw/license';
 // QPF display modes and satellite products (numeric grids from the pipeline).
 export const QPF_MODES = [{ id: '12', label: '12小時' }, { id: '6', label: '6小時' }, { id: 'acc', label: '24／48小時累積' }];
 const SAT_MODES = [
-  { label: '紅外線（黑白）', key: 'ir', kind: 'irgray' },
-  { label: '紅外線（色調強化）', key: 'ir', kind: 'irenh' },
+  { label: '紅外線黑白', key: 'ir', kind: 'irgray' },
+  { label: '紅外線強化', key: 'ir', kind: 'irenh' },
   { label: '可見光', key: 'vis', kind: 'vis' },
 ];
 

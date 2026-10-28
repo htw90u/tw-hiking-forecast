@@ -220,7 +220,7 @@ function serve() {
     await selectLayer('.chip[data-layer="sat"]');
     await page.waitForSelector('[data-frame]');
     const labels = await page.$$eval('[data-frame]', (b) => b.map((x) => x.textContent));
-    assert(labels.length === 3 && labels[1].includes('色調強化'), `sat modes ${labels}`);
+    assert(labels.length === 3 && labels[1].includes('強化'), `sat modes ${labels}`);
     await page.click('[data-frame="1"]');
     await page.waitForFunction(() => document.querySelector('#legend .grad'));
     const n = await page.$$eval('img.wx-grid', (x) => x.length);

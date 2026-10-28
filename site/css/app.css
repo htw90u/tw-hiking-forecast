@@ -556,8 +556,8 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 
 /* bottom control card: mode tabs (underline), model resolution switch, altitude buttons, round play button */
 .controls { background: var(--bg); }
-.controls .tools { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; margin-top: calc(var(--u) * .2); padding: 0 .7rem .6rem; background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 2px 10px rgba(0, 0, 0, .08); }
-.tools .time-ctl { flex: 1 1 100%; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: .5rem; min-width: 0; }
+.controls .tools { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; margin-top: calc(var(--u) * .2); padding: 0 .7rem .3rem; background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 2px 10px rgba(0, 0, 0, .08); }
+.tools .time-ctl { flex: 1 1 100%; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: .15rem; min-width: 0; }
 /* Collapse button: round chevron at the right end of the chip row (it hides the whole layer bar). */
 .controls { position: relative; }
 .controls .chips { padding-right: 46px; }
@@ -565,7 +565,7 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .controls .bar-hide::before { content: ""; width: 32px; height: 32px; box-sizing: border-box; border-radius: 50%; background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23778' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") center / 18px no-repeat; border: 1px solid var(--line); box-shadow: 0 1px 4px rgba(0, 0, 0, .15); }
 [data-theme="contrast"] .controls .bar-hide::before { background-color: #000; border-color: #fff; }
 #time-ctl .seg.tabs { flex-wrap: nowrap; gap: 0; border-bottom: 1.5px solid var(--line); }
-#time-ctl .seg.tabs .seg-btn { flex: 1 1 0; min-width: 0; min-height: 46px; display: flex; align-items: center; justify-content: center; gap: .3rem; padding: 0 .3rem; line-height: 1.15; text-align: center;
+#time-ctl .seg.tabs .seg-btn { flex: 1 1 auto; min-width: 0; white-space: nowrap; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: .3rem; padding: 0 .3rem; line-height: 1.15; text-align: center;
   background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 0; margin-bottom: -1.5px; color: var(--muted); font-weight: 600; box-shadow: none; }
 #time-ctl .seg.tabs .seg-btn[aria-checked="true"] { color: var(--accent); border-bottom-color: var(--accent); background: none; font-weight: 700; }
 #time-ctl .seg.tabs .seg-btn i { font-style: normal; font-size: 1.05em; }
