@@ -267,7 +267,7 @@ summary::-webkit-details-marker { display: none; }
 .legend summary { display: block; }
 .legend summary::before { margin-right: calc(var(--u) * .3); }
 .leaflet-container .leaflet-control-attribution { font-size: 12px; line-height: 1.3; }
-@media (max-width: 480px) { .leaflet-container .leaflet-control-attribution { max-width: 75vw; } .leaflet-control-scale { margin-bottom: 2.6rem !important; } }
+@media (max-width: 480px) { .leaflet-container .leaflet-control-attribution { max-width: 75vw; } }
 
 /* Earthquake view: low sheet, intensity markers, ring labels */
 .sheet.peek { height: 40vh; }

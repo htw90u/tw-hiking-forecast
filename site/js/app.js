@@ -513,6 +513,7 @@ function initMapOptions() {
   L.DomEvent.disableClickPropagation(show);
   const BarCtl = L.Control.extend({ onAdd: () => show });
   new BarCtl({ position: 'bottomleft' }).addTo(S.map);
+  S.scale.remove().addTo(S.map); // re-add so the scale stacks above the layer button
   $('#btn-bar-hide').addEventListener('click', () => { setLayerBar(false); show.focus(); });
   show.addEventListener('click', () => { setLayerBar(true); $('#chips [aria-checked="true"]')?.focus(); });
   setLayerBar(S.settings.layerBar !== false, { save: false });
@@ -951,7 +952,7 @@ async function main() {
   S.map.createPane('spots').style.zIndex = 620;
   S.map.createPane('alerts').style.zIndex = 640; // strong-earthquake icons, above all other markers
   S.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
-  L.control.scale({ imperial: false }).addTo(S.map);
+  S.scale = L.control.scale({ imperial: false }).addTo(S.map);
   setBasemap();
   // Layer name and data time, top centre of the map (filled by renderLegend).
   const banner = document.createElement('div');
