@@ -18,6 +18,7 @@ export const LAYERS = [
   { id: 'pop', label: '降雨機率', kind: 'pop', unit: '%' },
   { id: 'uv', label: '紫外線', kind: 'uv', unit: '' },
   { id: 'heat', label: '熱傷害', kind: 'heat', unit: '' },
+  { id: 'wrf3', label: 'WRF 3km', kind: 'rain', unit: 'mm' },
   { id: 'visib', label: '能見度', kind: 'visib', unit: 'km' },
   { id: 'water', label: '水位', kind: 'water', unit: 'm' },
   { id: 'debris', label: '土石流', kind: 'debris', unit: '' },
@@ -54,6 +55,7 @@ const SPACING_KINDS = ['rainacc', 'rainbig'];
 /** Colour-scale kind actually used for the current layer / mode. */
 export function layerKind(id) {
   if (id === 'qpf' && S.layer.qpfMode === 'acc') return 'rainacc';
+  if (id === 'wrf3') return S.layer.wrf3Mode === 'temp' ? 'temp' : 'rain';
   if (id === 'sat' && satGrids().ir) return SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].kind;
   return layerDef(id).kind;
 }
@@ -98,6 +100,7 @@ export function framesFor(id) {
     const g = satGrids();
     return g.ir ? SAT_MODES.map((m) => g[m.key]?.meta).filter(Boolean) : [];
   }
+  if (id === 'wrf3') return wrf3Frames().map((f) => f.meta);
   if (id === 'rainacc') return (L_.rainacc?.periods || [{ meta: 'grids/rainday.json' }]).map((p) => p.meta);
   if (['qpe1h', 'rainday', 'qpf1h', 'temp'].includes(id)) return [`grids/${id}.json`];
   return [];
@@ -147,6 +150,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'heat') { await showHeat(keepFrame); return; }
     if (id === 'visib') { await showVisibility(keepFrame); return; }
     if (id === 'lightning') { await showLightning(); return; }
+    if (id === 'wrf3' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = wrf3NowIndex(wrf3Frames());
     const frames = framesFor(id);
     const path = PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
@@ -159,7 +163,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     // so that rain areas fade out at their edges instead of ending in square steps.
     const opts = { smooth: S.settings.smooth !== false, fill: FILL[kind] ?? NaN };
     // The temperature analysis covers land only, in 3 km cells: cut it to the real coastline (no gaps, no sea spill-over).
-    if (kind === 'temp') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
+    if (kind === 'temp' && id !== 'wrf3') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
     const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
       const [w, s, e, n] = g.bounds;
       return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
@@ -169,7 +173,10 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (!S.layer.hidden) ov.addTo(S.map);
     clearOverlay();
     S.layer.overlay = ov;
-    renderLegend({ ...grid.meta, kindOverride: kind });
+    const wf = id === 'wrf3' ? wrf3Frames()[S.layer.frame] : null;
+    renderLegend({ ...grid.meta, kindOverride: kind, ...(wf ? { src: '中央氣象署 區域數值模式 WRF 3 km（M-A0064）', issued: S.manifest.layers.wrf3.time,
+      ...(S.layer.wrf3Mode === 'temp' ? {} : { start: grid.meta.start, end: grid.meta.time, time: undefined }),
+      note: `模式輸出的格點預報（3 km 網格、每 6 小時一步、最長 84 小時），${S.layer.wrf3Mode === 'temp' ? '為 2 m 高度氣溫；模式地形高度與實際海拔不同，山區氣溫請與測站、氣象署山區預報對照。' : '為每 6 小時累積降水，由模式累積雨量相減而得，位置與強度都可能有偏差，不是機率，也不等於氣象署的定量降水預報。'}` } : {}) });
     renderTimeControl(grid.meta);
   } catch (e) {
     console.error(e);
@@ -314,16 +321,54 @@ export async function loadWrf() {
   return S.wrf;
 }
 
-/** Wind arrows on the WRF grid (u, v in 0.1 m/s) at one pressure level and forecast step; thinned to about 36 px apart. */
+export async function loadWrf3() {
+  if (S.wrf3 !== undefined) return S.wrf3;
+  const w = await getJSON('wrf3.json', { optional: true });
+  if (w) {
+    // Winds are int16 (0.1 m/s) arrays of shape (steps, ny, nx), base64 encoded.
+    w.dec = {};
+    Object.entries(w.wind).forEach(([k, b64]) => {
+      const bin = window.atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      w.dec[k] = new Int16Array(bytes.buffer);
+    });
+  }
+  S.wrf3 = w;
+  return w;
+}
+
+/** The loaded WRF wind dataset of the chosen resolution in one shape (null while it is not loaded): levels (0 = 10 m wind), heights, uv(level, step, cell). */
+export function wrfDs() {
+  if (S.layer.wrfRes === '3') {
+    const w = S.wrf3;
+    if (!w) return null;
+    const n = w.grid.nx * w.grid.ny;
+    return { res: 3, steps: w.steps, init: w.init, grid: w.grid, levels: [0, ...w.levels], z: [10, ...w.z],
+      uv: (li, k, c) => { const key = li === 0 ? '10' : String(w.levels[li - 1]); return [w.dec[`u${key}`][k * n + c] / 10, w.dec[`v${key}`][k * n + c] / 10]; },
+      src: '區域數值模式 WRF 3 km 預報（M-A0064；顯示時降採樣為約 6 km 間距）',
+      desc: '3 km 網格、每 6 小時一步、最長 84 小時' };
+  }
+  const w = S.wrf;
+  if (!w) return null;
+  return { res: 15, steps: w.steps, init: w.init, grid: w.grid, levels: w.levels, z: w.z,
+    uv: (li, k, c) => [w.u[li][k][c] / 10, w.v[li][k][c] / 10],
+    src: '區域數值模式 WRF 15 km 預報（M-A0061）', desc: '15 km 網格、每 6 小時一步、最長 72 小時' };
+}
+
+const wrfLevelText = (ds, li) => (ds.levels[li] === 0 ? '距地面 10 m' : `海拔${altText(ds.z[li])}（${ds.levels[li]} hPa 氣壓層）`);
+
+/** Wind arrows on the WRF grid at one pressure level (or 10 m) and forecast step; thinned to about 36 px apart. */
 async function showWrf(keepFrame) {
-  const w = await loadWrf();
+  if (S.layer.wrfRes === '3') await loadWrf3(); else await loadWrf();
   if (S.layer.id !== 'wind') return;
+  const w = wrfDs();
   if (!w?.steps?.length) { clearOverlay(); renderLegend(null, '目前沒有氣象署 WRF 高空風場資料'); return; }
   if (!keepFrame || S.layer.frame >= w.steps.length) {
     const i = w.steps.findIndex((t) => new Date(t).getTime() >= Date.now() - 3 * 3600e3);   // the step nearest to now (the last one when all are past)
     S.layer.frame = i < 0 ? w.steps.length - 1 : i;
   }
-  const li = Math.min(S.layer.wrfLevel ?? 1, w.levels.length - 1);
+  const li = Math.max(0, w.levels.indexOf(S.layer.wrfHpa ?? 850));
   const k = S.layer.frame;
   const col = colourFn(scaleFor('wind', S.settings.palette));
   const g = w.grid;
@@ -337,20 +382,35 @@ async function showWrf(keepFrame) {
     for (let c = 0; c < g.nx; c += stride) {
       const lat = g.lat0 + r * g.res; const lon = g.lon0 + c * g.res;
       if (!bounds.contains([lat, lon])) continue;
-      const u = w.u[li][k][r * g.nx + c] / 10; const v = w.v[li][k][r * g.nx + c] / 10;
+      const [u, v] = w.uv(li, k, r * g.nx + c);
       const ws = Math.hypot(u, v);
       const bf = beaufort(ws);
       const from = (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360;
       const rgb = col(bf);
       L.marker([lat, lon], { icon: windArrow(from, bf, `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`), keyboard: false, pane: 'spots', interactive: true })
-        .bindTooltip(`海拔${altText(w.z[li])}（${w.levels[li]} hPa 氣壓層）：${esc(compass(from))} ${ws.toFixed(1)} m/s（${bf}級）`).addTo(ov);
+        .bindTooltip(`${wrfLevelText(w, li)}：${esc(compass(from))} ${ws.toFixed(1)} m/s（${bf}級）`).addTo(ov);
     }
   }
   finishOverlay(ov);
-  renderLegend({ label: `高空風場（WRF・海拔${altText(w.z[li])}｜${w.levels[li]} hPa 氣壓層）`, time: w.steps[k], issued: w.init, kindOverride: 'wind',
-    src: '區域數值模式 WRF 15 km 預報（M-A0061）',
-    note: '箭頭指向風吹去的方向，數字為蒲福風級。氣象署區域數值模式（15 km 網格、每 6 小時一步、最長 72 小時），「海拔」為該氣壓層在臺灣上空的概略高度（hPa 是氣壓，不是高度）；高空風場可看出鋒面、噴流與颱風環流，稜線的實際風速另受地形加強。' });
+  const lvl = w.levels[li] === 0 ? '距地面 10 m' : `海拔${altText(w.z[li])}｜${w.levels[li]} hPa 氣壓層`;
+  renderLegend({ label: `${w.levels[li] === 0 ? '地面風' : '高空風場'}（WRF ${w.res} km・${lvl}）`, time: w.steps[k], issued: w.init, kindOverride: 'wind',
+    src: w.src,
+    note: `箭頭指向風吹去的方向，數字為蒲福風級。氣象署區域數值模式（${w.desc}）${w.levels[li] === 0 ? '' : '，「海拔」為該氣壓層在臺灣上空的概略高度（hPa 是氣壓，不是高度）'}；高空風場可看出鋒面、噴流與颱風環流，稜線的實際風速另受地形加強。${w.res === 3 ? '3 km 模式的山區地形較細緻，但解析度高不代表一定更準，請與 15 km 版、測站及氣象署預報對照。' : ''}` });
   renderTimeControl();
+}
+
+// ---------------------------------------------------------------- WRF 3 km rain and temperature grids
+/** Frames of the WRF 3 km layer: [{meta, time}] for the chosen mode (6-hour rain or 2 m temperature). */
+function wrf3Frames() {
+  const m = S.manifest?.layers?.wrf3;
+  if (!m) return [];
+  const list = S.layer.wrf3Mode === 'temp' ? m.temp : m.rain;
+  return (list || []).map((x) => ({ meta: x.meta, time: m.steps[x.fh / 6] }));
+}
+
+function wrf3NowIndex(frames) {
+  const i = frames.findIndex((f) => new Date(f.time).getTime() >= Date.now() - 3 * 3600e3);
+  return i < 0 ? Math.max(0, frames.length - 1) : i;
 }
 
 // ---------------------------------------------------------------- river water level, reservoirs, debris-flow alerts
@@ -778,6 +838,16 @@ export function renderTimeControl(meta) {
 <label class="range"><span class="sr-only">雷達時間</span><input id="frame" type="range" min="0" max="${frames.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(frames[S.layer.frame]?.time))}"></label>
 <output id="frame-time">${esc(fmtTime(frames[S.layer.frame]?.time, { date: false }))}</output>`;
     }
+  } else if (id === 'wrf3') {
+    const mode = S.layer.wrf3Mode || 'rain';
+    const fr = wrf3Frames();
+    const t = fr[S.layer.frame]?.time;
+    h = '<div class="seg" role="radiogroup" aria-label="WRF 3 km 項目">' + [['rain', '6小時降水'], ['temp', '2 m 氣溫']]
+      .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-wrf3mode="${k}">${l}</button>`).join('') + '</div>';
+    if (fr.length) {
+      h += `<label class="range"><span class="sr-only">預報時間</span><input id="wrf3-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+<output id="wrf3-time">${esc(fmtTime(t))}</output>`;
+    }
   } else if (id === 'rainacc') {
     const periods = S.manifest?.layers?.rainacc?.periods || [];
     h = '<div class="seg" role="radiogroup" aria-label="累積時段">' + periods.map((p, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-period="${i}">${esc(p.label)}</button>`).join('') + '</div>';
@@ -812,9 +882,19 @@ export function renderTimeControl(meta) {
     if (id === 'wind') {
       h = '<div class="seg" role="radiogroup" aria-label="風力資料">' + [['fc', '預報'], ['aloft', '高空風'], ['obs', '測站觀測']]
         .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-windmode="${k}">${l}</button>`).join('') + '</div>';
-      if (mode === 'aloft' && S.wrf?.steps?.length) {
-        const w = S.wrf;
-        h += '<div class="seg levels" role="radiogroup" aria-label="高空風海拔">' + w.levels.map((lv, li) => `<button class="seg-btn alt" role="radio" aria-checked="${li === (S.layer.wrfLevel ?? 1)}" data-wrflevel="${li}"><b>${esc(altText(w.z[li]))}</b><span class="hpa">${lv} hPa</span></button>`).join('') + '</div>';
+      if (mode === 'aloft') {
+        const res3 = Boolean(S.manifest?.layers?.wrf3);
+        if (res3) {
+          h += '<div class="seg" role="radiogroup" aria-label="模式解析度">' + [['15', '15 km'], ['3', '3 km']]
+            .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === (S.layer.wrfRes || '15')}" data-wrfres="${k}">${l}</button>`).join('') + '</div>';
+        }
+      }
+      const w = mode === 'aloft' ? wrfDs() : null;
+      if (w?.steps?.length) {
+        const cur = Math.max(0, w.levels.indexOf(S.layer.wrfHpa ?? 850));
+        h += '<div class="seg levels" role="radiogroup" aria-label="高空風海拔">' + w.levels.map((lv, li) => (lv === 0
+          ? `<button class="seg-btn alt" role="radio" aria-checked="${li === cur}" data-wrflevel="${li}"><b>10 m</b><span class="hpa">地面風</span></button>`
+          : `<button class="seg-btn alt" role="radio" aria-checked="${li === cur}" data-wrflevel="${li}"><b>${esc(altText(w.z[li]))}</b><span class="hpa">${lv} hPa</span></button>`)).join('') + '</div>';
         const t = w.steps[S.layer.frame] || w.steps[0];
         h += `<label class="range"><span class="sr-only">預報時間</span><input id="wrf-frame" type="range" min="0" max="${w.steps.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wrf-time">${esc(fmtTime(t))}</output>`;
@@ -848,12 +928,25 @@ export function renderTimeControl(meta) {
     showLayer('wind', { keepFrame: false });   // each mode starts at its own "now" step
   }));
   el.querySelectorAll('[data-wrflevel]').forEach((b) => b.addEventListener('click', () => {
-    S.layer.wrfLevel = Number(b.dataset.wrflevel);
+    S.layer.wrfHpa = wrfDs().levels[Number(b.dataset.wrflevel)];
     showLayer('wind', { keepFrame: true });
   }));
+  el.querySelectorAll('[data-wrfres]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.wrfRes = b.dataset.wrfres;
+    showLayer('wind', { keepFrame: false });
+  }));
+  el.querySelectorAll('[data-wrf3mode]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.wrf3Mode = b.dataset.wrf3mode;
+    showLayer('wrf3', { keepFrame: false });
+  }));
+  const w3 = el.querySelector('#wrf3-frame');
+  if (w3) {
+    w3.addEventListener('input', () => { el.querySelector('#wrf3-time').textContent = fmtTime(wrf3Frames()[Number(w3.value)].time); });
+    w3.addEventListener('change', () => { S.layer.frame = Number(w3.value); showLayer('wrf3', { keepFrame: true }); });
+  }
   const rf = el.querySelector('#wrf-frame');
   if (rf) {
-    rf.addEventListener('input', () => { el.querySelector('#wrf-time').textContent = fmtTime(S.wrf.steps[Number(rf.value)]); });
+    rf.addEventListener('input', () => { el.querySelector('#wrf-time').textContent = fmtTime(wrfDs().steps[Number(rf.value)]); });
     rf.addEventListener('change', () => { S.layer.frame = Number(rf.value); showLayer('wind', { keepFrame: true }); });
   }
   el.querySelectorAll('[data-watermode]').forEach((b) => b.addEventListener('click', () => {

@@ -736,6 +736,37 @@ function serve() {
     await selectLayer('.chip[data-layer="radar"]');
   });
 
+  await check('WRF 3 km: wind resolution switch, rain / temperature layer, point card', async () => {
+    if (!fs.existsSync(path.join(SITE, 'data', 'wrf3.json'))) { console.log('SKIP wrf3.json not built locally'); return; }
+    await selectLayer('.chip[data-layer="wind"]');
+    await page.click('[data-windmode="aloft"]');
+    await page.waitForSelector('[data-wrfres="3"]');
+    await page.click('[data-wrfres="3"]');
+    await page.waitForFunction(() => document.querySelectorAll('#time-ctl [data-wrflevel]').length === 8);
+    assert((await page.$eval('#time-ctl [data-wrflevel]', (b) => b.textContent)).includes('地面風'), 'first 3 km level should be the 10 m wind');
+    await page.waitForSelector('.wind-mk');
+    assert((await page.$$('.wind-mk')).length > 20, 'WRF 3 km arrows missing');
+    assert((await page.textContent('#map-banner')).includes('WRF 3 km'), 'banner should name the 3 km model');
+    await page.click('[data-wrfres="15"]');
+    await page.waitForFunction(() => document.querySelectorAll('#time-ctl [data-wrflevel]').length === 7);
+    await selectLayer('.chip[data-layer="wrf3"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('6 小時降水'));
+    assert(await page.$('#wrf3-frame'), 'WRF 3 km time slider missing');
+    assert((await page.$$('img.wx-grid')).length >= 1, 'WRF 3 km rain image missing');
+    await page.click('[data-wrf3mode="temp"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('氣溫'));
+    assert((await page.$$('img.wx-grid')).length >= 1, 'WRF 3 km temperature image missing');
+    const card = await page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const sp = S.spots.find((x) => x.c === 'mountain');
+      await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k });
+      return new Promise((resolve) => window.setTimeout(() => resolve({ n: document.querySelectorAll('[data-card="wrf3"] figure.chart').length, t: document.querySelector('[data-card="wrf3"]')?.textContent.includes('地形高度') }), 4000));
+    });
+    assert(card.n === 3 && card.t, `WRF 3 km card ${JSON.stringify(card)}`);
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
   await check('heat-injury layer, card and safety assessment', async () => {
     const h = await page.evaluate(async () => {
       const { S } = await import('./js/state.js');
