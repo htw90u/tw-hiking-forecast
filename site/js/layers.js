@@ -17,6 +17,7 @@ export const LAYERS = [
   { id: 'wind', label: '風力', kind: 'wind' },
   { id: 'pop', label: '降雨機率', kind: 'pop', unit: '%' },
   { id: 'uv', label: '紫外線', kind: 'uv', unit: '' },
+  { id: 'heat', label: '熱傷害', kind: 'heat', unit: '' },
   { id: 'visib', label: '能見度', kind: 'visib', unit: 'km' },
   { id: 'water', label: '水位', kind: 'water', unit: 'm' },
   { id: 'debris', label: '土石流', kind: 'debris', unit: '' },
@@ -143,6 +144,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'debris') { await showDebris(); return; }
     if (id === 'pop') { await showPop(keepFrame); return; }
     if (id === 'uv') { await showUV(); return; }
+    if (id === 'heat') { await showHeat(keepFrame); return; }
     if (id === 'visib') { await showVisibility(keepFrame); return; }
     if (id === 'lightning') { await showLightning(); return; }
     const frames = framesFor(id);
@@ -456,6 +458,33 @@ async function showPop(keepFrame) {
   renderTimeControl();
 }
 
+export const HEAT_WARN = ['', '注意', '警戒', '危險', '極度危險'];
+
+export async function loadHeat() {
+  if (!S.heat) S.heat = await getJSON('heat.json', { optional: true });
+  return S.heat;
+}
+
+async function showHeat(keepFrame) {
+  const h = await loadHeat();
+  if (S.layer.id !== 'heat') return;
+  if (!h?.times?.length) { clearOverlay(); renderLegend(null, '目前沒有熱傷害指數預報資料'); return; }
+  if (!keepFrame || S.layer.frame >= h.times.length) S.layer.frame = windNowIndex(h.times);
+  const i = S.layer.frame;
+  const ov = L.layerGroup();
+  townChoropleth(scaleFor('heat', S.settings.palette), (g) => h.towns[g]?.[0]?.[i] ?? null, (g) => {
+    const r = h.towns[g];
+    if (r?.[0]?.[i] === null || r?.[0]?.[i] === undefined) return '無預報';
+    return `熱傷害指數 ${r[0][i]}${r[1][i] ? `（${HEAT_WARN[r[1][i]]}）` : ''}`;
+  }).addTo(ov);
+  finishOverlay(ov);
+  const t = h.times[i];
+  renderLegend({ label: '熱傷害指數（鄉鎮・3 小時）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: h.issue,
+    kindOverride: 'heat', unit: '', src: '中央氣象署 健康氣象熱傷害指數（M-A0085）',
+    note: '依氣溫、濕度等估算的人體熱危害程度。分級：27–31 注意、32–35 警戒、36–39 危險、40 以上極度危險；27 以下為淡色。滑鼠指到或點鄉鎮可看氣象署發布的警示。炎熱日請避開正午、補充水分與鹽分。' });
+  renderTimeControl();
+}
+
 /** Dates (YYYY-MM-DD) with a township UV forecast, in order. */
 function uvDates(w) {
   const set = new Set();
@@ -684,6 +713,7 @@ function legendUnit(kind, unit) {
   if (kind === 'rsv') return ['狀態', '放流'];
   if (kind === 'debris') return ['等級', '警戒'];
   if (kind === 'uv') return ['單位', '指數'];
+  if (kind === 'heat') return ['單位', '指數'];
   if (kind === 'visib') return ['單位', 'km'];
   if (kind === 'intensity') return ['單位', '震度'];
   if (kind === 'vis') return ['單位', '反照率'];
@@ -776,9 +806,9 @@ export function renderTimeControl(meta) {
     const mode = S.layer.waterMode || 'river';
     h = '<div class="seg" role="radiogroup" aria-label="水情資料">' + [['river', '河川水位'], ['rsv', '水庫放流']]
       .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-watermode="${k}">${l}</button>`).join('') + '</div>';
-  } else if (id === 'wind' || id === 'pop' || id === 'visib' || id === 'uv') {
+  } else if (id === 'wind' || id === 'pop' || id === 'visib' || id === 'uv' || id === 'heat') {
     const mode = id === 'wind' ? (S.layer.windMode || 'fc') : id === 'visib' ? (S.layer.visMode || 'obs') : 'fc';
-    const times = S.wind?.times || [];
+    const times = (id === 'heat' ? S.heat?.times : S.wind?.times) || [];
     if (id === 'wind') {
       h = '<div class="seg" role="radiogroup" aria-label="風力資料">' + [['fc', '預報'], ['aloft', '高空風'], ['obs', '測站觀測']]
         .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-windmode="${k}">${l}</button>`).join('') + '</div>';
@@ -836,7 +866,7 @@ export function renderTimeControl(meta) {
   }));
   const wf = el.querySelector('#wind-frame');
   if (wf) {
-    wf.addEventListener('input', () => { el.querySelector('#wind-time').textContent = fmtTime(S.wind.times[Number(wf.value)]); });
+    wf.addEventListener('input', () => { el.querySelector('#wind-time').textContent = fmtTime((id === 'heat' ? S.heat : S.wind).times[Number(wf.value)]); });
     wf.addEventListener('change', () => { S.layer.frame = Number(wf.value); showLayer(id, { keepFrame: true }); });
   }
   el.querySelectorAll('[data-qpfmode]').forEach((b) => b.addEventListener('click', () => {

@@ -52,6 +52,12 @@ const UV_LABELS = ['0–2', '3–5', '6–7', '8–10', '11+'];
 const CWA_UV = ['#4caf50', '#ffd600', '#ff9100', '#e53935', '#8e24aa'];
 const CVD_UV = ['#fde725', '#5ec962', '#21918c', '#3b528b', '#440154'];
 const CONTRAST_UV = ['#ffffff', '#ffff00', '#ffaa00', '#ff0000', '#000000'];
+// Heat-injury index (CWA M-A0085): 27-31 注意, 32-35 警戒, 36-39 危險, 40+ 極度危險; below 27 is drawn in a pale colour.
+const HEAT_BOUNDS = [0, 27, 32, 36, 40];
+const HEAT_LABELS = ['< 27', '27–31', '32–35', '36–39', '40+'];
+const CWA_HEAT = ['#d6ecf7', '#ffd600', '#ff9100', '#e53935', '#8e24aa'];
+const CVD_HEAT = ['#f1f1f1', '#fde725', '#21918c', '#3b528b', '#440154'];
+const CONTRAST_HEAT = ['#ffffff', '#ffff00', '#ffaa00', '#ff0000', '#000000'];
 // Visibility (km): fog below 1 km (CWA definition of 濃霧), mist 1-2 km.
 const VISIB_BOUNDS = [0, 1, 2, 5, 10, 20];
 const VISIB_LABELS = ['< 1', '1–2', '2–5', '5–10', '10–20', '≥ 20'];
@@ -147,6 +153,7 @@ export const SCALES = {
   ltage: { cwa: zip(LT_BOUNDS, CWA_LT, LT_LABELS), cvd: zip(LT_BOUNDS, CVD_LT, LT_LABELS), contrast: zip(LT_BOUNDS, CWA_LT, LT_LABELS) },
   pop: { cwa: zip(POP_BOUNDS, CWA_POP, POP_LABELS), cvd: zip(POP_BOUNDS, resample(VIRIDIS17, 9), POP_LABELS), contrast: zip(POP_BOUNDS, CONTRAST_POP, POP_LABELS) },
   uv: { cwa: zip(UV_BOUNDS, CWA_UV, UV_LABELS), cvd: zip(UV_BOUNDS, CVD_UV, UV_LABELS), contrast: zip(UV_BOUNDS, CONTRAST_UV, UV_LABELS) },
+  heat: { cwa: zip(HEAT_BOUNDS, CWA_HEAT, HEAT_LABELS), cvd: zip(HEAT_BOUNDS, CVD_HEAT, HEAT_LABELS), contrast: zip(HEAT_BOUNDS, CONTRAST_HEAT, HEAT_LABELS) },
   visib: { cwa: zip(VISIB_BOUNDS, CWA_VISIB, VISIB_LABELS), cvd: zip(VISIB_BOUNDS, CVD_VISIB, VISIB_LABELS), contrast: zip(VISIB_BOUNDS, CONTRAST_VISIB, VISIB_LABELS) },
   water: { cwa: zip([0, 1, 2, 3], CWA_WATER, WATER_LABELS), cvd: zip([0, 1, 2, 3], CVD_WATER, WATER_LABELS), contrast: zip([0, 1, 2, 3], CONTRAST_WATER, WATER_LABELS) },
   rsv: { cwa: zip([0, 1, 2, 3], CWA_RSV, RSV_LABELS), cvd: zip([0, 1, 2, 3], CVD_WATER, RSV_LABELS), contrast: zip([0, 1, 2, 3], ['#808080', '#ffffff', '#ff8000', '#ff0000'], RSV_LABELS) },

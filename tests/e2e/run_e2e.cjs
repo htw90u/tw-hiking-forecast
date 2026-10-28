@@ -736,6 +736,41 @@ function serve() {
     await selectLayer('.chip[data-layer="radar"]');
   });
 
+  await check('heat-injury layer, card and safety assessment', async () => {
+    const h = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const t0 = Math.floor(Date.now() / 3 / 3600e3) * 3 * 3600e3;
+      const times = Array.from({ length: 20 }, (_, i) => new Date(t0 + i * 3 * 3600e3).toISOString());
+      const idx = times.map((_, i) => 24 + (i % 8) * 2);
+      idx[2] = 37;
+      const warn = idx.map((v) => (v >= 36 ? 3 : 0));
+      return { issue: times[0], times, towns: Object.fromEntries(S.towns.map((f) => [f.properties.TOWNCODE, [idx, warn]])) };
+    });
+    await ctx.route(/data\/heat\.json/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(h) }));
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.heat = null; });
+    await selectLayer('.chip[data-layer="heat"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('熱傷害'));
+    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 5, 'heat colour bar');
+    assert(await page.$('#wind-frame'), 'heat time slider missing');
+    const col = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      let n = 0; S.layer.overlay.eachLayer((g) => { if (g.eachLayer) g.eachLayer((p) => { if (p.options.fillOpacity > 0) n += 1; }); });
+      return n;
+    });
+    assert(col > 100, `heat townships coloured: ${col}`);
+    const txt = await page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const sp = S.spots.find((x) => x.c === 'mountain');
+      await v.showPoint(sp.lat, sp.lon, {});
+      return { card: document.querySelector('[data-card="heat"]')?.textContent || '', risk: document.querySelector('[data-card="risk"]')?.textContent || '' };
+    });
+    assert(txt.card.includes('熱傷害指數') && txt.card.includes('危險'), `heat card ${txt.card.slice(0, 80)}`);
+    assert(/熱傷害指數最高 3[78]/.test(txt.risk), `risk list lacks the heat reason: ${txt.risk.slice(0, 200)}`);
+    await page.click('#sheet-close').catch(() => {});
+    await ctx.unroute(/data\/heat\.json/);
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
   await check('point panel cards: themed groups, folded cards carry a summary, open state is remembered, jump chips, expand / collapse all', async () => {
     await page.evaluate(() => localStorage.removeItem('hikingwx.cards.v1'));
     const show = () => page.evaluate(async () => {
@@ -818,17 +853,21 @@ function serve() {
       const st = rg || wx; await v.showPoint(st.lat, st.lon, { label: '雨量站測試' }); return !!rg;
     });
     await page.waitForSelector('#st-rain');
+    assert((await page.$eval('[data-card="stations"] .pc-s', (e) => e.textContent)).includes('海拔'), 'folded station card lacks the elevation');
     const count = () => page.$$eval('#hist-sid option', (o) => o.filter((x) => x.textContent.includes('雨量站')).length);
-    if (!(await page.$eval('#st-rain', (e) => e.checked))) await page.click('#st-rain');
+    assert(!(await page.$eval('#st-rain', (e) => e.checked)), 'rain gauges should be hidden by default');
+    assert((await count()) === 0, 'rain gauges listed although the filter is off by default');
+    await page.click('#st-rain');
+    await page.waitForFunction(() => document.querySelector('#st-rain').checked);
     const before = await count();
+    if (pt) assert(await page.$$eval('ul.stations li', (l) => l.some((x) => x.querySelector('.link').textContent.includes('（雨量站）'))), 'rain gauge name lacks （雨量站）');
+    assert(!(await page.$$eval('ul.stations li', (l) => l.some((x) => x.textContent.includes('只觀測雨量')))), 'redundant rain-gauge note shown');
     await page.click('#st-rain');
     await page.waitForFunction(() => !document.querySelector('#st-rain').checked);
     assert((await count()) === 0, 'rain gauges still listed after hiding them');
-    assert(!(await page.$$eval('ul.stations li', (l) => l.some((x) => x.textContent.includes('雨量站（只觀測雨量）')))), 'rain gauge line still shown');
+    assert(!(await page.$$eval('ul.stations li', (l) => l.some((x) => x.textContent.includes('（雨量站）')))), 'rain gauge line still shown');
     assert(await page.evaluate(() => JSON.parse(localStorage.getItem('hikingwx.settings.v1')).showRainGauges === false), 'choice not saved');
     if (pt) assert(before > 0, 'expected a rain gauge near the point');
-    await page.click('#st-rain');
-    await page.waitForFunction(() => document.querySelector('#st-rain').checked);
     await page.click('#sheet-close').catch(() => {});
   });
 
@@ -1222,15 +1261,15 @@ function serve() {
     await ctx.route(/gis\.sinica\.edu\.tw/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
     await page.click('#btn-settings');
     await page.waitForSelector('#set-base');
-    assert(await page.$eval('#set-base', (e) => [...e.options].some((o) => o.value === 'h_TM25K_1989')), 'historical base map missing');
-    await page.selectOption('#set-base', 'h_TM25K_1989');
+    assert(await page.$eval('#set-base', (e) => [...e.options].some((o) => o.value === 'h_TM25K_2001')), 'historical base map missing');
+    await page.selectOption('#set-base', 'h_TM25K_2001');
     await page.evaluate(() => { document.querySelector('details.sub summary').click(); });
     await page.check('[data-hov="Sunriver_50K_N_2017"]');
     await page.check('[data-hov="TM25K_2003"]');
     await page.$eval('[data-hova="Sunriver_50K_N_2017"]', (e) => { e.value = '0.5'; e.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.keyboard.press('Escape');
     await page.waitForTimeout(1500);
-    assert(seen.some((u) => u.includes('TM25K_1989-jpg-')), 'historical base tile not requested');
+    assert(seen.some((u) => u.includes('TM25K_2001-jpg-')), 'historical base tile not requested');
     assert(seen.some((u) => u.includes('Sunriver_50K_N_2017-png-')) && seen.some((u) => u.includes('TM25K_2003-jpg-')), 'overlay tiles not requested');
     const op = await page.$$eval('.leaflet-tile-pane .leaflet-layer', (l) => l.map((x) => x.style.opacity));
     assert(op.includes('0.5'), `overlay opacity not applied ${op}`);

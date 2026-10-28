@@ -11,6 +11,7 @@ export const LEVELS = [
  * ctx: { rain1h, rainToday, qpfMax:[lo,hi]|null, radar, temp, stations:[{G,WS,T,R1h,R24h,d}],
  *        spotMinAT, warnings:[{ph,sig}], typhoon:{active, inForecastCone}, quakes:[{iv, d, time}],
  *        lightning:{n, nearest km}|null, windBf: max Beaufort in the next 24 h of the hiking forecast,
+ *        heat: {max, warnMax}|null (township heat-injury index, next 24 h),
  *        gustFc: max model gust (m/s) in the next 24 h }
  */
 export function assess(ctx, th) {
@@ -51,6 +52,12 @@ export function assess(ctx, th) {
   else if (ctx.gustFc >= th.gust) add(1, `未來 24 小時模式預報陣風 ${ctx.gustFc} m/s（≥ ${th.gust}）`);
   if (ctx.windBf >= 8) add(2, `未來 24 小時登山預報風力 ${ctx.windBf} 級（稜線行走危險）`);
   else if (ctx.windBf >= 6) add(1, `未來 24 小時登山預報風力 ${ctx.windBf} 級（強風，注意保暖與失足）`);
+  const he = ctx.heat;
+  if (he && he.max !== null && he.max !== undefined) {
+    const lbl = ['', '注意', '警戒', '危險', '極度危險'][he.warnMax] || '';
+    if (he.max >= 36 || he.warnMax >= 3) add(2, `未來 24 小時熱傷害指數最高 ${he.max}${lbl ? `（${lbl}）` : ''}（高溫，避開正午、補足水分）`);
+    else if (he.max >= 32 || he.warnMax >= 2) add(1, `未來 24 小時熱傷害指數最高 ${he.max}${lbl ? `（${lbl}）` : ''}（炎熱，注意補水與休息）`);
+  }
   const level = reasons.reduce((m, r) => Math.max(m, r.lv), 0);
   reasons.sort((a, b) => b.lv - a.lv);
   return { level, reasons };

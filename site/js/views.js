@@ -5,7 +5,7 @@ import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty, intText, isStrongQuake,
   beaufort, apparentTemp, eleText,
 } from './util.js';
-import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL, lightningNear, loadWind, WIND_DIRS } from './layers.js';
+import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL, lightningNear, loadWind, loadHeat, HEAT_WARN, WIND_DIRS } from './layers.js';
 import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
@@ -199,13 +199,12 @@ function stationLine(s, d) {
   if (s.R24h !== undefined) parts.push(`24h ${fmtNum(s.R24h)}`);
   // Not every station has every sensor: say so instead of leaving the value out silently.
   // A rain gauge only measures rain; any other station that shows nothing right now may have a faulty or serviced sensor, so say "no data now".
-  if (s.k === 'rain') parts.push('雨量站（只觀測雨量）');
-  else {
+  if (s.k !== 'rain') {
     if (s.T === undefined) parts.push('溫度暫無資料');
     if (s.WS === undefined) parts.push('風力儀器故障');
   }
-  return html`<li><button class="link" data-station="${s.id}">${s.n}</button>
-<span class="meta">${d.toFixed(1)} km・${s.alt !== undefined ? `${Math.round(s.alt)} m` : '海拔不明'}${s.k === 'rain' ? '・雨量站' : ''}</span>
+  return html`<li><button class="link" data-station="${s.id}">${s.n}${s.k === 'rain' ? '（雨量站）' : ''}</button>
+<span class="meta">${d.toFixed(1)} km・${s.alt !== undefined ? `${Math.round(s.alt)} m` : '海拔不明'}</span>
 <span class="vals">${parts.join('｜') || '—'}</span></li>`;
 }
 
@@ -323,6 +322,33 @@ function forecastWeek(week) {
 <td>${valueAt(UV, 'UVIndex', t) ?? '—'}</td></tr>`;
   }).join('');
   return `<div class="scroll"><table class="fc week"><thead><tr><th scope="col">時段</th><th scope="col">天氣</th><th scope="col">降雨機率</th><th scope="col">溫度</th><th scope="col">體感</th><th scope="col">風</th><th scope="col">紫外線</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/** Heat-injury forecast of a township from heat.json: the next 24 h maximum, plus the whole run for the card. */
+function heatOf(h, code) {
+  const r = h?.towns?.[code];
+  if (!r) return null;
+  const [idx, warn] = r;
+  const now = Date.now();
+  const next = h.times.map((t, i) => i).filter((i) => new Date(h.times[i]).getTime() >= now - 3 * 3600e3 && new Date(h.times[i]).getTime() <= now + 24 * 3600e3 && idx[i] !== null);
+  let top = null;
+  next.forEach((i) => { if (top === null || idx[i] > idx[top]) top = i; });
+  return { idx, warn, times: h.times, top, max: top === null ? null : idx[top], warnMax: next.reduce((m, i) => Math.max(m, warn[i]), 0), issue: h.issue };
+}
+
+function heatCard(he) {
+  if (!he || !he.idx.some((v) => v !== null)) return html``;
+  const ranges = [];
+  he.warn.forEach((w, i) => {
+    const last = ranges[ranges.length - 1];
+    if (w > 0 && last && last.w === w && last.end === i - 1) last.end = i;
+    else if (w > 0) ranges.push({ w, start: i, end: i });
+  });
+  const rows = ranges.map((r) => `<tr><th scope="row">${esc(HEAT_WARN[r.w])}</th><td>${esc(fmtTime(he.times[r.start]))} – ${esc(fmtTime(new Date(new Date(he.times[r.end]).getTime() + 3 * 3600e3).toISOString(), { date: false }))}</td></tr>`).join('');
+  return html`<section class="card" aria-labelledby="h-heat"><h3 id="h-heat">熱傷害指數</h3>
+${raw(chart({ title: '熱傷害指數（鄉鎮・每 3 小時）', unit: '', times: he.times, series: [{ label: '熱傷害指數', values: he.idx, kind: 'line', cls: 's1' }] }))}
+${rows ? html`<table class="kv"><caption class="sr-only">氣象署熱傷害警示時段</caption><tbody>${raw(rows)}</tbody></table>` : html`<p class="muted">未來 5 天沒有熱傷害警示。</p>`}
+<p class="note">分級：27–31 注意、32–35 警戒、36–39 危險、40 以上極度危險。這是鄉鎮平地的估計，高山氣溫較低，通常不適用。資料：中央氣象署（M-A0085）。</p></section>`;
 }
 
 function minApparent(fc) {
@@ -480,7 +506,7 @@ async function renderHistory(container, sid, range) {
 }
 
 function historyBlock(stations, selected) {
-  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站' : it.WS === undefined ? '・風力儀器故障' : ''}）</option>`).join('');
+  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}${it.k === 'rain' ? '（雨量站）' : ''}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k !== 'rain' && it.WS === undefined ? '・風力儀器故障' : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
@@ -605,11 +631,12 @@ export async function showPoint(lat, lon, opts = {}) {
 
   // The panel waits only for what it needs to be useful: the forecasts, the model gusts and a few small grids for the safety assessment.
   // Everything else (winds aloft, water level, ~200 grid files for the rain / temperature / satellite values) is loaded after it is shown.
-  const [vals, spotFc, townFc, , ...mtnFcs] = await Promise.all([
+  const [vals, spotFc, townFc, , heatData, ...mtnFcs] = await Promise.all([
     sampleLayers(lat, lon, 'core'),
     spotPick ? getJSON(`spots/f/${spotPick.k}.json`).catch(() => null) : null,
     town ? getJSON(`towns/${town.TOWNCODE}.json`).catch(() => null) : null,
     loadWind().catch(() => null), // model gusts for the forecast tables
+    loadHeat().catch(() => null),
     ...nearMtns.map(({ it }) => getJSON(`spots/f/${it.k}.json`).catch(() => null)),
   ]);
   const nearFc = nearMtns[0] && nearMtns[0].d <= 10 ? mtnFcs[0] : null; // wind of the nearest mountain, for the risk list
@@ -621,10 +648,11 @@ export async function showPoint(lat, lon, opts = {}) {
   const qpfFirst = vals.qpf0?.range || null;
   const ty = S.typhoon?.active ? { active: true, name: S.typhoon.cyclones.map((c) => c.cname).join('、'), near: true } : null;
   const fcForCold = spotFc || townFc;
+  const heat = heatOf(heatData, town?.TOWNCODE);
   const risk = assess({
     rain1h: vals.qpe1h?.v ?? null, rainToday: Math.max(vals.rainday?.v ?? 0, vals.acc_24h?.v ?? 0) || null, qpfMax: qpfFirst, radar: vals.radar?.v ?? null,
     stations: stationsAll.slice(0, 8).map((x) => x.it), spotMinAT: minApparent(fcForCold),
-    warnings: countyWarn?.hazards || [], typhoon: ty,
+    warnings: countyWarn?.hazards || [], typhoon: ty, heat,
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
     lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc || nearFc),
     // Model gusts describe the township's flat grid cell: they say nothing about a ridge, so a spot or a peak only uses the CWA mean wind.
@@ -643,8 +671,8 @@ export async function showPoint(lat, lon, opts = {}) {
   const eleHere = spotPick?.ele ?? peak?.ele ?? station?.alt ?? null;
   // Everything that depends on the late data (grid samples, winds aloft, water) is built here: once with what the panel waited for, again when the rest has arrived.
   const build = (vals) => {
-    const showRain = S.settings.showRainGauges !== false;
-    const stationsNear = (showRain ? stationsAll : weatherSt).slice(0, 8);
+    const showRain = S.settings.showRainGauges === true;
+    const stationsNear = stationsAll.filter((x) => showRain || x.it.k !== 'rain' || x.it.id === opts.stationId).slice(0, 8);
     const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
   // Winds aloft, visibility and UV come from the chosen mountain forecast point, else the nearest one within 12 km.
   const aloftSpot = spotPick?.c === 'mountain' ? { it: spotPick, d: 0 } : nearest(S.spots, lat, lon, { limit: 60, maxKm: 12 }).find((x) => x.it.c === 'mountain');
@@ -741,8 +769,9 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
   const rainSum = [vals.acc_24h?.v != null ? `過去 24 小時 ${fmtNum(vals.acc_24h.v, 1)} mm` : null, vals.qacc24?.v != null ? `未來 24 小時約 ${fmtNum(vals.qacc24.v, 0)} mm` : null].filter(Boolean).join('・');
   const nowSum = [vals.radar ? (vals.radar.v === null ? '雷達無回波' : `雷達 ${fmtNum(vals.radar.v, 0)} dBZ`) : null, vals.qpe1h?.v != null ? `1 小時雨量 ${fmtNum(vals.qpe1h.v, 1)} mm` : null,
     vals.satir?.v != null ? `雲頂 ${fmtNum(vals.satir.v, 0)}°C` : null].filter(Boolean).join('・');
-  const stSum = ws0 ? [ws0.n, `${weatherSt[0].d.toFixed(1)} km`, ws0.T !== undefined ? `${fmtNum(ws0.T)}°C` : null, ws0.RH !== undefined ? `濕度 ${fmtNum(ws0.RH, 0)}%` : null,
-    ws0.WS !== undefined ? `風 ${fmtNum(ws0.WS)} m/s` : null].filter(Boolean).join('・') : (otherStations.length ? `${otherStations[0].it.n}・${otherStations[0].d.toFixed(1)} km` : '35 km 內沒有測站');
+  const altOf = (st) => (st.alt !== undefined ? `（海拔 ${Math.round(st.alt)} m）` : '（海拔不明）');
+  const stSum = ws0 ? [`${ws0.n}${altOf(ws0)}`, `${weatherSt[0].d.toFixed(1)} km`, ws0.T !== undefined ? `${fmtNum(ws0.T)}°C` : null, ws0.RH !== undefined ? `濕度 ${fmtNum(ws0.RH, 0)}%` : null,
+    ws0.WS !== undefined ? `風 ${fmtNum(ws0.WS)} m/s` : null].filter(Boolean).join('・') : (otherStations.length ? `${otherStations[0].it.n}${altOf(otherStations[0].it)}・${otherStations[0].d.toFixed(1)} km` : '35 km 內沒有測站');
   const mtnSum = nearMtns.map(({ it, d }) => `${it.n} ${d.toFixed(1)} km`).join('・');
   const aloftPt = aloftSpot && S.aloft?.points?.[aloftSpot.it.k];
   const aloftSum = aloftPt ? (() => {
@@ -769,6 +798,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     stations: cardize(stationsHtml, { id: 'stations', grp: 'obs', open: true, summary: stSum }),
     fc: cardize(spotFcCard, { id: 'fc', grp: 'fc', icon: '☀', open: true, summary: briefText(brief) }),
     town: cardize(townCard, { id: 'town', grp: 'fc', icon: '☀', open: !spotFcCard, summary: briefText(brief) }),
+    heat: cardize(heatCard(heat), { id: 'heat', grp: 'fc', icon: '♨', summary: heat?.top === null || !heat ? '' : `未來 24 小時最高 ${heat.max}${heat.warnMax ? `（${HEAT_WARN[heat.warnMax]}）` : ''}` }),
     rain: cardize([accHtml, qpfHtml, qpf6Html, qaccHtml], { id: 'rain', grp: 'fc', icon: '☂', title: '降雨預報', titleId: 'h-rain', keepHeads: true, summary: rainSum }),
     mtnFc: cardize(mtnFcHtml, { id: 'mtnfc', grp: 'fc', icon: '▲', summary: mtnSum }),
     aloft: cardize(aloftHtml, { id: 'aloft', grp: 'air', summary: aloftSum }),
@@ -778,7 +808,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     near: cardize(nearHtml, { id: 'near', grp: 'info', summary: near2 }),
     mtns: cardize(station ? mountainsCard(station.lat, station.lon) : peak ? mountainsCard(lat, lon, 10, peak.k) : '', { id: 'mtns', grp: 'info', icon: '▲', summary: '' }),
   };
-  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'fc', 'town', 'rain', 'mtnFc', 'aloft', 'hydro', 'ens', 'sun', 'mtns', 'near'];
+  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'fc', 'town', 'rain', 'heat', 'mtnFc', 'aloft', 'hydro', 'ens', 'sun', 'mtns', 'near'];
   const present = order.filter((k) => cardsOut[k]);
   const groupsPresent = Object.keys(GROUPS).filter((g) => present.some((k) => cardsOut[k].includes(`data-grp="${g}"`)));
   const bf = (n) => (n === null || n === undefined ? '—' : `${n} 級`);

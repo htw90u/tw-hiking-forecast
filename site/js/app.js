@@ -14,23 +14,12 @@ import { clearAll, toggleFav, listFav, pointId } from './store.js';
 const HIST_ATTR = '歷史地圖 © <a href="https://gis.sinica.edu.tw/tileserver/">中央研究院人文社會科學研究中心 GIS 專題中心</a> (CC BY-NC)';
 const histUrl = (h) => `https://gis.sinica.edu.tw/tileserver/file-exists.php?img=${h.id}-${h.ext}-{z}-{x}-{y}`;
 const HIST_BASE = [
-  { id: 'TM25K_1989', ext: 'jpg', max: 18, label: '經建1版地形圖 1:25,000（1989）' },
-  { id: 'TM25K_1993', ext: 'jpg', max: 17, label: '經建2版地形圖 1:25,000（1993）' },
   { id: 'TM25K_2001', ext: 'jpg', max: 17, label: '經建3版地形圖 1:25,000（2001）' },
-  { id: 'TM50K_1990', ext: 'png', max: 17, label: '經建1版地形圖 1:50,000（1990）' },
-  { id: 'TM50K_1996', ext: 'png', max: 17, label: '經建2版地形圖 1:50,000（1996）' },
-  { id: 'TM50K_1956', ext: 'jpg', max: 18, label: '臺灣地形圖 1:50,000（1956）' },
-  { id: 'JM50K_1924', ext: 'jpg', max: 17, label: '日治五萬分一地形圖（1924）' },
-  { id: 'JM20K_1904', ext: 'jpg', max: 18, label: '日治臺灣堡圖 1:20,000（1904）' },
 ];
 // Stack on top of the base map (oldest first); outside their coverage the base map shows through.
 const HIST_OVER = [
-  { id: 'JM50K_1916', ext: 'jpg', max: 17, label: '日治蕃地地形圖 1:50,000（1916）・山地' },
-  { id: 'JM20K_1921', ext: 'jpg', max: 17, label: '日治臺灣堡圖 1:20,000（1921 大正版）' },
-  { id: 'Yushan_50K_1933', ext: 'png', max: 17, label: '新高登山地圖（1933）・玉山一帶' },
   { id: 'TM25K_2003', ext: 'jpg', max: 17, label: '經建4版地形圖 1:25,000（2003）・部分地區' },
-  { id: 'TM50K_2003', ext: 'png', max: 17, label: '經建3版地形圖 1:50,000（2003）・部分地區' },
-  { id: 'Sunriver_50K_N_2017', ext: 'png', max: 15, label: '臺灣歷史人文全覽圖 北島（2017）' },
+  { id: 'Sunriver_50K_N_2017', ext: 'png', max: 15, label: '臺灣歷史人文全覽圖 北島（2017）・僅北部都會區有詳圖，需放大' },
 ];
 
 const BASEMAPS = {

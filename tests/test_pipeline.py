@@ -1,4 +1,5 @@
 """Unit tests for the data pipeline, using trimmed real CWA files as fixtures."""
+import base64
 import gzip
 import json
 from datetime import datetime, timedelta
@@ -7,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import aloft, hydro, wrf, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, satellite, stations, wind
+from pipeline import aloft, heat, hydro, wrf, wrf3, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, satellite, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -767,3 +768,71 @@ def test_hydro_get_json_retries(monkeypatch):
     with pytest.raises(FetchError):
         hydro.get_json("https://example.test/x", tries=2)
 
+
+
+def test_heat_parse():
+    def step(t, i, w):
+        return {"IssueTime": t, "WeatherElements": {"HeatInjuryIndex": i, "HeatInjuryWarning": w}}
+    doc = {"cwaopendata": {"Resources": {"Resource": {"Metadata": {"IssueTime": "2026-10-28T06:00:00+8:00"}, "Data": {"Locations": [
+        {"CountyName": "A", "Location": [{"Geocode": "10008010", "Time": [step("2026-10-28T06:00:00+8:00", "25", None), step("2026-10-28T09:00:00+8:00", "36", "危險")]},
+                                         {"Geocode": "10008020", "Time": [step("2026-10-28T09:00:00+8:00", "32", "警戒")]}]}]}}}}}
+    r = heat.parse(doc)
+    assert r["times"] == ["2026-10-28T06:00:00+08:00", "2026-10-28T09:00:00+08:00"] and r["issue"] == r["times"][0]
+    assert r["towns"]["10008010"] == [[25, 36], [0, 3]]
+    assert r["towns"]["10008020"] == [[None, 32], [0, 2]]
+    with pytest.raises(ValueError):
+        heat.parse({"cwaopendata": {"Resources": {"Resource": {"Metadata": {"IssueTime": "2026-10-28T06:00:00+8:00"}, "Data": {"Locations": []}}}}})
+
+
+class _Msg3(_Msg):
+    def __init__(self, *a, params=None, **k):
+        super().__init__(*a, **k)
+        self._p = params or {}
+
+    def __getitem__(self, key):
+        return self._p[key]
+
+
+def test_wrf3_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(wrf3, "HOURS", [0, 6, 12])
+    lat, lon = np.meshgrid(np.linspace(15, 32, 140), np.linspace(112, 132, 160), indexing="ij")
+
+    def fake_open(path):
+        class G(list):
+            def close(self):
+                pass
+        fh = {"n": 0}
+        n = len(opened)
+        opened.append(path)
+        acc = lon * 0 + 5.0 * n          # accumulated rain: 0, 5, 10 mm
+        msgs = [_Msg3("2t", 2, lon * 0 + 293.15, lat, lon, kind="heightAboveGround"), _Msg3("2r", 2, lon * 0 + 70, lat, lon, kind="heightAboveGround"),
+                _Msg3("10u", 10, lon * 0.1, lat, lon, kind="heightAboveGround"), _Msg3("10v", 10, lat * 0.1, lat, lon, kind="heightAboveGround"),
+                _Msg3("unknown", 0, acc, lat, lon, kind="surface", params={"parameterCategory": 1, "parameterNumber": 8}),
+                _Msg3("unknown", 0, acc, lat, lon, kind="surface", params={"parameterCategory": 3, "parameterNumber": 0})]
+        for lv in wrf3.LEVELS:
+            msgs += [_Msg3("u", lv, lon * 0.1, lat, lon), _Msg3("v", lv, lat * 0.1, lat, lon), _Msg3("gh", lv, lon * 0 + 1500.0, lat, lon)]
+        return G(msgs)
+    opened = []
+    meta = json.dumps({"cwaopendata": {"dataset": {"datasetInfo": {"InitialTime": "202610270000"}}}}).encode()
+    calls = []
+
+    def fetch(key):
+        calls.append(key)
+        return meta if key == wrf3.META_KEY else b"x"
+    pts = [("m1", 23.5, 121.0), ("10008010", 25.0, 121.5)]
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 27, 10, tzinfo=TZ)
+    r = wrf3.build(tmp_path, log, fetch, now, pts, open_grib=fake_open)
+    assert r["fresh"] and r["steps"] == 3 and r["rain"] == [6, 12] and len(calls) == 4
+    d = json.loads((tmp_path / "wrf3.json").read_text(encoding="utf-8"))
+    g = d["grid"]
+    u = np.frombuffer(base64.b64decode(d["wind"]["u850"]), "<i2").reshape(3, g["ny"], g["nx"])
+    assert abs(u[0, 0, 0] - round((g["lon0"]) * 0.1 * 10)) <= 1 and "u10" in d["wind"] and len(d["wind"]) == 2 * len(wrf3.LEVELS) + 2
+    s = json.loads((tmp_path / "wrf3pts.json").read_text(encoding="utf-8"))
+    assert s["points"]["m1"]["t2"] == [200, 200, 200] and s["points"]["m1"]["rain"] == [None, 50, 50] and s["points"]["m1"]["rh"] == [70, 70, 70]
+    meta_r = json.loads((tmp_path / "grids" / "wrf3_rain_006.json").read_text(encoding="utf-8"))
+    assert meta_r["unit"] == "mm" and meta_r["start"] < meta_r["time"] and abs(meta_r["max"] - 5.0) < 0.11
+    assert (tmp_path / "grids" / "wrf3_temp_000.png").exists() and not (tmp_path / "grids" / "wrf3_rain_000.png").exists()
+    calls.clear()
+    assert wrf3.build(tmp_path, log, fetch, now, pts, open_grib=fake_open)["fresh"] is False and calls == [wrf3.META_KEY]
+    log.close()

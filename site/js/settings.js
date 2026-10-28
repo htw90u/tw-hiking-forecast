@@ -13,7 +13,7 @@ export const DEFAULTS = {
   histOverlays: {},      // historical maps stacked on the base map: {layer id: opacity}
   customTile: '',
   tfKey: '',             // personal Thunderforest API key (OpenCycleMap); overrides the site key
-  showRainGauges: true,  // rain-only stations in the nearby-station list
+  showRainGauges: false,  // rain-only stations in the nearby-station list
   reduceMotion: false,
   smooth: true,          // interpolate grid layers (false = raw cells)
   boldText: false,

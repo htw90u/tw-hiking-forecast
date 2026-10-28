@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import aloft, forecast, geo, grids, gusts, hydro, wrf as wrfmodel, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
+from . import aloft, forecast, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "hydro", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "heat", "hydro", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -452,6 +452,31 @@ class Builder:
         r = wrfmodel.build(self.out, self.log, lambda key: self.f._request(f"{self.f.base}/{key}")[2], now())
         self.manifest["layers"]["wrf"] = {"time": r["init"], "steps": r["steps"]}
         return f"model run {r['init']}, {r['steps']} steps ({'downloaded' if r['fresh'] else 'unchanged'})"
+
+    def wrf3_points(self):
+        """[(key, lat, lon)] of every forecast spot and township centre (the places the point panel has forecasts for)."""
+        pts = []
+        idx = self.out / "spots" / "index.json"
+        if idx.exists():
+            pts += [(s["k"], s["lat"], s["lon"]) for s in json.loads(idx.read_text(encoding="utf-8")).get("spots", [])]
+        for f in sorted((self.out / "towns").glob("*.json")):
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if d.get("g") and d.get("lat") and d.get("lon"):
+                pts.append((d["g"], d["lat"], d["lon"]))
+        return pts
+
+    def task_wrf3(self):
+        r = wrf3.build(self.out, self.log, lambda key: self.f._request(f"{self.f.base}/{key}")[2], now(), self.wrf3_points())
+        steps = json.loads((self.out / "wrf3pts.json").read_text(encoding="utf-8"))["steps"]
+        self.manifest["layers"]["wrf3"] = {"time": r["init"], "steps": steps,
+                                           "temp": [{"fh": h, "meta": f"grids/wrf3_temp_{h:03d}.json"} for h in wrf3.HOURS],
+                                           "rain": [{"fh": h, "meta": f"grids/wrf3_rain_{h:03d}.json"} for h in r["rain"]]}
+        return f"model run {r['init']}, {r['steps']} steps ({'downloaded' if r['fresh'] else 'unchanged'})"
+
+    def task_heat(self):
+        r = heat.build(self.out, self.f.get_json)
+        self.manifest["layers"]["heat"] = {"time": r["issue"], "towns": r["towns"], "steps": r["steps"]}
+        return f"{r['towns']} townships x {r['steps']} steps, {r['warned']} with a warning"
 
     def task_hydro(self):
         r = hydro.build(self.out, self.log, now())
