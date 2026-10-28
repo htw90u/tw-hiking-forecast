@@ -33,22 +33,24 @@ export function townAlerts(h, county, town) {
 
 const fmt = (v, nd = 1) => (v === null || v === undefined ? '—' : Number(v).toFixed(nd));
 
-/** Tooltips are short stacked lines (name and status first), not one long sentence. */
+/** Tooltips are stacked short lines: the name alone on the first line, then "label value" rows with bold coloured labels. */
+const kv = (k, v) => `<span class="tt-k">${k}</span> ${v}`;
+
 export function riverTip(r) {
   const alerts = [['一級', r.a1], ['二級', r.a2], ['三級', r.a3]].filter(([, v]) => v !== null && v !== undefined).map(([n, v]) => `${n} ${v} m`).join('、');
-  return [`<b>${esc(r.n)}${r.river ? `（${esc(r.river)}）` : ''}</b>・${RIVER_STATUS[riverStatus(r)]}`, `水位 ${fmt(r.wl, 2)} m`,
-    alerts ? `警戒水位 ${esc(alerts)}` : null, r.t ? esc(fmtTime(r.t)) : null].filter(Boolean).join('<br>');
+  return [`<b class="tt-name">${esc(r.n)}${r.river ? `（${esc(r.river)}）` : ''}</b>`, kv('狀態', RIVER_STATUS[riverStatus(r)]), kv('水位', `${fmt(r.wl, 2)} m`),
+    alerts ? kv('警戒水位', esc(alerts)) : null, r.t ? kv('時間', esc(fmtTime(r.t))) : null].filter(Boolean).join('<br>');
 }
 
 export function reservoirTip(r) {
   const has = (v) => v !== null && v !== undefined;
-  const lines = [`<b>${esc(r.n)}</b>・${RESERVOIR_STATUS[reservoirStatus(r)]}`, `水位 ${fmt(r.wl, 2)} m`,
-    has(r.vol) ? `有效蓄水量 ${fmt(r.vol, 2)}${r.cap ? `／容量 ${fmt(r.cap, 2)}` : ''}` : null,
-    has(r.inflow) || has(r.outflow) ? `${has(r.inflow) ? `入流 ${fmt(r.inflow)}` : ''}${has(r.inflow) && has(r.outflow) ? '・' : ''}${has(r.outflow) ? `總放流 ${fmt(r.outflow)}` : ''} m³/s` : null,
-    (r.spill ?? 0) > 0 ? `溢洪道放流 ${fmt(r.spill)} m³/s` : null,
-    (r.plan ?? 0) > 0 ? `預定洩洪 ${fmt(r.plan)} m³/s${r.planT ? `（${esc(fmtTime(r.planT))}）` : ''}` : null,
-    r.t ? esc(fmtTime(r.t)) : null].filter(Boolean);
-  return lines.join('<br>');
+  return [`<b class="tt-name">${esc(r.n)}</b>`, kv('狀態', RESERVOIR_STATUS[reservoirStatus(r)]), kv('水位', `${fmt(r.wl, 2)} m`),
+    has(r.vol) ? kv('有效蓄水量', `${fmt(r.vol, 2)}${r.cap ? `／容量 ${fmt(r.cap, 2)}` : ''}`) : null,
+    has(r.inflow) ? kv('入流', `${fmt(r.inflow)} m³/s`) : null,
+    has(r.outflow) ? kv('總放流', `${fmt(r.outflow)} m³/s`) : null,
+    (r.spill ?? 0) > 0 ? kv('溢洪道放流', `${fmt(r.spill)} m³/s`) : null,
+    (r.plan ?? 0) > 0 ? kv('預定洩洪', `${fmt(r.plan)} m³/s${r.planT ? `（${esc(fmtTime(r.planT))}）` : ''}`) : null,
+    r.t ? kv('時間', esc(fmtTime(r.t))) : null].filter(Boolean).join('<br>');
 }
 
 /** Card for the point panel: debris-flow alerts of the township, river stations and reservoirs nearby (15 km). */

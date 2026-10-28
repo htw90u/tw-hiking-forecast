@@ -93,7 +93,9 @@ a { color: var(--accent); }
 [data-theme="contrast"] .pin-mtn, [data-theme="contrast"] .pin-spot { color: #ff0; text-shadow: 0 0 2px #000, 0 0 2px #000; }
 .epi { color: #c00; font-size: 26px; font-weight: 900; text-align: center; line-height: 28px; text-shadow: 0 0 3px #fff; }
 .ty-icon { font-size: 26px; line-height: 30px; text-align: center; }
-.leaflet-tooltip { font-size: calc(var(--u) * .85); white-space: normal; max-width: min(18rem, 80vw); line-height: 1.35; }
+.leaflet-tooltip { font-size: calc(var(--u) * .85); width: max-content; max-width: min(20rem, 85vw); white-space: normal; line-height: 1.4; }
+.leaflet-tooltip .tt-k { font-weight: 700; color: #0b5d7a; }
+.leaflet-tooltip .tt-name { font-size: 1.05em; }
 
 /* ---------- controls */
 .controls { font-size: var(--u); background: var(--card); border-top: 1px solid var(--line); padding: calc(var(--u) * .4) calc(var(--u) * .5); padding-bottom: max(calc(var(--u) * .4), env(safe-area-inset-bottom)); z-index: 1000; }
