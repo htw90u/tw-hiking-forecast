@@ -356,6 +356,38 @@ async function loadWrf3pts() {
   return S.wrf3pts;
 }
 
+async function loadWrfgpts() {
+  if (S.wrfgpts === undefined) S.wrfgpts = await getJSON('wrfgpts.json', { optional: true });
+  return S.wrfgpts;
+}
+
+/** Global-model series (16 days) at a forecast spot or township centre: 2 m temperature, 10 m wind speed and the 24-hour rain at the daily times. */
+function wrfgOf(pts, key) {
+  const p = pts?.points?.[key];
+  if (!p) return null;
+  const t0 = new Date(pts.initUTC).getTime();
+  const at = (h) => new Date(t0 + h * 3600e3).toISOString();
+  const times = pts.hours.map(at);
+  const sc = (a, f) => a.map((v) => (v === null || v === undefined ? null : v / f));
+  const t2 = sc(p.t2, 10);
+  const ws = sc(p.ws, 10);
+  const accAt = (h) => { const v = p.acc[pts.hours.indexOf(h)]; return v === null || v === undefined ? null : v / 10; };
+  const dayTimes = pts.days.map(at);
+  const rain = pts.days.map((h) => { const a = accAt(h); const b = h === 24 ? 0 : accAt(h - 24); return a === null || b === null ? null : Math.max(0, a - b); });
+  const ok = (a) => a.filter((x) => x !== null);
+  return { init: pts.init, times, t2, ws, dayTimes, rain, tmin: Math.min(...ok(t2)), tmax: Math.max(...ok(t2)), rmax: Math.max(0, ...ok(rain)) };
+}
+
+function wrfgCard(w, label) {
+  if (!w) return html``;
+  return html`<section class="card" aria-labelledby="h-wrfg"><h3 id="h-wrfg">全球模式 16 天趨勢</h3>
+<p class="note">氣象署全球模式（0.25°、約 25 km 網格；${esc(fmtTime(w.init))} 起報，前 10 天每 6 小時、之後每 12 小時），取「${esc(label)}」所在格點。這是模式輸出，遠期（一週以上）只適合看趨勢，不要當作逐日預報。</p>
+${raw(chart({ title: '2 m 氣溫（全球模式）', unit: '°C', times: w.times, series: [{ label: '氣溫', values: w.t2, kind: 'line', cls: 's1' }] }))}
+${raw(chart({ title: '24 小時降水（全球模式）', unit: 'mm', times: w.dayTimes, zeroBase: true, series: [{ label: '24 小時降水', values: w.rain, kind: 'bar', cls: 's2' }] }))}
+${raw(chart({ title: '10 m 風速（全球模式）', unit: 'm/s', times: w.times, zeroBase: true, series: [{ label: '風速', values: w.ws, kind: 'line', cls: 's3' }] }))}
+<p class="note">25 km 網格的地形比實際平滑，山區氣溫常偏高、風偏弱、降水位置不準；請與氣象署地點預報、系集預報與測站對照。</p></section>`;
+}
+
 /** WRF 3 km series at a forecast spot or township centre: 2 m temperature, 6-hour rain and 10 m wind speed. */
 function wrf3Of(pts, key) {
   const p = pts?.points?.[key];
@@ -820,6 +852,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
 
   const w3Spot = spotPick?.k && S.wrf3pts?.points?.[spotPick.k] ? spotPick : null;
   const w3 = wrf3Of(S.wrf3pts, w3Spot ? w3Spot.k : town?.TOWNCODE);
+  const wg = wrfgOf(S.wrfgpts, w3Spot ? w3Spot.k : town?.TOWNCODE);
   const w3Label = w3Spot ? w3Spot.n : town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : '';
   const cardsOut = {
     risk: cardize(riskHtml, { id: 'risk', grp: 'safe', title: '登山安全評估', titleId: 'h-risk', open: true, alert: risk.level > 0, extra: `risk ${LEVELS[risk.level].cls}`,
@@ -833,6 +866,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     fc: cardize(spotFcCard, { id: 'fc', grp: 'fc', icon: '☀', open: true, summary: briefText(brief) }),
     town: cardize(townCard, { id: 'town', grp: 'fc', icon: '☀', open: !spotFcCard, summary: briefText(brief) }),
     wrf3: cardize(wrf3Card(w3, w3Label), { id: 'wrf3', grp: 'fc', icon: '▦', summary: w3 && w3.tmin !== null ? `未來 24 小時 ${fmtNum(w3.tmin, 0)}–${fmtNum(w3.tmax, 0)}°C・最大 6 小時降水 ${fmtNum(w3.rmax ?? 0, 0)} mm・風 ${fmtNum(w3.wmax ?? 0, 0)} m/s` : '' }),
+    wrfg: cardize(wrfgCard(wg, w3Label), { id: 'wrfg', grp: 'fc', icon: '🌐', summary: wg ? `16 天：${fmtNum(wg.tmin, 0)}–${fmtNum(wg.tmax, 0)}°C・最大日降水 ${fmtNum(wg.rmax, 0)} mm` : '' }),
     heat: cardize(heatCard(heat), { id: 'heat', grp: 'fc', icon: '♨', summary: heat?.top === null || !heat ? '' : `未來 24 小時最高 ${heat.max}${heat.warnMax ? `（${HEAT_WARN[heat.warnMax]}）` : ''}` }),
     rain: cardize([accHtml, qpfHtml, qpf6Html, qaccHtml], { id: 'rain', grp: 'fc', icon: '☂', title: '降雨預報', titleId: 'h-rain', keepHeads: true, summary: rainSum }),
     mtnFc: cardize(mtnFcHtml, { id: 'mtnfc', grp: 'fc', icon: '▲', summary: mtnSum }),
@@ -843,7 +877,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     near: cardize(nearHtml, { id: 'near', grp: 'info', summary: near2 }),
     mtns: cardize(station ? mountainsCard(station.lat, station.lon) : peak ? mountainsCard(lat, lon, 10, peak.k) : '', { id: 'mtns', grp: 'info', icon: '▲', summary: '' }),
   };
-  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'fc', 'town', 'rain', 'heat', 'wrf3', 'mtnFc', 'aloft', 'hydro', 'ens', 'sun', 'mtns', 'near'];
+  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'fc', 'town', 'rain', 'heat', 'wrf3', 'wrfg', 'mtnFc', 'aloft', 'hydro', 'ens', 'sun', 'mtns', 'near'];
   const present = order.filter((k) => cardsOut[k]);
   const groupsPresent = Object.keys(GROUPS).filter((g) => present.some((k) => cardsOut[k].includes(`data-grp="${g}"`)));
   const bf = (n) => (n === null || n === undefined ? '—' : `${n} 級`);
@@ -901,7 +935,7 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
   // The slow part: winds aloft, water, and the rest of the grid values; the cards that depend on them are swapped in when they arrive.
   const token = ++pointToken;
   const mark = document.querySelector('#sheet-body details.pcard[data-card="risk"]');
-  const late = await Promise.all([loadAloft(), loadHydro(), sampleLayers(lat, lon, 'rest'), loadWrf3pts()]).catch(() => null);
+  const late = await Promise.all([loadAloft(), loadHydro(), sampleLayers(lat, lon, 'rest'), loadWrf3pts(), loadWrfgpts()]).catch(() => null);
   if (late && token === pointToken && mark?.isConnected) {
     lateVals = late[2];
     const next = build({ ...vals, ...lateVals });

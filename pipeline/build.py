@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import aloft, forecast, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
+from . import aloft, forecast, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, wrfglobal, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "heat", "hydro", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "wrfg", "heat", "hydro", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -472,6 +472,14 @@ class Builder:
                                            "temp": [{"fh": h, "meta": f"grids/wrf3_temp_{h:03d}.json"} for h in wrf3.HOURS],
                                            "rain": [{"fh": h, "meta": f"grids/wrf3_rain_{h:03d}.json"} for h in r["rain"]]}
         return f"model run {r['init']}, {r['steps']} steps ({'downloaded' if r['fresh'] else 'unchanged'})"
+
+    def task_wrfg(self):
+        r = wrfglobal.build(self.out, self.log, lambda key: self.f._request(f"{self.f.base}/{key}")[2], now(), self.wrf3_points())
+        pts = json.loads((self.out / "wrfgpts.json").read_text(encoding="utf-8"))
+        days = [{"h": h, "time": (datetime.fromisoformat(pts["initUTC"]) + timedelta(hours=h)).astimezone(TZ).isoformat(),
+                 **{k: f"grids/wrfg_{k}_{h:03d}.json" for k in ("rain", "msl", "temp")}} for h in r["days"]]
+        self.manifest["layers"]["wrfg"] = {"time": r["init"], "days": days}
+        return f"model run {r['init']}, {len(days)} days ({'downloaded' if r['fresh'] else 'unchanged'})"
 
     def task_heat(self):
         r = heat.build(self.out, self.f.get_json)

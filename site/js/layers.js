@@ -19,6 +19,7 @@ export const LAYERS = [
   { id: 'uv', label: '紫外線', kind: 'uv', unit: '' },
   { id: 'heat', label: '熱傷害', kind: 'heat', unit: '' },
   { id: 'wrf3', label: 'WRF 3km', kind: 'rain', unit: 'mm' },
+  { id: 'wrfg', label: '全球模式', kind: 'rain', unit: 'mm' },
   { id: 'visib', label: '能見度', kind: 'visib', unit: 'km' },
   { id: 'water', label: '水位', kind: 'water', unit: 'm' },
   { id: 'debris', label: '土石流', kind: 'debris', unit: '' },
@@ -56,6 +57,7 @@ const SPACING_KINDS = ['rainacc', 'rainbig'];
 export function layerKind(id) {
   if (id === 'qpf' && S.layer.qpfMode === 'acc') return 'rainacc';
   if (id === 'wrf3') return S.layer.wrf3Mode === 'temp' ? 'temp' : 'rain';
+  if (id === 'wrfg') return { msl: 'msl', temp: 'temp' }[S.layer.wrfgMode] || 'rain';
   if (id === 'sat' && satGrids().ir) return SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].kind;
   return layerDef(id).kind;
 }
@@ -101,6 +103,7 @@ export function framesFor(id) {
     return g.ir ? SAT_MODES.map((m) => g[m.key]?.meta).filter(Boolean) : [];
   }
   if (id === 'wrf3') return wrf3Frames().map((f) => f.meta);
+  if (id === 'wrfg') return wrfgFrames().map((f) => f.meta);
   if (id === 'rainacc') return (L_.rainacc?.periods || [{ meta: 'grids/rainday.json' }]).map((p) => p.meta);
   if (['qpe1h', 'rainday', 'qpf1h', 'temp'].includes(id)) return [`grids/${id}.json`];
   return [];
@@ -152,6 +155,7 @@ function playInfo() {
   const grids = (list) => ({ n: list.length, pre: () => Promise.all(list.map((p) => getGrid(p))) });
   if (id === 'radar') return grids(framesFor('radar'));
   if (id === 'wrf3') return grids(framesFor('wrf3'));
+  if (id === 'wrfg') return grids(framesFor('wrfg'));
   if (id === 'heat') return { n: S.heat?.times?.length || 0 };
   if (id === 'pop' || (id === 'wind' && (S.layer.windMode || 'fc') === 'fc') || (id === 'visib' && S.layer.visMode === 'fc')) return { n: S.wind?.times?.length || 0 };
   if (id === 'wind' && S.layer.windMode === 'aloft') return { n: wrfDs()?.steps?.length || 0 };
@@ -185,6 +189,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'visib') { await showVisibility(keepFrame); return; }
     if (id === 'lightning') { await showLightning(); return; }
     if (id === 'wrf3' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = wrf3NowIndex(wrf3Frames());
+    if (id === 'wrfg' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = 0;
     const frames = framesFor(id);
     const path = PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
@@ -197,7 +202,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     // so that rain areas fade out at their edges instead of ending in square steps.
     const opts = { smooth: S.settings.smooth !== false, fill: FILL[kind] ?? NaN };
     // The temperature analysis covers land only, in 3 km cells: cut it to the real coastline (no gaps, no sea spill-over).
-    if (kind === 'temp' && id !== 'wrf3') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
+    if (kind === 'temp' && id !== 'wrf3' && id !== 'wrfg') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
     const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
       const [w, s, e, n] = g.bounds;
       return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
@@ -211,6 +216,12 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     renderLegend({ ...grid.meta, kindOverride: kind, ...(wf ? { src: '中央氣象署 區域數值模式 WRF 3 km（M-A0064）', issued: S.manifest.layers.wrf3.time,
       ...(S.layer.wrf3Mode === 'temp' ? {} : { start: grid.meta.start, end: grid.meta.time, time: undefined }),
       note: `模式輸出的格點預報（3 km 網格、每 6 小時一步、最長 84 小時），${S.layer.wrf3Mode === 'temp' ? '為 2 m 高度氣溫；模式地形高度與實際海拔不同，山區氣溫請與測站、氣象署山區預報對照。' : '為每 6 小時累積降水，由模式累積雨量相減而得，位置與強度都可能有偏差，不是機率，也不等於氣象署的定量降水預報。'}` } : {}) });
+    if (id === 'wrfg') {
+      const mode = S.layer.wrfgMode || 'rain';
+      renderLegend({ ...grid.meta, kindOverride: kind, src: '中央氣象署 全球模式（M-A0060）', issued: S.manifest.layers.wrfg.time,
+        ...(mode === 'rain' ? { start: grid.meta.start, end: grid.meta.time, time: undefined } : {}),
+        note: `全球模式 0.25°（約 25 km）網格，預報到第 16 天（前 10 天每 6 小時、之後每 12 小時，這裡每天取一個時間）。${mode === 'rain' ? '為該日前 24 小時累積降水，由模式累積雨量相減而得，山區細節與強度偏差大，只適合看遠期趨勢與降雨範圍。' : mode === 'msl' ? '海平面氣壓（hPa）：低壓、颱風與鋒面看低值，高壓看高值，可看出天氣系統的移動。' : '2 m 氣溫；25 km 網格的地形比實際平滑，山區氣溫偏高，請以地點預報為準。'}` });
+    }
     renderTimeControl(grid.meta);
   } catch (e) {
     console.error(e);
@@ -460,6 +471,14 @@ function wrf3Frames() {
   if (!m) return [];
   const list = S.layer.wrf3Mode === 'temp' ? m.temp : m.rain;
   return (list || []).map((x) => ({ meta: x.meta, time: m.steps[x.fh / 6] }));
+}
+
+/** Frames of the global-model layer: one per forecast day [{meta, time}] for the chosen mode (24-hour rain, sea-level pressure or 2 m temperature). */
+function wrfgFrames() {
+  const m = S.manifest?.layers?.wrfg;
+  if (!m) return [];
+  const k = ['rain', 'msl', 'temp'].includes(S.layer.wrfgMode) ? S.layer.wrfgMode : 'rain';
+  return m.days.map((d) => ({ meta: d[k], time: d.time }));
 }
 
 function wrf3NowIndex(frames) {
@@ -828,6 +847,7 @@ function legendUnit(kind, unit) {
   if (kind === 'debris') return ['等級', '警戒'];
   if (kind === 'uv') return ['單位', '指數'];
   if (kind === 'heat') return ['單位', '指數'];
+  if (kind === 'msl') return ['單位', 'hPa'];
   if (kind === 'visib') return ['單位', 'km'];
   if (kind === 'intensity') return ['單位', '震度'];
   if (kind === 'vis') return ['單位', '反照率'];
@@ -899,6 +919,15 @@ export function renderTimeControl(meta) {
     if (fr.length) {
       h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf3-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wrf3-time">${esc(fmtTime(t))}</output></div>`;
+    }
+  } else if (id === 'wrfg') {
+    const mode = S.layer.wrfgMode || 'rain';
+    const fr = wrfgFrames();
+    const t = fr[S.layer.frame]?.time;
+    h = modeTabs('全球模式項目', [['rain', '24小時降水'], ['msl', '海平面氣壓'], ['temp', '2 m 氣溫']], 'wrfgmode', mode, { rain: '☂', msl: '◎', temp: '🌡' });
+    if (fr.length) {
+      h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報日期</span><input id="wrfg-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+<output id="wrfg-time">第 ${S.layer.frame + 1} 天 ${esc(fmtTime(t, { date: true }))}</output></div>`;
     }
   } else if (id === 'rainacc') {
     const periods = S.manifest?.layers?.rainacc?.periods || [];
@@ -1003,6 +1032,15 @@ export function renderTimeControl(meta) {
     S.layer.wrf3Mode = b.dataset.wrf3mode;
     showLayer('wrf3', { keepFrame: false });
   }));
+  el.querySelectorAll('[data-wrfgmode]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.wrfgMode = b.dataset.wrfgmode;
+    showLayer('wrfg', { keepFrame: true });
+  }));
+  const wg = el.querySelector('#wrfg-frame');
+  if (wg) {
+    wg.addEventListener('input', () => { stopAnimation(); el.querySelector('#wrfg-time').textContent = `第 ${Number(wg.value) + 1} 天 ${fmtTime(wrfgFrames()[Number(wg.value)].time)}`; });
+    wg.addEventListener('change', () => { S.layer.frame = Number(wg.value); showLayer('wrfg', { keepFrame: true }); });
+  }
   const w3 = el.querySelector('#wrf3-frame');
   if (w3) {
     w3.addEventListener('input', () => { stopAnimation(); el.querySelector('#wrf3-time').textContent = fmtTime(wrf3Frames()[Number(w3.value)].time); });

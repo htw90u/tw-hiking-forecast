@@ -799,6 +799,29 @@ function serve() {
     await selectLayer('.chip[data-layer="radar"]');
   });
 
+  await check('global model: three modes with a daily slider and play button; 16-day card in the point panel', async () => {
+    if (!fs.existsSync(path.join(SITE, 'data', 'wrfgpts.json'))) { console.log('SKIP wrfgpts.json not built locally'); return; }
+    await selectLayer('.chip[data-layer="wrfg"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('24 小時降水'));
+    assert((await page.$eval('#wrfg-frame', (e) => Number(e.max))) === 15, 'sixteen daily frames expected');
+    assert(await page.$('#time-ctl #btn-play'), 'play button missing on the global model');
+    assert((await page.$$('img.wx-grid')).length >= 1, 'global rain image missing');
+    await page.click('[data-wrfgmode="msl"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('海平面氣壓'));
+    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 15, 'pressure colour bar');
+    await page.click('[data-wrfgmode="temp"]');
+    await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('氣溫'));
+    const card = await page.evaluate(async () => {
+      const v = await import('./js/views.js'); const { S } = await import('./js/state.js');
+      const sp = S.spots.find((x) => x.c === 'mountain');
+      await v.showPoint(sp.lat, sp.lon, { spotKey: sp.k });
+      return new Promise((resolve) => window.setTimeout(() => resolve({ n: document.querySelectorAll('[data-card="wrfg"] figure.chart').length, t: document.querySelector('[data-card="wrfg"]')?.textContent.includes('遠期') }), 4000));
+    });
+    assert(card.n === 3 && card.t, `global model card ${JSON.stringify(card)}`);
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
   await check('heat-injury layer, card and safety assessment', async () => {
     const h = await page.evaluate(async () => {
       const { S } = await import('./js/state.js');

@@ -163,8 +163,6 @@ body.opts-open .legend { display: none !important; }
 }
 .sheet.full { height: calc(100vh - 3.5rem); }
 .sheet-head { display: flex; align-items: center; gap: .3rem; padding: .3rem .4rem; border-bottom: 1px solid var(--line); position: relative; touch-action: none; }
-.sheet-grab { position: absolute; top: .25rem; left: 50%; transform: translateX(-50%); width: 2.6rem; height: .3rem; border-radius: 1rem; background: var(--line); }
-.sheet-head h2 { padding-top: .35rem; }
 .sheet-head h2 { flex: 1; font-size: 1.1rem; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet-body { overflow: auto; padding: .5rem .8rem 2rem; overscroll-behavior: contain; }
 /* Phones held sideways: side panel instead of bottom sheet, compact header. */
@@ -173,8 +171,7 @@ body.opts-open .legend { display: none !important; }
   .status { font-size: calc(var(--u) * .75); padding: 0 calc(var(--u) * .6); }
   .sheet { left: auto; top: 0; right: 0; bottom: 0; width: min(26rem, 55vw); height: auto; border-radius: 0; border-left: 1px solid var(--line); }
   .sheet.full { width: 100vw; height: auto; }
-  .sheet-grab { display: none; }
-  body.sheet-open #map, body.sheet-open .controls, body.sheet-open .status, body.sheet-open .topbar { margin-right: min(26rem, 55vw); }
+    body.sheet-open #map, body.sheet-open .controls, body.sheet-open .status, body.sheet-open .topbar { margin-right: min(26rem, 55vw); }
   .toggles { font-size: calc(var(--u) * .85); }
 
 }

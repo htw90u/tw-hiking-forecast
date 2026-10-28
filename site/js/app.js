@@ -718,7 +718,7 @@ function openSettings() {
   const nPass = statusRows.filter(([, v]) => v.ok).length;
   const thRow = (label, a, b, unit, le = false) => `<div class="thr"><b>${label}</b><label><span class="sr-only">${label}注意</span><input type="number" class="num" data-th="${a}" value="${th[a]}"></label><label><span class="sr-only">${label}危險</span><input type="number" class="num" data-th="${b}" value="${th[b]}"></label><span class="muted">${unit}</span></div>`;
   body.innerHTML = `
-<nav class="pjump sjump" aria-label="設定分區">${CARDS.map(([id, g, icon, , short]) => `<button type="button" class="g-${g}" data-sjump="${id}"><span aria-hidden="true">${icon}</span> ${short}</button>`).join('')}</nav>
+<nav class="pjump sjump" aria-label="設定分區">${CARDS.map(([id, g, icon, , short]) => `<button type="button" class="g-${g}" data-sjump="${id}">${s.ui === 'icon' ? `<span aria-hidden="true">${icon}</span> ` : ''}${short}</button>`).join('')}</nav>
 ${card(CARDS[0], `
 ${grp('主題與色盤')}
 <label class="field">主題 <select id="set-theme">${opt({ auto: '跟隨系統', light: '淺色', dark: '深色', contrast: '高對比（黑底黃字）' }, s.theme)}</select></label>
@@ -899,7 +899,7 @@ function bindSheetSwipe() {
       else if (!mini) setSheetMini(true);
     } else if (mini) {
       setSheetMini(false);
-    } else if (!full && getComputedStyle($('.sheet-grab')).display !== 'none') {
+    } else if (!full && !matchMedia('(max-height: 500px) and (orientation: landscape)').matches) {
       $('#sheet-toggle').click();
     }
   });

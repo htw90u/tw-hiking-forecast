@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipeline import aloft, heat, hydro, wrf, wrf3, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, satellite, stations, wind
+from pipeline import aloft, heat, hydro, wrf, wrf3, wrfglobal, forecast, geo, grids, gusts, hazards, lightning, peaks, qpf, qpfweb, satellite, stations, wind
 from pipeline.build import to_mercator
 from pipeline.fetch import FetchError
 from pipeline.log import TZ, Log, colorize
@@ -856,3 +856,48 @@ def test_alt_wind_interpolation():
     assert abs(au[0] - (2 + (2000 - 1500) / 1500 * 8)) < 1e-9 and abs(au[1] - (2 + 500 / 1700 * 8)) < 1e-9
     assert wrf.alt_wind(u, v, gh, 1000)[0][0] == 1.0 and wrf.alt_wind(u, v, gh, 9000)[0][0] == 20.0   # no extrapolation
     assert wrf.alt_wind(u, v, gh, 3000)[0][0] == 10.0
+
+
+class _GMsg(_Msg3):
+    pass
+
+
+def test_wrfglobal_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(wrfglobal, "HOURS", [0, 24, 48, 72])
+    monkeypatch.setattr(wrfglobal, "DAYS", [24, 48, 72])
+    lat, lon = np.meshgrid(np.arange(90, -91, -1.0), np.arange(0, 360, 1.0), indexing="ij")   # global 1 degree grid, rows north to south
+    state = {"n": 0}
+
+    def fake_open(path):
+        class G(list):
+            def close(self):
+                pass
+        n = state["n"]
+        state["n"] += 1
+        acc = lon * 0 + 10.0 * n                                   # accumulated rain: 0, 10, 20, 30 mm
+        return G([_GMsg("msl", 0, lon * 0 + 101325.0, lat, lon, kind="meanSea"), _GMsg("2t", 2, lon * 0 + 293.15 + lat * 0, lat, lon, kind="heightAboveGround"),
+                  _GMsg("10u", 10, lon * 0 + 3.0, lat, lon, kind="heightAboveGround"), _GMsg("10v", 10, lon * 0 + 4.0, lat, lon, kind="heightAboveGround"),
+                  _GMsg("unknown", 0, acc * 5 + 7, lat, lon, kind="surface", params={"parameterCategory": 1, "parameterNumber": 8, "startStep": 6}),   # last interval
+                  _GMsg("unknown", 0, acc, lat, lon, kind="surface", params={"parameterCategory": 1, "parameterNumber": 8, "startStep": 0})])    # running total
+    meta = json.dumps({"cwaopendata": {"dataset": {"datasetInfo": {"InitialTime": "202610270000"}}}}).encode()
+    calls = []
+
+    def fetch(key):
+        calls.append(key)
+        return meta if key == wrfglobal.META_KEY else b"x"
+    pts = [("m1", 23.5, 121.0), ("10008010", 25.0, 121.5)]
+    log = Log("t", tmp_path)
+    now = datetime(2026, 10, 27, 10, tzinfo=TZ)
+    r = wrfglobal.build(tmp_path, log, fetch, now, pts, open_grib=fake_open)
+    assert r["fresh"] and r["days"] == [24, 48, 72] and len(calls) == 5
+    d = json.loads((tmp_path / "wrfgpts.json").read_text(encoding="utf-8"))
+    m1 = d["points"]["m1"]
+    assert m1["t2"] == [200, 200, 200, 200] and m1["ws"] == [50, 50, 50, 50] and m1["acc"] == [0, 100, 200, 300]
+    rain = json.loads((tmp_path / "grids" / "wrfg_rain_048.json").read_text(encoding="utf-8"))
+    assert rain["unit"] == "mm" and abs(rain["max"] - 10.0) < 0.11 and rain["start"] < rain["time"]
+    msl = json.loads((tmp_path / "grids" / "wrfg_msl_024.json").read_text(encoding="utf-8"))
+    assert abs(msl["max"] - 1013.25) < 0.11 and msl["bounds"] == [99.5, -0.5, 160.5, 50.5]
+    assert (tmp_path / "grids" / "wrfg_temp_072.png").exists() and not (tmp_path / "grids" / "wrfg_rain_000.png").exists()
+    calls.clear()
+    assert wrfglobal.build(tmp_path, log, fetch, now, pts, open_grib=fake_open)["fresh"] is False and calls == [wrfglobal.META_KEY]
+    log.close()

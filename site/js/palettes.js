@@ -58,6 +58,11 @@ const HEAT_LABELS = ['< 27', '27–31', '32–35', '36–39', '40+'];
 const CWA_HEAT = ['#d6ecf7', '#ffd600', '#ff9100', '#e53935', '#8e24aa'];
 const CVD_HEAT = ['#f1f1f1', '#fde725', '#21918c', '#3b528b', '#440154'];
 const CONTRAST_HEAT = ['#ffffff', '#ffff00', '#ffaa00', '#ff0000', '#000000'];
+// Sea-level pressure (hPa) of the global model: lows (typhoons, fronts) in purple / blue, highs in orange / red.
+const MSL_BOUNDS = [960, 976, 984, 992, 996, 1000, 1004, 1008, 1012, 1016, 1020, 1024, 1028, 1032, 1040];
+const MSL_LABELS = MSL_BOUNDS.map((b) => String(b));
+const CWA_MSL = ['#4a148c', '#6a1b9a', '#1a237e', '#1565c0', '#1e88e5', '#4fc3f7', '#b3e5fc', '#e8f5e9', '#fff9c4', '#ffe082', '#ffb74d', '#ff8a65', '#e64a19', '#b71c1c', '#7f0000'];
+const CONTRAST_MSL = ['#00ffff', '#00ffff', '#00ffff', '#0080ff', '#0080ff', '#0080ff', '#ffffff', '#ffffff', '#ffff00', '#ffff00', '#ffaa00', '#ffaa00', '#ff0000', '#ff0000', '#ff00ff'];
 // Visibility (km): fog below 1 km (CWA definition of 濃霧), mist 1-2 km.
 const VISIB_BOUNDS = [0, 1, 2, 5, 10, 20];
 const VISIB_LABELS = ['< 1', '1–2', '2–5', '5–10', '10–20', '≥ 20'];
@@ -153,6 +158,7 @@ export const SCALES = {
   ltage: { cwa: zip(LT_BOUNDS, CWA_LT, LT_LABELS), cvd: zip(LT_BOUNDS, CVD_LT, LT_LABELS), contrast: zip(LT_BOUNDS, CWA_LT, LT_LABELS) },
   pop: { cwa: zip(POP_BOUNDS, CWA_POP, POP_LABELS), cvd: zip(POP_BOUNDS, resample(VIRIDIS17, 9), POP_LABELS), contrast: zip(POP_BOUNDS, CONTRAST_POP, POP_LABELS) },
   uv: { cwa: zip(UV_BOUNDS, CWA_UV, UV_LABELS), cvd: zip(UV_BOUNDS, CVD_UV, UV_LABELS), contrast: zip(UV_BOUNDS, CONTRAST_UV, UV_LABELS) },
+  msl: { cwa: zip(MSL_BOUNDS, CWA_MSL, MSL_LABELS), cvd: zip(MSL_BOUNDS, resample(VIRIDIS17, MSL_BOUNDS.length), MSL_LABELS), contrast: zip(MSL_BOUNDS, CONTRAST_MSL, MSL_LABELS) },
   heat: { cwa: zip(HEAT_BOUNDS, CWA_HEAT, HEAT_LABELS), cvd: zip(HEAT_BOUNDS, CVD_HEAT, HEAT_LABELS), contrast: zip(HEAT_BOUNDS, CONTRAST_HEAT, HEAT_LABELS) },
   visib: { cwa: zip(VISIB_BOUNDS, CWA_VISIB, VISIB_LABELS), cvd: zip(VISIB_BOUNDS, CVD_VISIB, VISIB_LABELS), contrast: zip(VISIB_BOUNDS, CONTRAST_VISIB, VISIB_LABELS) },
   water: { cwa: zip([0, 1, 2, 3], CWA_WATER, WATER_LABELS), cvd: zip([0, 1, 2, 3], CVD_WATER, WATER_LABELS), contrast: zip([0, 1, 2, 3], CONTRAST_WATER, WATER_LABELS) },
