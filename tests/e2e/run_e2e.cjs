@@ -1366,6 +1366,23 @@ function serve() {
     await page.waitForFunction(() => !document.getElementById('dlg-settings').open);
   });
 
+  await check('NASA imagery layer: true colour and snow tiles from GIBS, date buttons, acknowledgement, red caution', async () => {
+    const seen = [];
+    await ctx.route(/gibs\.earthdata\.nasa\.gov/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
+    await page.click('.chip[data-layer="nasa"]');
+    await page.waitForSelector('#legend .lg-body .note-red', { state: 'attached' });
+    await page.waitForFunction(() => document.querySelector('.leaflet-tile[src*="gibs.earthdata.nasa.gov"]'));
+    assert(seen.some((u) => /MODIS_Terra_CorrectedReflectance_TrueColor\/default\/\d{4}-\d\d-\d\d\/GoogleMapsCompatible_Level9\//.test(u)), `true colour tile URL: ${seen[0]}`);
+    assert((await page.textContent('#legend')).includes('NASA'), 'NASA acknowledgement missing');
+    await page.click('[data-nasamode="snow"]');
+    await page.waitForFunction(() => document.querySelector('.leaflet-tile[src*="NDSI_Snow_Cover"]'));
+    await page.click('[data-nasaday="3"]');
+    await page.waitForFunction(() => document.querySelectorAll('[data-nasaday][aria-checked="true"]').length === 1 && document.querySelector('[data-nasaday="3"][aria-checked="true"]'));
+    await page.click('.chip[data-layer="radar"]');
+    await page.waitForFunction(() => !document.querySelector('.leaflet-tile[src*="gibs.earthdata.nasa.gov"]'));
+    assert((await page.$('.leaflet-tile[src*="gibs.earthdata.nasa.gov"]')) === null, 'NASA tiles should be removed with the layer');
+  });
+
   await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
     await page.evaluate(() => localStorage.setItem('hikingwx.searchHistory.v1', JSON.stringify(['玉山'])));
     await page.click('#q', { clickCount: 3 });

@@ -25,6 +25,7 @@ export const LAYERS = [
   { id: 'debris', label: '土石流', kind: 'debris', unit: '' },
   { id: 'lightning', label: '閃電', kind: 'ltage' },
   { id: 'sat', label: '衛星雲圖', kind: 'sat' },
+  { id: 'nasa', label: 'NASA影像', kind: 'sat' },
   { id: 'tyrain', label: '颱風雨量預測', kind: 'rain', unit: 'mm', typhoonOnly: true },
   { id: 'none', label: '關閉圖層', kind: 'none' },
 ];
@@ -43,6 +44,20 @@ const SAT_MODES = [
   { label: '紅外線（色調強化）', key: 'ir', kind: 'irenh' },
   { label: '可見光', key: 'vis', kind: 'vis' },
 ];
+
+// NASA GIBS daily imagery (WMTS tiles straight from NASA; no key, open use with acknowledgement).
+const GIBS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
+export const NASA_MODES = [
+  { id: 'tc', label: '真彩色', layer: 'MODIS_Terra_CorrectedReflectance_TrueColor', matrix: 'GoogleMapsCompatible_Level9', ext: 'jpg', zoom: 9 },
+  { id: 'snow', label: '積雪', layer: 'MODIS_Terra_NDSI_Snow_Cover', matrix: 'GoogleMapsCompatible_Level8', ext: 'png', zoom: 8 },
+];
+const NASA_DAYS = 7;
+const NASA_DEFAULT_DAY = 1; // today's pass is usually still incomplete, so start with yesterday
+
+/** Calendar date (UTC, as GIBS names its daily products) `back` days before today in Taiwan. */
+export function nasaDate(back) {
+  return new Date(Date.now() + 8 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
+}
 
 function satGrids() { return S.manifest?.layers?.satellite?.grids || {}; }
 
@@ -168,7 +183,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   S.layer.id = id;
   if (!keepFrame) {
     S.layer.frame = id === 'sat' ? 0 : Math.max(0, framesFor(id).length - 1);
-    S.layer.period = id === 'rainacc' ? Math.max(0, (S.manifest?.layers?.rainacc?.periods || []).findIndex((p) => p.id === '24h')) : 0;
+    S.layer.period = id === 'nasa' ? NASA_DEFAULT_DAY : id === 'rainacc' ? Math.max(0, (S.manifest?.layers?.rainacc?.periods || []).findIndex((p) => p.id === '24h')) : 0;
   }
   document.querySelectorAll('.chip[data-layer]').forEach((b) => {
     b.setAttribute('aria-checked', String(b.dataset.layer === id));
@@ -179,6 +194,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   try {
     if (def.kind === 'none') { clearOverlay(); renderLegend(); return; }
     if (id === 'sat' && !satGrids().ir) { await showSatellite(); return; }
+    if (id === 'nasa') { showNasa(); return; }
     if (id === 'tyrain') { showTyphoonRain(); return; }
     if (id === 'wind') { await showWind(keepFrame); return; }
     if (id === 'water') { await showWater(); return; }
@@ -230,6 +246,24 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     clearOverlay();
     renderLegend(null, `圖層載入失敗（${e.message}）。若為離線狀態，僅能顯示曾經開啟過的圖層。`);
   }
+}
+
+function showNasa() {
+  const m = NASA_MODES.find((x) => x.id === (S.layer.nasaMode || 'tc')) || NASA_MODES[0];
+  const date = nasaDate(S.layer.period);
+  const ov = L.tileLayer(`${GIBS_BASE}/${m.layer}/default/${date}/${m.matrix}/{z}/{y}/{x}.${m.ext}`, {
+    maxNativeZoom: m.zoom, maxZoom: 18, opacity: layerOpacity('nasa'), pane: 'overlayPane', className: 'nasa-tiles',
+    attribution: 'Imagery: NASA GIBS / ESDIS',
+  });
+  ov.addTo(S.map);
+  clearOverlay();
+  S.layer.overlay = ov;
+  renderLegend({
+    label: `NASA ${m.label}`, src: `NASA GIBS（${m.layer}）`, license: 'gibs', date,
+    note: m.id === 'tc' ? 'MODIS Terra 每日真彩色影像（約 250 m），台灣上午 10 點多過境；可看實際雲況、積雪與山區天氣系統。'
+      : 'MODIS Terra 每日積雪指數（NDSI，約 500 m）：藍色為偵測到積雪，請對照真彩色影像分辨雲與雪；灰色為雲。',
+    noteWarn: '光學衛星拍不到雲下的地面，有雲或夜間的地方沒有資料；日期為 UTC 當日，「今天」的影像常不完整，也可能尚未產出（空白）。',
+  });
 }
 
 async function showSatellite() {
@@ -765,11 +799,11 @@ export function setWeatherVisible(on) {
 
 /** Weather layers default to 70 % so the map shows through; the satellite picture defaults to 100 % (it is a picture, not a thin overlay). */
 export function layerOpacity(id = S.layer.id) {
-  return id === 'sat' ? (S.settings.satOpacity ?? 1) : S.settings.opacity;
+  return id === 'sat' || id === 'nasa' ? (S.settings.satOpacity ?? 1) : S.settings.opacity;
 }
 
 export function setOpacity(v) {
-  if (S.layer.id === 'sat') S.settings.satOpacity = v; else S.settings.opacity = v;
+  if (S.layer.id === 'sat' || S.layer.id === 'nasa') S.settings.satOpacity = v; else S.settings.opacity = v;
   const ov = S.layer.overlay;
   if (!ov) return;
   if (ov.setOpacity) ov.setOpacity(v);
@@ -897,6 +931,9 @@ export function attribution(meta) {
   if (meta.license === 'open-meteo') {
     return `<p class="src">資料來源：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 數值模式預報${version ? `（${esc(fmtTime(version))} 取得）` : ''}・CC BY 4.0；非氣象署發布</p>`;
   }
+  if (meta.license === 'gibs') {
+    return `<p class="src">影像日期 ${esc(meta.date || '')}・${esc(meta.src || '')}・Imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS)・<a href="https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api" target="_blank" rel="noopener">GIBS</a>；非中央氣象署資料</p>`;
+  }
   if (meta.license === 'cwa-web') {
     return `<p class="src">資料來源：中央氣象署全球資訊網 ${esc(meta.src || '')}${version ? `（發布 ${esc(fmtTime(version))}）` : ''}・依<a href="${CWA_WEB_TERMS}" target="_blank" rel="noopener">政府網站資料開放宣告</a>引用；本網站將原圖自動對位並依圖例換算為級距，<a href="${esc(meta.url || CWA_WEB_TERMS)}" target="_blank" rel="noopener">原圖</a></p>`;
   }
@@ -951,6 +988,12 @@ export function renderTimeControl(meta) {
   } else if (id === 'sat') {
     const list = satGrids().ir ? SAT_MODES : S.sat;
     h = '<div class="seg tabs" role="radiogroup" aria-label="雲圖種類">' + list.map((x, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.frame}" data-frame="${i}">${esc(x.label)}</button>`).join('') + '</div>';
+  } else if (id === 'nasa') {
+    h = modeTabs('NASA 影像種類', NASA_MODES.map((m) => [m.id, m.label]), 'nasamode', S.layer.nasaMode || 'tc', { tc: '◉', snow: '❄' });
+    h += '<div class="seg" role="radiogroup" aria-label="影像日期">' + Array.from({ length: NASA_DAYS }, (_, i) => {
+      const d = nasaDate(i);
+      return `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-nasaday="${i}">${i === 0 ? '今天' : i === 1 ? '昨天' : esc(d.slice(5).replace('-', '/'))}</button>`;
+    }).join('') + '</div>';
   } else if (id === 'tyrain') {
     const t = S.typhoon?.tables || {};
     h = '<div class="seg" role="radiogroup" aria-label="雨量預測種類">'
@@ -1034,6 +1077,14 @@ export function renderTimeControl(meta) {
   el.querySelectorAll('[data-wrf3mode]').forEach((b) => b.addEventListener('click', () => {
     S.layer.wrf3Mode = b.dataset.wrf3mode;
     showLayer('wrf3', { keepFrame: false });
+  }));
+  el.querySelectorAll('[data-nasamode]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.nasaMode = b.dataset.nasamode;
+    showLayer('nasa', { keepFrame: true });
+  }));
+  el.querySelectorAll('[data-nasaday]').forEach((b) => b.addEventListener('click', () => {
+    S.layer.period = Number(b.dataset.nasaday);
+    showLayer('nasa', { keepFrame: true });
   }));
   el.querySelectorAll('[data-wrfgmode]').forEach((b) => b.addEventListener('click', () => {
     S.layer.wrfgMode = b.dataset.wrfgmode;

@@ -78,8 +78,11 @@
 - [ ] 空氣品質：環境部 AQI → 沙塵、霾害時的戶外活動
 - [ ] 潮汐：氣象署潮汐預報 F-A0021 → 海岸步道（如阿朗壹）通行時間
 
+- [x] NASA GIBS 真彩色與積雪圖層（2026-10-28）：「NASA影像」圖層；其餘 GIBS 候選（IMERG、Himawari、火點、氣溶膠）見下方評估。
+- [ ] 災防科技中心（NCDR）資料服務平台 datahub.ncdr.nat.gov.tw：申請帳號與授權後，評估山區閃洪預警、平原淹水預警、短延時推估雨量、坡地災害 API（datahub 網域已可從開發環境連線）。
+
 ### 外部資料評估（2026-10-28）
 - NASA GIBS（gibs.earthdata.nasa.gov，WMTS 圖磚，免金鑰、開放使用，需標示「NASA GIBS / ESDIS」；本環境可連線）。可用圖層：MODIS／VIIRS 真彩色（解析度 250 m～1 km，每日一張，可看雲況與山區積雪）、MODIS NDSI 積雪（玉山、雪山冬季積雪參考）、IMERG 降雨強度（全球 10 km、30 分鐘，可與雷達互相驗證）、VIIRS 火點（熱異常）、氣溶膠 AOD（霾害、沙塵）、Himawari AHI（Band13 紅外線、Band3 可見光 1 km、Air Mass）、NDVI、地表溫度。做法：Leaflet 直接掛 WMTS 圖磚（EPSG:3857 `best`），時間參數取日期，不需建置階段處理；真彩色與積雪優先。
-- 災防科技中心（NCDR，災害防救資料服務平台 datahub.ncdr.nat.gov.tw）：有山區閃洪預警、平原區淹水預警、短延時推估雨量、坡地災害等 API；需先註冊申請帳號與授權，且目前此開發環境無法連線 ncdr 網域（需開放 dmap／opendata／datahub.ncdr.nat.gov.tw 才能撰寫測試）。待申請後評估：山區閃洪預警（河谷溪降水風險，與登山高度相關）、土石流潛勢圖層。
+- 災防科技中心（NCDR，災害防救資料服務平台 datahub.ncdr.nat.gov.tw）：有山區閃洪預警、平原區淹水預警、短延時推估雨量、坡地災害等 API；需先註冊申請帳號與授權（datahub.ncdr.nat.gov.tw 可連線；dmap／opendata 子網域目前被環境擋下）。待申請後評估：山區閃洪預警（河谷溪降水風險，與登山高度相關）、土石流潛勢圖層。
 
 - 衛星雲圖更細緻影像：氣象署網站/App 使用更高解析度產品，開放資料僅約 1.9 km；待氣象署授權後評估改用。

@@ -1,5 +1,5 @@
 // Service worker: offline app shell, last-known data, and visited map tiles.
-const VERSION = 'v75';
+const VERSION = 'v76';
 const SHELL = `shell-${VERSION}`;
 const DATA = 'data';
 const TILES = 'tiles';
@@ -80,7 +80,7 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  const tileLike = /\/\d+\/\d+\/\d+(\.png|\.jpg|\.webp)?$/.test(url.pathname) && url.origin !== location.origin;
+  const tileLike = /\/\d+\/\d+\/\d+(\.png|\.jpg|\.webp)?$/.test(url.pathname) && url.origin !== location.origin && url.hostname !== 'gibs.earthdata.nasa.gov'; // NASA daily imagery changes under the same URL
   if (TILE_HOSTS.some((h) => url.hostname.endsWith(h)) || tileLike) {
     e.respondWith(cacheFirstTile(req));
     return;
