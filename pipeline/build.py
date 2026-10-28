@@ -144,12 +144,6 @@ class Builder:
         arc.save()
         self.archive = arc
         n = arc.export_station_files(self.out / "hist", cur, days=self.args.hist_days_out)
-        sf = self.out / "stations.json"
-        if sf.exists():
-            doc = json.loads(sf.read_text(encoding="utf-8"))
-            nf = stations.flag_wind_faults(doc["stations"], arc.wind_ids(cur))
-            write_json(sf, doc)
-            self.log.info(f"history: {nf} stations flagged with a wind sensor fault")
         months = arc.months()
         adir = self.out / "archive"
         adir.mkdir(parents=True, exist_ok=True)

@@ -767,15 +767,3 @@ def test_hydro_get_json_retries(monkeypatch):
     with pytest.raises(FetchError):
         hydro.get_json("https://example.test/x", tries=2)
 
-
-def test_flag_wind_faults(tmp_path):
-    arc = stations.Archive(tmp_path)
-    now = datetime(2026, 10, 27, 12, tzinfo=TZ)
-    arc.add([{"id": "A", "k": "auto", "t": "2026-10-27T10:00:00+08:00", "WS": 3.0},
-             {"id": "B", "k": "auto", "t": "2026-10-27T10:00:00+08:00", "T": 5.0}])
-    ids = arc.wind_ids(now)
-    assert ids == {"A"}
-    lst = [{"id": "A", "k": "auto", "T": 1.0}, {"id": "B", "k": "auto"}, {"id": "C", "k": "rain"},
-           {"id": "A2", "k": "auto", "WS": 1.0, "wf": 1}]
-    assert stations.flag_wind_faults(lst, ids | {"C", "A2"}) == 1
-    assert lst[0]["wf"] == 1 and "wf" not in lst[1] and "wf" not in lst[2] and "wf" not in lst[3]

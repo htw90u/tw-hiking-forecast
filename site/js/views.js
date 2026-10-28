@@ -1,5 +1,6 @@
 // Bottom-sheet / side-panel views.
 import { S } from './state.js';
+import { saveSettings } from './settings.js';
 import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty, intText, isStrongQuake,
   beaufort, apparentTemp, eleText,
@@ -201,7 +202,7 @@ function stationLine(s, d) {
   if (s.k === 'rain') parts.push('雨量站（只觀測雨量）');
   else {
     if (s.T === undefined) parts.push('溫度暫無資料');
-    if (s.WS === undefined) parts.push(s.wf ? '風力儀器故障' : '無風力觀測');
+    if (s.WS === undefined) parts.push('風力儀器故障');
   }
   return html`<li><button class="link" data-station="${s.id}">${s.n}</button>
 <span class="meta">${d.toFixed(1)} km・${s.alt !== undefined ? `${Math.round(s.alt)} m` : '海拔不明'}${s.k === 'rain' ? '・雨量站' : ''}</span>
@@ -459,7 +460,7 @@ async function renderHistory(container, sid, range) {
   let out = '';
   if (T && T.some((v) => v !== null)) out += chart({ title: '溫度', unit: '°C', times: tt, series: [{ label: '氣溫', values: T, kind: 'line', cls: 's1' }] });
   if (R && R.some((v) => v !== null)) out += chart({ title: '時雨量', unit: 'mm', times: tt, zeroBase: true, series: [{ label: '每小時雨量', values: R, kind: 'bar', cls: 's2' }] });
-  if (!((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null)))) out += `<p class="note">${isRainGauge ? '這是自動雨量站，只觀測雨量，所以沒有風速圖。' : (stInfo?.wf ? '此站風力儀器故障（氣象署回報無風向、風力、陣風），所以沒有風速圖。可改選其他測站。' : '此期間沒有風力資料（該站未裝風速計或儀器維護中），所以沒有風速圖。可改選其他測站。')}</p>`;
+  if (!((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null)))) out += `<p class="note">${isRainGauge ? '這是自動雨量站，只觀測雨量，所以沒有風速圖。' : '此站氣象署未回報風向、風力、陣風（風力儀器故障），所以沒有風速圖。可改選其他測站。'}</p>`;
   if ((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null))) {
     out += chart({
       title: '風速', unit: 'm/s', times: tt, zeroBase: true,
@@ -479,7 +480,7 @@ async function renderHistory(container, sid, range) {
 }
 
 function historyBlock(stations, selected) {
-  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站' : it.WS === undefined ? (it.wf ? '・風力儀器故障' : '・無風力觀測') : ''}）</option>`).join('');
+  const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k === 'rain' ? '・雨量站' : it.WS === undefined ? '・風力儀器故障' : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
@@ -570,6 +571,7 @@ function patchPanel(prev, next) {
     tmp.innerHTML = h;
     const fresh = tmp.firstElementChild;
     bindCommon(tmp);
+    bindHistory(tmp);
     bindCards(tmp);
     if (el) { fresh.open = el.open; el.replaceWith(fresh); } else if (anchor) anchor.after(fresh); else root.querySelector('details.pcard')?.before(fresh);
     anchor = fresh;
@@ -595,10 +597,11 @@ export async function showPoint(lat, lon, opts = {}) {
   const peak = opts.peak || null;
   const spotPick = opts.spotKey ? S.spots.find((s) => s.k === opts.spotKey) : null;
   const nearMtns = spotPick || opts.stationId ? [] : nearest(S.spots, lat, lon, { limit: 60, maxKm: 15 }).filter((x) => x.it.c === 'mountain').slice(0, 3);
-  const stationsNear = nearest(S.stations, lat, lon, { limit: 8, maxKm: 35 });
-  const weatherSt = stationsNear.filter((x) => x.it.k !== 'rain');
+  const stationsAll = nearest(S.stations, lat, lon, { limit: 40, maxKm: 35 });
+  const weatherSt = stationsAll.filter((x) => x.it.k !== 'rain');
+  // The user can hide rain gauges from the nearby-station list and the observation selector; the safety assessment still uses all of them.
+
   // The observation charts start with the nearest weather station.
-  const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
 
   // The panel waits only for what it needs to be useful: the forecasts, the model gusts and a few small grids for the safety assessment.
   // Everything else (winds aloft, water level, ~200 grid files for the rain / temperature / satellite values) is loaded after it is shown.
@@ -620,7 +623,7 @@ export async function showPoint(lat, lon, opts = {}) {
   const fcForCold = spotFc || townFc;
   const risk = assess({
     rain1h: vals.qpe1h?.v ?? null, rainToday: Math.max(vals.rainday?.v ?? 0, vals.acc_24h?.v ?? 0) || null, qpfMax: qpfFirst, radar: vals.radar?.v ?? null,
-    stations: stationsNear.map((x) => x.it), spotMinAT: minApparent(fcForCold),
+    stations: stationsAll.slice(0, 8).map((x) => x.it), spotMinAT: minApparent(fcForCold),
     warnings: countyWarn?.hazards || [], typhoon: ty,
     quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
     lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc || nearFc),
@@ -640,6 +643,9 @@ export async function showPoint(lat, lon, opts = {}) {
   const eleHere = spotPick?.ele ?? peak?.ele ?? station?.alt ?? null;
   // Everything that depends on the late data (grid samples, winds aloft, water) is built here: once with what the panel waited for, again when the rest has arrived.
   const build = (vals) => {
+    const showRain = S.settings.showRainGauges !== false;
+    const stationsNear = (showRain ? stationsAll : weatherSt).slice(0, 8);
+    const histDefault = opts.stationId || weatherSt[0]?.it.id || stationsNear[0]?.it.id;
   // Winds aloft, visibility and UV come from the chosen mountain forecast point, else the nearest one within 12 km.
   const aloftSpot = spotPick?.c === 'mountain' ? { it: spotPick, d: 0 } : nearest(S.spots, lat, lon, { limit: 60, maxKm: 12 }).find((x) => x.it.c === 'mountain');
   const aloftHtml = aloftSpot && S.aloft
@@ -723,6 +729,7 @@ ${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1�
     : townHtml ? html`<section class="card" aria-labelledby="h-tfc"><h3 id="h-tfc">鄉鎮預報</h3>${raw(townHtml)}</section>` : '';
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
   const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站'}</h3>
+<label class="chk"><input type="checkbox" id="st-rain"${showRain ? ' checked' : ''}> 顯示雨量站</label>
 ${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}
 ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`;
   const nearHtml = near.length ? html`<section class="card"><h3>附近景點／山岳</h3><ul>${near}</ul></section>` : '';
@@ -793,6 +800,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
 ${strip}${jump}
 ${raw(present.map((k) => cardsOut[k]).join(''))}
 <p class="src">資料來源：中央氣象署開放資料。資料更新 ${fmtTime(S.manifest?.built)}</p>`;
+  let lateVals = {};
   let built = build(vals);
   let body = bodyOf(built);
 
@@ -804,6 +812,16 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
     fav,
     sub: noForecast,
     onRender: (root) => {
+      // Delegated: the station card is swapped out when the late data arrives.
+      root.addEventListener('change', (ev) => {
+        if (ev.target.id !== 'st-rain') return;
+        S.settings.showRainGauges = ev.target.checked;
+        saveSettings(S.settings);
+        const next = build({ ...vals, ...lateVals });
+        patchPanel(built, next);
+        built = next;
+        body = bodyOf(next);
+      });
       bindCommon(root);
       bindHistory(root);
       bindCards(root);
@@ -820,7 +838,8 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
   const mark = document.querySelector('#sheet-body details.pcard[data-card="risk"]');
   const late = await Promise.all([loadAloft(), loadHydro(), sampleLayers(lat, lon, 'rest')]).catch(() => null);
   if (late && token === pointToken && mark?.isConnected) {
-    const next = build({ ...vals, ...late[2] });
+    lateVals = late[2];
+    const next = build({ ...vals, ...lateVals });
     patchPanel(built, next);
     built = next;
     body = bodyOf(next);

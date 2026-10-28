@@ -811,6 +811,27 @@ function serve() {
     await page.click('#sheet-close').catch(() => {});
   });
 
+  await check('nearby stations: rain gauges can be hidden and the choice is remembered', async () => {
+    const pt = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js'); const v = await import('./js/views.js');
+      const wx = S.stations.find((x) => x.k !== 'rain'); const rg = S.stations.filter((x) => x.k === 'rain').find((x) => Math.abs(x.lat - wx.lat) < 0.05 && Math.abs(x.lon - wx.lon) < 0.05);
+      const st = rg || wx; await v.showPoint(st.lat, st.lon, { label: '雨量站測試' }); return !!rg;
+    });
+    await page.waitForSelector('#st-rain');
+    const count = () => page.$$eval('#hist-sid option', (o) => o.filter((x) => x.textContent.includes('雨量站')).length);
+    if (!(await page.$eval('#st-rain', (e) => e.checked))) await page.click('#st-rain');
+    const before = await count();
+    await page.click('#st-rain');
+    await page.waitForFunction(() => !document.querySelector('#st-rain').checked);
+    assert((await count()) === 0, 'rain gauges still listed after hiding them');
+    assert(!(await page.$$eval('ul.stations li', (l) => l.some((x) => x.textContent.includes('雨量站（只觀測雨量）')))), 'rain gauge line still shown');
+    assert(await page.evaluate(() => JSON.parse(localStorage.getItem('hikingwx.settings.v1')).showRainGauges === false), 'choice not saved');
+    if (pt) assert(before > 0, 'expected a rain gauge near the point');
+    await page.click('#st-rain');
+    await page.waitForFunction(() => document.querySelector('#st-rain').checked);
+    await page.click('#sheet-close').catch(() => {});
+  });
+
   await check('search history: remembered, shown on an empty box, deletable one by one and all', async () => {
     await page.evaluate(() => localStorage.removeItem('hikingwx.searchHistory.v1'));
     await page.fill('#q', '玉山');

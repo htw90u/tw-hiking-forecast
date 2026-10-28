@@ -12,6 +12,7 @@ export const DEFAULTS = {
   basemapVer: 2,         // bumped when the default basemap changes: everyone gets the new default once
   customTile: '',
   tfKey: '',             // personal Thunderforest API key (OpenCycleMap); overrides the site key
+  showRainGauges: true,  // rain-only stations in the nearby-station list
   reduceMotion: false,
   smooth: true,          // interpolate grid layers (false = raw cells)
   boldText: false,
