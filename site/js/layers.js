@@ -1067,6 +1067,35 @@ export function renderTimeControl(meta) {
     h = `<span class="muted">資料時間 ${esc(fmtTime(meta.time))}</span>`;
   }
   el.innerHTML = h;
+  // Previous / next step buttons on both sides of every time slider (the keyboard already steps with the arrow keys).
+  el.querySelectorAll('.tc-play .range').forEach((lab) => {
+    const inp = lab.querySelector('input[type=range]');
+    if (!inp) return;
+    const mk = (dir, glyph, label) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn step';
+      b.textContent = glyph;
+      b.setAttribute('aria-label', label);
+      b.title = label;
+      b.addEventListener('click', () => {
+        stopAnimation();
+        const v = Math.max(Number(inp.min), Math.min(Number(inp.max), Number(inp.value) + dir));
+        if (v === Number(inp.value)) return;
+        inp.value = String(v);
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      return b;
+    };
+    const prev = mk(-1, '‹', '上一個時段');
+    const next = mk(1, '›', '下一個時段');
+    const sync = () => { prev.disabled = Number(inp.value) <= Number(inp.min); next.disabled = Number(inp.value) >= Number(inp.max); };
+    inp.addEventListener('input', sync);
+    sync();
+    lab.before(prev);
+    lab.after(next);
+  });
   // The altitude buttons scroll sideways: bring the chosen one into view and fade the right edge while more are hidden.
   const lv = el.querySelector('.seg.levels');
   if (lv) {

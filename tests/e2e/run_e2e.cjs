@@ -246,6 +246,21 @@ function serve() {
     await page.click('#btn-play');
   });
 
+  await check('time slider: previous / next buttons step one period and disable at the ends', async () => {
+    await selectLayer('.chip[data-layer="sat"]');
+    await page.waitForSelector('#sat-frame');
+    const val = () => page.$eval('#sat-frame', (e) => Number(e.value));
+    const max = await page.$eval('#sat-frame', (e) => Number(e.max));
+    await page.$eval('#sat-frame', (e) => { e.value = String(e.max); e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); });
+    await page.waitForFunction((m) => Number(document.querySelector('#sat-frame').value) === m, max);
+    assert(await page.$eval('[aria-label="下一個時段"]', (b) => b.disabled), 'next must be disabled on the last period');
+    await page.click('[aria-label="上一個時段"]');
+    await page.waitForFunction((m) => Number(document.querySelector('#sat-frame')?.value) === m - 1, max);
+    await page.click('[aria-label="下一個時段"]');
+    await page.waitForFunction((m) => Number(document.querySelector('#sat-frame')?.value) === m, max);
+    assert((await val()) === max, 'next should return to the last period');
+  });
+
   await check('QPF outlying islands placed at real coordinates (Matsu, Kinmen)', async () => {
     const r = await page.evaluate(async () => {
       const { getGrid, framesFor } = await import('./js/layers.js');
