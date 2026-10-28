@@ -121,13 +121,29 @@ function clearOverlay() {
 export function stopAnimation() {
   if (S.layer.timer) { clearInterval(S.layer.timer); S.layer.timer = null; }
   const b = document.getElementById('btn-play');
-  if (b) { b.textContent = '▶ 播放'; b.setAttribute('aria-pressed', 'false'); }
+  if (b) { b.textContent = '▶'; b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', '播放'); b.title = '播放'; }
 }
 
 /** Play / pause button shared by every time-stepped layer (the radar has always had one). */
 function playButton() {
   const playing = Boolean(S.layer.timer);
-  return `<button id="btn-play" class="btn" aria-pressed="${playing}">${playing ? '❚❚ 暫停' : '▶ 播放'}</button>`;
+  return `<button id="btn-play" class="btn play" aria-pressed="${playing}" aria-label="${playing ? '暫停' : '播放'}" title="${playing ? '暫停' : '播放'}">${playing ? '❚❚' : '▶'}</button>`;
+}
+
+/** Underline tabs for the modes of a layer: items [[key, label]]; `attr` is the data attribute that carries the key. */
+function modeTabs(aria, items, attr, cur, icons = {}) {
+  const icon = S.settings.ui === 'icon';
+  return `<div class="seg tabs" role="radiogroup" aria-label="${aria}">` + items.map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === cur}" data-${attr}="${k}">${icon && icons[k] ? `<i aria-hidden="true">${icons[k]}</i>` : ''}${l}</button>`).join('') + '</div>';
+}
+
+/** Mountain (as high as Yushan, 3,952 m) with a line at the altitude of a level: low levels cut the mountain, the high ones float above it.
+ *  The height scale is a square root so that the low levels can still be told apart. */
+function levelIcon(m) {
+  const H = 17;
+  const y = (z) => (19 - H * Math.sqrt(Math.min(z, 12500) / 12500)).toFixed(1);
+  const top = y(3952);
+  const gap = Number(top) + (19 - Number(top)) * 0.45;
+  return `<svg class="lvic" viewBox="0 0 22 20" aria-hidden="true"><path d="M1 19 9 ${top} 12.5 ${gap.toFixed(1)} 14.5 ${(Number(top) + (19 - Number(top)) * 0.25).toFixed(1)} 21 19z"/><line class="gr" x1="1" x2="21" y1="19" y2="19"/><line class="lv" x1="1" x2="21" y1="${y(m)}" y2="${y(m)}"/></svg>`;
 }
 
 /** Number of steps (and a preloader) of the current layer when it can be played, else null. */
@@ -378,23 +394,23 @@ export async function loadWrf3() {
 
 /** The loaded WRF wind dataset of the chosen resolution in one shape (null while it is not loaded): levels (0 = 10 m wind), heights, uv(level, step, cell). */
 export function wrfDs() {
-  if (S.layer.wrfRes === '3') {
-    const w = S.wrf3;
-    if (!w) return null;
-    const n = w.grid.nx * w.grid.ny;
-    return { res: 3, steps: w.steps, init: w.init, grid: w.grid, levels: [0, ...w.levels], z: [10, ...w.z],
-      uv: (li, k, c) => { const key = li === 0 ? '10' : String(w.levels[li - 1]); return [w.dec[`u${key}`][k * n + c] / 10, w.dec[`v${key}`][k * n + c] / 10]; },
-      src: '區域數值模式 WRF 3 km 預報（M-A0064；顯示時降採樣為約 6 km 間距）',
-      desc: '3 km 網格、每 6 小時一步、最長 84 小時' };
-  }
-  const w = S.wrf;
+  const three = S.layer.wrfRes === '3';
+  const w = three ? S.wrf3 : S.wrf;
   if (!w) return null;
-  return { res: 15, steps: w.steps, init: w.init, grid: w.grid, levels: w.levels, z: w.z,
-    uv: (li, k, c) => [w.u[li][k][c] / 10, w.v[li][k][c] / 10],
-    src: '區域數值模式 WRF 15 km 預報（M-A0061）', desc: '15 km 網格、每 6 小時一步、最長 72 小時' };
+  const n = three ? w.grid.nx * w.grid.ny : 0;
+  // Altitude entries, lowest first: the 10 m wind (3 km only), the pressure levels, and the fixed altitudes interpolated between them (level < 0).
+  const ents = [];
+  if (three) ents.push({ lv: 0, z: 10, get: (k, c) => [w.dec.u10[k * n + c] / 10, w.dec.v10[k * n + c] / 10] });
+  w.levels.forEach((lv, i) => ents.push({ lv, z: w.z[i], get: three ? (k, c) => [w.dec[`u${lv}`][k * n + c] / 10, w.dec[`v${lv}`][k * n + c] / 10] : (k, c) => [w.u[i][k][c] / 10, w.v[i][k][c] / 10] }));
+  (w.alts || []).forEach((alt, i) => ents.push({ lv: -alt, z: alt, get: three ? (k, c) => [w.dec[`ua${alt}`][k * n + c] / 10, w.dec[`va${alt}`][k * n + c] / 10] : (k, c) => [w.ua[i][k][c] / 10, w.va[i][k][c] / 10] }));
+  ents.sort((a, b) => a.z - b.z);
+  return { res: three ? 3 : 15, steps: w.steps, init: w.init, grid: w.grid, levels: ents.map((e) => e.lv), z: ents.map((e) => e.z), uv: (li, k, c) => ents[li].get(k, c),
+    src: three ? '區域數值模式 WRF 3 km 預報（M-A0064；顯示時降採樣為約 6 km 間距）' : '區域數值模式 WRF 15 km 預報（M-A0061）',
+    desc: three ? '3 km 網格、每 6 小時一步、最長 84 小時' : '15 km 網格、每 6 小時一步、最長 72 小時' };
 }
 
-const wrfLevelText = (ds, li) => (ds.levels[li] === 0 ? '距地面 10 m' : `海拔${altText(ds.z[li])}（${ds.levels[li]} hPa 氣壓層）`);
+const fmtM = (m) => `${m.toLocaleString('en-US')} m`;
+const wrfLevelText = (ds, li) => (ds.levels[li] === 0 ? '距地面 10 m' : ds.levels[li] < 0 ? `海拔 ${fmtM(-ds.levels[li])}（內插）` : `海拔${altText(ds.z[li])}（${ds.levels[li]} hPa 氣壓層）`);
 
 /** Wind arrows on the WRF grid at one pressure level (or 10 m) and forecast step; thinned to about 36 px apart. */
 async function showWrf(keepFrame) {
@@ -413,7 +429,7 @@ async function showWrf(keepFrame) {
   const p0 = S.map.latLngToLayerPoint([g.lat0, g.lon0]);
   const p1 = S.map.latLngToLayerPoint([g.lat0 + g.res, g.lon0 + g.res]);
   const px = Math.max(1, Math.hypot(p1.x - p0.x, p1.y - p0.y) / Math.SQRT2);
-  const stride = Math.max(1, Math.ceil(36 / px));
+  const stride = Math.max(1, Math.ceil(46 / px));   // about 46 px between arrows: the arrow and its number need room
   const bounds = S.map.getBounds().pad(0.1);
   const ov = L.layerGroup();
   for (let r = 0; r < g.ny; r += stride) {
@@ -430,10 +446,10 @@ async function showWrf(keepFrame) {
     }
   }
   finishOverlay(ov);
-  const lvl = w.levels[li] === 0 ? '距地面 10 m' : `海拔${altText(w.z[li])}｜${w.levels[li]} hPa 氣壓層`;
+  const lvl = w.levels[li] === 0 ? '距地面 10 m' : w.levels[li] < 0 ? `海拔 ${fmtM(-w.levels[li])}｜由氣壓層內插` : `海拔${altText(w.z[li])}｜${w.levels[li]} hPa 氣壓層`;
   renderLegend({ label: `${w.levels[li] === 0 ? '地面風' : '高空風場'}（WRF ${w.res} km・${lvl}）`, time: w.steps[k], issued: w.init, kindOverride: 'wind',
     src: w.src,
-    note: `箭頭指向風吹去的方向，數字為蒲福風級。氣象署區域數值模式（${w.desc}）${w.levels[li] === 0 ? '' : '，「海拔」為該氣壓層在臺灣上空的概略高度（hPa 是氣壓，不是高度）'}；高空風場可看出鋒面、噴流與颱風環流，稜線的實際風速另受地形加強。${w.res === 3 ? '3 km 模式的山區地形較細緻，但解析度高不代表一定更準，請與 15 km 版、測站及氣象署預報對照。' : ''}` });
+    note: `箭頭指向風吹去的方向，數字為蒲福風級。氣象署區域數值模式（${w.desc}）${w.levels[li] === 0 ? '' : w.levels[li] < 0 ? '；固定海拔的風由上下兩個氣壓層依高度內插而得，不是模式直接輸出，山區地形高於此海拔處為模式內推，僅供參考' : '，「海拔」為該氣壓層在臺灣上空的概略高度（hPa 是氣壓，不是高度）'}；高空風場可看出鋒面、噴流與颱風環流，稜線的實際風速另受地形加強。${w.res === 3 ? '3 km 模式的山區地形較細緻，但解析度高不代表一定更準，請與 15 km 版、測站及氣象署預報對照。' : ''}` });
   renderTimeControl();
 }
 
@@ -871,20 +887,18 @@ export function renderTimeControl(meta) {
   if (id === 'radar') {
     const frames = S.manifest?.layers?.radarFrames?.frames || [];
     if (frames.length > 1) {
-      const playing = Boolean(S.layer.timer);
-      h = `<button id="btn-play" class="btn" aria-pressed="${playing}">${playing ? '❚❚ 暫停' : '▶ 播放'}</button>
+      h = `<div class="tc-play">${playButton()}
 <label class="range"><span class="sr-only">雷達時間</span><input id="frame" type="range" min="0" max="${frames.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(frames[S.layer.frame]?.time))}"></label>
-<output id="frame-time">${esc(fmtTime(frames[S.layer.frame]?.time, { date: false }))}</output>`;
+<output id="frame-time">${esc(fmtTime(frames[S.layer.frame]?.time, { date: false }))}</output></div>`;
     }
   } else if (id === 'wrf3') {
     const mode = S.layer.wrf3Mode || 'rain';
     const fr = wrf3Frames();
     const t = fr[S.layer.frame]?.time;
-    h = '<div class="seg" role="radiogroup" aria-label="WRF 3 km 項目">' + [['rain', '6小時降水'], ['temp', '2 m 氣溫']]
-      .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-wrf3mode="${k}">${l}</button>`).join('') + '</div>';
+    h = modeTabs('WRF 3 km 項目', [['rain', '6小時降水'], ['temp', '2 m 氣溫']], 'wrf3mode', mode, { rain: '☂', temp: '🌡' });
     if (fr.length) {
-      h += `${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf3-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
-<output id="wrf3-time">${esc(fmtTime(t))}</output>`;
+      h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf3-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+<output id="wrf3-time">${esc(fmtTime(t))}</output></div>`;
     }
   } else if (id === 'rainacc') {
     const periods = S.manifest?.layers?.rainacc?.periods || [];
@@ -893,7 +907,7 @@ export function renderTimeControl(meta) {
     const L_ = S.manifest?.layers || {};
     const mode = S.layer.qpfMode || '12';
     const has6 = Boolean(L_.qpf6?.available);
-    h = '<div class="seg" role="radiogroup" aria-label="預報種類">' + QPF_MODES.map((m) => {
+    h = '<div class="seg tabs" role="radiogroup" aria-label="預報種類">' + QPF_MODES.map((m) => {
       const off = m.id === '6' && !has6;
       return `<button class="seg-btn" role="radio" aria-checked="${m.id === mode}" data-qpfmode="${m.id}"${off ? ' aria-disabled="true" title="目前無法取得6小時定量降水預報"' : ''}>${esc(m.label)}${off ? '（暫無）' : ''}</button>`;
     }).join('') + '</div>';
@@ -904,7 +918,7 @@ export function renderTimeControl(meta) {
     h += '<div class="seg" role="radiogroup" aria-label="預報時段">' + periods.map((p) => `<button class="seg-btn" role="radio" aria-checked="${p.i === S.layer.period}" data-period="${p.i}">${esc(p.label)}</button>`).join('') + '</div>';
   } else if (id === 'sat') {
     const list = satGrids().ir ? SAT_MODES : S.sat;
-    h = '<div class="seg" role="radiogroup" aria-label="雲圖種類">' + list.map((x, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.frame}" data-frame="${i}">${esc(x.label)}</button>`).join('') + '</div>';
+    h = '<div class="seg tabs" role="radiogroup" aria-label="雲圖種類">' + list.map((x, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.frame}" data-frame="${i}">${esc(x.label)}</button>`).join('') + '</div>';
   } else if (id === 'tyrain') {
     const t = S.typhoon?.tables || {};
     h = '<div class="seg" role="radiogroup" aria-label="雨量預測種類">'
@@ -912,47 +926,59 @@ export function renderTimeControl(meta) {
       + (t.rainTotal ? `<button class="seg-btn" role="radio" aria-checked="${S.layer.period === 1}" data-period="1">總雨量</button>` : '') + '</div>';
   } else if (id === 'water') {
     const mode = S.layer.waterMode || 'river';
-    h = '<div class="seg" role="radiogroup" aria-label="水情資料">' + [['river', '河川水位'], ['rsv', '水庫放流']]
-      .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-watermode="${k}">${l}</button>`).join('') + '</div>';
+    h = modeTabs('水情資料', [['river', '河川水位'], ['rsv', '水庫放流']], 'watermode', mode, { river: '≈', rsv: '▥' });
   } else if (id === 'wind' || id === 'pop' || id === 'visib' || id === 'uv' || id === 'heat') {
     const mode = id === 'wind' ? (S.layer.windMode || 'fc') : id === 'visib' ? (S.layer.visMode || 'obs') : 'fc';
     const times = (id === 'heat' ? S.heat?.times : S.wind?.times) || [];
     if (id === 'wind') {
-      h = '<div class="seg" role="radiogroup" aria-label="風力資料">' + [['fc', '預報'], ['aloft', '高空風'], ['obs', '測站觀測']]
-        .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-windmode="${k}">${l}</button>`).join('') + '</div>';
+      h = modeTabs('風力資料', [['fc', '預報'], ['aloft', '高空風'], ['obs', '測站觀測']], 'windmode', mode, { fc: '◷', aloft: '▲', obs: '◎' });
+      const w = mode === 'aloft' ? wrfDs() : null;
       if (mode === 'aloft') {
-        const res3 = Boolean(S.manifest?.layers?.wrf3);
-        if (res3) {
-          h += '<div class="seg" role="radiogroup" aria-label="模式解析度">' + [['15', '15 km'], ['3', '3 km']]
+        // One row: the model resolution switch and the altitude buttons (they scroll sideways).
+        let row = '';
+        if (S.manifest?.layers?.wrf3) {
+          row += '<div class="seg res" role="radiogroup" aria-label="模式解析度">' + [['15', '15 km'], ['3', '3 km']]
             .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === (S.layer.wrfRes || '15')}" data-wrfres="${k}">${l}</button>`).join('') + '</div>';
         }
+        if (w?.steps?.length) {
+          const cur = Math.max(0, w.levels.indexOf(S.layer.wrfHpa ?? 850));
+          const icon = S.settings.ui === 'icon';
+          row += '<div class="seg levels" role="radiogroup" aria-label="高空風海拔">' + w.levels.map((lv, li) => {
+            const big = lv === 0 ? '10 m' : lv < 0 ? fmtM(-lv) : altText(w.z[li]).replace(/^約\s*/, '');
+            return `<button class="seg-btn alt" role="radio" aria-checked="${li === cur}" data-wrflevel="${li}">${icon ? levelIcon(w.z[li]) : ''}<b>${esc(big)}</b><span class="hpa">${lv === 0 ? '地面風' : lv < 0 ? '內插' : `${lv} hPa`}</span></button>`;
+          }).join('') + '</div>';
+        }
+        if (row) h += `<div class="tc-row">${row}</div>`;
       }
-      const w = mode === 'aloft' ? wrfDs() : null;
       if (w?.steps?.length) {
-        const cur = Math.max(0, w.levels.indexOf(S.layer.wrfHpa ?? 850));
-        h += '<div class="seg levels" role="radiogroup" aria-label="高空風海拔">' + w.levels.map((lv, li) => (lv === 0
-          ? `<button class="seg-btn alt" role="radio" aria-checked="${li === cur}" data-wrflevel="${li}"><b>10 m</b><span class="hpa">地面風</span></button>`
-          : `<button class="seg-btn alt" role="radio" aria-checked="${li === cur}" data-wrflevel="${li}"><b>${esc(altText(w.z[li]))}</b><span class="hpa">${lv} hPa</span></button>`)).join('') + '</div>';
         const t = w.steps[S.layer.frame] || w.steps[0];
-        h += `${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf-frame" type="range" min="0" max="${w.steps.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
-<output id="wrf-time">${esc(fmtTime(t))}</output>`;
+        h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf-frame" type="range" min="0" max="${w.steps.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+<output id="wrf-time">${esc(fmtTime(t))}</output></div>`;
       }
     } else if (id === 'visib') {
-      h = '<div class="seg" role="radiogroup" aria-label="能見度資料">' + [['obs', '測站觀測'], ['fc', '預報']]
-        .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-vismode="${k}">${l}</button>`).join('') + '</div>';
+      h = modeTabs('能見度資料', [['obs', '測站觀測'], ['fc', '預報']], 'vismode', mode, { obs: '◎', fc: '◷' });
     } else if (id === 'uv') {
       const dates = S.wind ? uvDates(S.wind) : [];
       h = '<div class="seg" role="radiogroup" aria-label="日期">' + dates.map((d, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.period}" data-period="${i}">${esc(d.slice(5).replace('-', '/'))}</button>`).join('') + '</div>';
     }
     if (mode === 'fc' && id !== 'uv' && times.length) {
       const t = times[S.layer.frame] || times[0];
-      h += `${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wind-frame" type="range" min="0" max="${times.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
-<output id="wind-time">${esc(fmtTime(t))}</output>`;
+      h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wind-frame" type="range" min="0" max="${times.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+<output id="wind-time">${esc(fmtTime(t))}</output></div>`;
     }
   } else if (meta?.time) {
     h = `<span class="muted">資料時間 ${esc(fmtTime(meta.time))}</span>`;
   }
   el.innerHTML = h;
+  // The altitude buttons scroll sideways: bring the chosen one into view and fade the right edge while more are hidden.
+  const lv = el.querySelector('.seg.levels');
+  if (lv) {
+    const act = lv.querySelector('[aria-checked="true"]');
+    if (act) lv.scrollLeft = Math.max(0, act.offsetLeft - (lv.clientWidth - act.offsetWidth) / 2);
+    const hint = () => lv.classList.toggle('more', lv.scrollLeft + lv.clientWidth < lv.scrollWidth - 4);
+    lv.addEventListener('scroll', hint, { passive: true });
+    hint();
+  }
   const frame = el.querySelector('#frame');
   if (frame) {
     frame.addEventListener('input', () => {
@@ -1028,7 +1054,7 @@ function toggleAnimation() {
   // Preload the pictures before stepping so the animation does not stutter.
   Promise.resolve(info.pre ? info.pre() : null).then(() => {
     const b = document.getElementById('btn-play');
-    if (b) { b.textContent = '❚❚ 暫停'; b.setAttribute('aria-pressed', 'true'); }
+    if (b) { b.textContent = '❚❚'; b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', '暫停'); b.title = '暫停'; }
     S.layer.timer = setInterval(() => {
       const cur = playInfo();
       if (!cur || cur.n < 2) { stopAnimation(); return; }   // the mode or layer changed meanwhile

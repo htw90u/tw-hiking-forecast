@@ -19,6 +19,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 
 from . import grids
+from .wrf import ALTS, alt_wind
 
 TZ = ZoneInfo("Asia/Taipei")
 META_KEY = "Model/M-A0064-000.json"
@@ -114,7 +115,7 @@ def build(out_dir: Path, log, fetch, now: datetime, points, open_grib=None) -> d
     dest = out_dir / "wrf3.json"
     init = init_time(json.loads(fetch(META_KEY).decode("utf-8-sig")))
     prev = json.loads(dest.read_text(encoding="utf-8")) if dest.exists() else None
-    if prev and prev.get("initUTC") == init.isoformat() and prev.get("levels") == LEVELS and prev.get("nPoints") == len(points):
+    if prev and prev.get("initUTC") == init.isoformat() and prev.get("levels") == LEVELS and prev.get("alts") == ALTS and prev.get("nPoints") == len(points):
         return {"fresh": False, "init": prev["init"], "steps": len(prev["steps"]), "rain": prev["rainSteps"]}
     if open_grib is None:
         import pygrib
@@ -126,7 +127,7 @@ def build(out_dir: Path, log, fetch, now: datetime, points, open_grib=None) -> d
     targets = {"fine": (gx.ravel(), gy.ravel()), "wind": (wx.ravel(), wy.ravel()),
                "pts": ([p[2] for p in points], [p[1] for p in points])}
     sampler = None
-    wind = {k: [] for k in [f"{c}{lv}" for lv in LEVELS for c in "uv"] + ["u10", "v10"]}
+    wind = {k: [] for k in [f"{c}{lv}" for lv in LEVELS for c in "uv"] + ["u10", "v10"] + [f"{c}a{alt}" for alt in ALTS for c in "uv"]}
     zmed = [[] for _ in LEVELS]
     pts = {k: [] for k in ("t2", "rh", "u", "v", "rain")}
     acc_prev = None
@@ -161,8 +162,15 @@ def build(out_dir: Path, log, fetch, now: datetime, points, open_grib=None) -> d
             pts["rain"].append([None] * len(points))
         acc_prev = acc
         for k in wind:
+            if k[1] == "a":
+                continue   # the fixed-altitude winds were filled above
             src = f[k] if k in ("u10", "v10") else f[(k[0], int(k[1:]))]
             wind[k].append(np.rint(src["wind"] * 10))
+        stack = lambda n: np.stack([f[(n, lv)]["wind"] for lv in LEVELS])  # noqa: E731
+        for alt in ALTS:
+            au, av = alt_wind(stack("u"), stack("v"), stack("gh"), alt)
+            wind[f"ua{alt}"].append(np.rint(au * 10))
+            wind[f"va{alt}"].append(np.rint(av * 10))
         for li, lv in enumerate(LEVELS):
             zmed[li].append(float(np.nanmedian(f[("gh", lv)]["pts"])))
         pts["t2"].append(_ints(f["t2"]["pts"] - 273.15, 0.1))
@@ -173,7 +181,7 @@ def build(out_dir: Path, log, fetch, now: datetime, points, open_grib=None) -> d
     steps = [(init + timedelta(hours=fh)).astimezone(TZ).isoformat() for fh in HOURS]
     nx, ny = len(cx), len(cy)
     obj = {"init": init.astimezone(TZ).isoformat(), "initUTC": init.isoformat(), "time": now.isoformat(), "levels": LEVELS, "steps": steps,
-           "rainSteps": rain_steps, "nPoints": len(points),
+           "rainSteps": rain_steps, "nPoints": len(points), "alts": ALTS,
            "grid": {"lon0": float(cx[0]), "lat0": float(cy[0]), "res": COARSE, "nx": nx, "ny": ny},
            "z": [int(round(float(np.median(z)))) for z in zmed],
            "wind": {k: _b64(np.stack(v)) for k, v in wind.items()},   # int16 LE, shape (steps, ny, nx), 0.1 m/s

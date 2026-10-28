@@ -141,6 +141,11 @@ const SPOT_GLYPHS = {
 };
 // Mountains with a CWA hiking forecast: solid triangle; other (OSM) peaks: outlined triangle.
 const MTN_SVG = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M9 2 17 16H1z"/></svg>';
+// Icons of the marker toggles that had none (same drawing language as the map markers).
+const STN_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/></svg>';
+const EQ_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="2"/><circle cx="7" cy="7" r="5.2"/></svg>';
+const TY_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1.8a5.2 5.2 0 1 1-4.9 3.5M7 4.6a2.4 2.4 0 1 1-2.4 2.4"/></svg>';
+const SPOT_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1.4a4.2 4.2 0 0 0-4.2 4.2c0 3.1 4.2 7 4.2 7s4.2-3.9 4.2-7A4.2 4.2 0 0 0 7 1.4z"/><circle cx="7" cy="5.6" r="1.5"/></svg>';
 const PEAK_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2.2 12.6 12H1.4z"/></svg>';
 const spotIcon = (c) => (SPOT_GLYPHS[c]
   ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${SPOT_GLYPHS[c]}"/></svg>`
@@ -404,9 +409,9 @@ function buildChips() {
 function buildOverlayToggles() {
   const MK = (cls, svg) => `<span class="${cls} tog-ic" aria-hidden="true">${svg}</span>`;
   // Rows: observations and hazards / forecast mountains and spots / all peaks ('|' starts a new row).
-  const items = [['stations', '觀測站'], ['quakes', '地震'], ['typhoon', '颱風'], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', '景點'], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
+  const items = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], ['quakes', `${MK('ic-eq', EQ_SVG)}地震`], ['typhoon', `${MK('ic-ty', TY_SVG)}颱風`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
   const box = document.getElementById('toggles');
-  const names = [['stations', '觀測站'], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', '景點'], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
+  const names = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
   const group = (id, title, attr, list, state) => `<div class="tog-group" role="group" aria-labelledby="${id}-t">
 <div class="tog-head"><span class="tog-lbl" id="${id}-t">${title}</span><span class="tog-all"><button type="button" class="link" data-all="${attr}" data-on="1">全選</button><button type="button" class="link" data-all="${attr}" data-on="0">全部取消</button></span></div>
 ${list.map((x) => (x === '|' ? '<span class="tog-row" aria-hidden="true"></span>' : `<label class="tog"><input type="checkbox" data-${attr}="${x[0]}"${state[x[0]] ? ' checked' : ''}> ${x[1]}</label>`)).join('')}</div>`;
@@ -724,7 +729,7 @@ ${grp('文字')}
 <label class="tog"><input type="checkbox" id="set-bold"${s.boldText ? ' checked' : ''}> 粗體文字</label>
 ${grp('動畫與版面')}
 <label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
-<p class="note">也可在地圖右上角「選項」直接切換文字版／圖示版。</p>
+<p class="note">也可在地圖右上角「顯示」直接切換文字版／圖示版。</p>
 <label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>`)}
 ${card(CARDS[1], `
 ${grp('底圖')}
@@ -771,8 +776,17 @@ ${card(CARDS[4], `
   summaries();
   // Section jump bar: open and scroll to a card, highlight the one in view; the open / closed state is remembered.
   const scrollTo = (el) => body.scrollTo({ top: body.scrollTop + el.getBoundingClientRect().top - body.getBoundingClientRect().top - body.querySelector('.sjump').offsetHeight, behavior: s.reduceMotion ? 'auto' : 'smooth' });
+  // Accordion: opening a card by hand folds the others (programmatic changes, e.g. the tests, are left alone).
+  const closeOthers = (d) => body.querySelectorAll('details.scard').forEach((x) => { if (x !== d) x.open = false; });
+  body.querySelectorAll('details.scard > summary').forEach((sm) => sm.addEventListener('click', () => {
+    const d = sm.parentElement;
+    if (d.open) return;   // it is being closed
+    closeOthers(d);
+    window.requestAnimationFrame(() => scrollTo(d));
+  }));
   body.querySelectorAll('[data-sjump]').forEach((b) => b.addEventListener('click', () => {
     const d = body.querySelector(`#sc-${b.dataset.sjump}`);
+    closeOthers(d);
     d.open = true;
     forced = b.dataset.sjump;   // the last cards cannot scroll up to the top: keep the clicked one highlighted until the user scrolls by hand
     markJump();

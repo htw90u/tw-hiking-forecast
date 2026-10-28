@@ -666,13 +666,14 @@ function serve() {
       assert((await page.$$('.chip[data-layer="wrf"]')).length === 0, 'wind and WRF winds aloft must be one layer');
       await page.click('[data-windmode="aloft"]');
       await page.waitForSelector('#time-ctl [data-wrflevel]');
-      assert((await page.$$('#time-ctl [data-wrflevel]')).length === 7, 'WRF level buttons missing');
+      const nAlt = await page.evaluate(async () => (await import('./js/state.js')).S.wrf.alts?.length || 0);   // fixed-altitude levels exist once the data was rebuilt
+      assert((await page.$$('#time-ctl [data-wrflevel]')).length === 7 + nAlt, 'WRF level buttons missing');
       const lab = await page.$eval('#time-ctl [data-wrflevel]', (b) => ({ alt: b.querySelector('b')?.textContent, hpa: b.querySelector('.hpa')?.textContent }));
       assert(/m$/.test(lab.alt) && /hPa$/.test(lab.hpa), `altitude and hPa must be separate: ${JSON.stringify(lab)}`);
       await page.waitForSelector('.wind-mk');
       const n0 = (await page.$$('.wind-mk')).length;
       assert(n0 > 20, `WRF arrows: ${n0}`);
-      await page.click('[data-wrflevel="3"]');
+      await page.click('#time-ctl [data-wrflevel]:has-text("500 hPa")');
       await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('500 hPa'));
       await page.$eval('#wrf-frame', (i) => { i.value = String(Number(i.max)); i.dispatchEvent(new Event('change', { bubbles: true })); });
       await page.waitForFunction(() => document.querySelector('#wrf-time') && document.querySelector('#wrf-frame').value === document.querySelector('#wrf-frame').max);
@@ -748,13 +749,14 @@ function serve() {
     await page.click('[data-windmode="aloft"]');
     await page.waitForSelector('[data-wrfres="3"]');
     await page.click('[data-wrfres="3"]');
-    await page.waitForFunction(() => document.querySelectorAll('#time-ctl [data-wrflevel]').length === 8);
+    await page.waitForFunction(() => document.querySelectorAll('#time-ctl [data-wrflevel]').length >= 8);
     assert((await page.$eval('#time-ctl [data-wrflevel]', (b) => b.textContent)).includes('地面風'), 'first 3 km level should be the 10 m wind');
     await page.waitForSelector('.wind-mk');
     assert((await page.$$('.wind-mk')).length > 20, 'WRF 3 km arrows missing');
     assert((await page.textContent('#map-banner')).includes('WRF 3 km'), 'banner should name the 3 km model');
     await page.click('[data-wrfres="15"]');
-    await page.waitForFunction(() => document.querySelectorAll('#time-ctl [data-wrflevel]').length === 7);
+    const nAlt15 = await page.evaluate(async () => (await import('./js/state.js')).S.wrf?.alts?.length || 0);
+    await page.waitForFunction((n) => document.querySelectorAll('#time-ctl [data-wrflevel]').length === 7 + n, nAlt15);
     await selectLayer('.chip[data-layer="wrf3"]');
     await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('6 小時降水'));
     assert(await page.$('#wrf3-frame'), 'WRF 3 km time slider missing');
@@ -1315,6 +1317,21 @@ function serve() {
     await page.selectOption('#set-base', 'topo');
     await page.keyboard.press('Escape');
     await ctx.unroute(/tile\.thunderforest\.com/);
+  });
+
+  await check('settings cards: opening one folds the others; the jump bar opens its card', async () => {
+    await page.click('#btn-settings');
+    await page.waitForSelector('#dlg-settings[open]');
+    await page.evaluate(() => document.querySelectorAll('#dlg-settings details.scard').forEach((d) => { d.open = false; }));
+    const openIds = () => page.$$eval('#dlg-settings details.scard[open]', (l) => l.map((x) => x.dataset.scard));
+    await page.click('#sc-map > summary');
+    await page.click('#sc-safe > summary');
+    assert(JSON.stringify(await openIds()) === '["safe"]', `accordion: ${JSON.stringify(await openIds())}`);
+    await page.click('[data-sjump="data"]');
+    assert(JSON.stringify(await openIds()) === '["data"]', 'jump bar should fold the others too');
+    await page.click('#sc-data > summary');
+    assert((await openIds()).length === 0, 'a card can still be closed by hand');
+    await page.keyboard.press('Escape');
   });
 
   await check('historical maps: base map choice and stacked overlays with opacity and attribution', async () => {

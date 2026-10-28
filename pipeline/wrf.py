@@ -19,6 +19,26 @@ HOURS = list(range(0, 73, 6))
 GRID = {"lon0": 116.0, "lat0": 19.0, "res": 0.25, "nx": 41, "ny": 37}   # cell centres, row 0 = south
 META_KEY = "Model/M-A0061-000.json"
 
+ALTS = [2000, 3000, 4000]   # fixed altitudes (m above sea level) interpolated between the pressure levels
+
+
+def alt_wind(u, v, gh, target):
+    """Wind at the altitude `target` (m) by linear interpolation in height between the pressure levels.
+
+    u, v, gh: arrays (levels, ...) ordered from the lowest level (highest pressure) up. Where the altitude lies below the lowest
+    level (or above the highest) the nearest level is used instead of extrapolating.
+    """
+    gh = np.asarray(gh, dtype=np.float64)
+    n_below = (gh <= target).sum(axis=0)                      # levels at or below the target (heights ascend with the level index)
+    lo = np.clip(n_below - 1, 0, gh.shape[0] - 1)
+    hi = np.clip(n_below, 0, gh.shape[0] - 1)
+    take = lambda a, ix: np.take_along_axis(np.asarray(a, dtype=np.float64), ix[None, ...], axis=0)[0]  # noqa: E731
+    g0, g1 = take(gh, lo), take(gh, hi)
+    span = g1 - g0
+    w = np.where(span > 0, np.clip((target - g0) / np.where(span > 0, span, 1), 0, 1), 0.0)
+    return take(u, lo) * (1 - w) + take(u, hi) * w, take(v, lo) * (1 - w) + take(v, hi) * w
+
+
 
 def grib_key(fh: int) -> str:
     return f"Model/M-A0061-{fh:03d}.grb2"
@@ -79,7 +99,7 @@ def build(out_dir: Path, log, fetch, now: datetime, open_grib=None) -> dict:
     dest = out_dir / "wrf.json"
     init = init_time(json.loads(fetch(META_KEY).decode("utf-8-sig")))
     prev = json.loads(dest.read_text(encoding="utf-8")) if dest.exists() else None
-    if prev and prev.get("initUTC") == init.isoformat() and prev.get("levels") == LEVELS:   # same run and same levels: nothing to do
+    if prev and prev.get("initUTC") == init.isoformat() and prev.get("levels") == LEVELS and prev.get("alts") == ALTS:   # same run and same levels: nothing to do
         return {"fresh": False, "init": prev["init"], "steps": len(prev["steps"])}
     if open_grib is None:
         import pygrib
@@ -87,6 +107,8 @@ def build(out_dir: Path, log, fetch, now: datetime, open_grib=None) -> dict:
     u = [[] for _ in LEVELS]
     v = [[] for _ in LEVELS]
     gh = [[] for _ in LEVELS]
+    ua = [[] for _ in ALTS]
+    va = [[] for _ in ALTS]
     interp = None
     for fh in HOURS:
         data = fetch(grib_key(fh))
@@ -104,10 +126,15 @@ def build(out_dir: Path, log, fetch, now: datetime, open_grib=None) -> dict:
             u[li].append(_ints(fields[("u", lv)]))
             v[li].append(_ints(fields[("v", lv)]))
             gh[li].append(float(np.nanmedian(fields[("gh", lv)])))
+        stack = lambda n: np.stack([fields[(n, lv)] for lv in LEVELS])  # noqa: E731
+        for ai, alt in enumerate(ALTS):
+            au, av = alt_wind(stack("u"), stack("v"), stack("gh"), alt)
+            ua[ai].append(_ints(au))
+            va[ai].append(_ints(av))
         log.info(f"wrf: +{fh:03d} h done")
     steps = [(init + timedelta(hours=fh)).astimezone(TZ).isoformat() for fh in HOURS]
     obj = {"init": init.astimezone(TZ).isoformat(), "initUTC": init.isoformat(), "time": now.isoformat(), "levels": LEVELS, "steps": steps,
-           "grid": GRID, "z": [int(round(float(np.median(g)))) for g in gh], "u": u, "v": v,
+           "grid": GRID, "z": [int(round(float(np.median(g)))) for g in gh], "u": u, "v": v, "alts": ALTS, "ua": ua, "va": va,
            "source": "中央氣象署 區域數值模式 WRF 15 km (M-A0061)"}
     tmpf = dest.with_suffix(".json.tmp")
     tmpf.write_text(json.dumps(obj, separators=(",", ":")), encoding="utf-8")

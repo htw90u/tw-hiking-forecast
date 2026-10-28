@@ -688,6 +688,7 @@ def test_wrf_interpolation_and_build(tmp_path):
     assert r["fresh"] and r["steps"] == 13 and len(calls) == 14
     d = json.loads((tmp_path / "wrf.json").read_text(encoding="utf-8"))
     assert d["init"] == "2026-10-27T08:00:00+08:00" and d["steps"][1] == "2026-10-27T14:00:00+08:00" and d["levels"] == wrf.LEVELS
+    assert d["alts"] == wrf.ALTS and d["ua"][1][0][0] == 116   # 3,000 m: the same wind (11.6 m/s) at every fake level
     assert len(d["u"]) == len(wrf.LEVELS) and len(d["u"][0]) == 13 and len(d["u"][0][0]) == 41 * 37 and d["u"][1][0][0] == 116   # u = 11.6 m/s -> 116 (0.1 m/s)
     calls.clear()
     assert wrf.build(tmp_path, log, fetch, now, open_grib=fake_open)["fresh"] is False and calls == [wrf.META_KEY]   # same run: no download
@@ -827,7 +828,9 @@ def test_wrf3_build(tmp_path, monkeypatch):
     d = json.loads((tmp_path / "wrf3.json").read_text(encoding="utf-8"))
     g = d["grid"]
     u = np.frombuffer(base64.b64decode(d["wind"]["u850"]), "<i2").reshape(3, g["ny"], g["nx"])
-    assert abs(u[0, 0, 0] - round((g["lon0"]) * 0.1 * 10)) <= 1 and "u10" in d["wind"] and len(d["wind"]) == 2 * len(wrf3.LEVELS) + 2
+    assert abs(u[0, 0, 0] - round((g["lon0"]) * 0.1 * 10)) <= 1 and "u10" in d["wind"] and len(d["wind"]) == 2 * len(wrf3.LEVELS) + 2 + 2 * len(wrf3.ALTS)
+    ua = np.frombuffer(base64.b64decode(d["wind"]["ua3000"]), "<i2").reshape(3, g["ny"], g["nx"])
+    assert d["alts"] == wrf3.ALTS and abs(ua[0, 0, 0] - u[0, 0, 0]) <= 1   # u is the same at every level in the fake model, so is the interpolation
     s = json.loads((tmp_path / "wrf3pts.json").read_text(encoding="utf-8"))
     assert s["points"]["m1"]["t2"] == [200, 200, 200] and s["points"]["m1"]["rain"] == [None, 50, 50] and s["points"]["m1"]["rh"] == [70, 70, 70]
     meta_r = json.loads((tmp_path / "grids" / "wrf3_rain_006.json").read_text(encoding="utf-8"))
@@ -843,3 +846,13 @@ def test_wind_bounds_are_numbers():
     doc = {"d3": {"風速": {"t": ["2026-10-28T06:00:00+08:00", "2026-10-28T09:00:00+08:00"], "v": {"WindSpeed": ["<= 1", ">= 11"], "BeaufortScale": ["<= 1", ">= 6"]}}}}
     out = wind._series(doc)
     assert out["2026-10-28T06:00:00+08:00"][:2] == (1, 1) and out["2026-10-28T09:00:00+08:00"][:2] == (11, 6)
+
+
+def test_alt_wind_interpolation():
+    gh = np.array([[1400.0, 1400.0], [1500.0, 1500.0], [3000.0, 3200.0], [5800.0, 5800.0]])   # 4 levels, 2 cells
+    u = np.array([[1.0, 1.0], [2.0, 2.0], [10.0, 10.0], [20.0, 20.0]])
+    v = u * 0
+    au, _ = wrf.alt_wind(u, v, gh, 2000)
+    assert abs(au[0] - (2 + (2000 - 1500) / 1500 * 8)) < 1e-9 and abs(au[1] - (2 + 500 / 1700 * 8)) < 1e-9
+    assert wrf.alt_wind(u, v, gh, 1000)[0][0] == 1.0 and wrf.alt_wind(u, v, gh, 9000)[0][0] == 20.0   # no extrapolation
+    assert wrf.alt_wind(u, v, gh, 3000)[0][0] == 10.0
