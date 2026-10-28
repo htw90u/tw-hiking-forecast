@@ -759,8 +759,7 @@ ${card(CARDS[4], `
 <p>資料更新：${esc(fmtTime(S.manifest?.built))}</p>
 <details class="sub"><summary>各項資料任務狀態<small>${nPass} 項 PASS${statusRows.length - nPass ? `・${statusRows.length - nPass} 項 FAIL` : ''}</small></summary><div class="in"><table class="kv"><tbody>${statusRows.map(([k, v]) => `<tr><th scope="row">${esc(k)}</th><td>${v.ok ? '<span class="ok">PASS</span>' : `<span class="bad">FAIL</span> ${esc(v.error || '')}`}</td></tr>`).join('')}</tbody></table></div></details>
 <div class="sbtns"><button class="btn" id="set-src">資料來源與授權</button>
-<button class="btn" id="set-clear">清除最近查詢與收藏</button></div>`)}
-<div class="sbar"><button class="btn" id="set-reset">恢復預設設定</button><button class="btn primary" id="set-done">完成</button></div>`;
+<button class="btn" id="set-clear">清除最近查詢與收藏</button></div>`)}`;
   const summaries = () => {
     const themes = { auto: '自動主題', light: '淺色', dark: '深色', contrast: '高對比' };
     const nOver = Object.keys(s.histOverlays || {}).filter((k) => HIST_OVER.some((h) => h.id === k)).length;
@@ -807,7 +806,6 @@ ${card(CARDS[4], `
   body.onscroll = markJump;
   ['wheel', 'touchstart', 'keydown'].forEach((ev) => body.addEventListener(ev, () => { forced = null; }, { passive: true }));
   markJump();
-  body.querySelector('#set-done').addEventListener('click', () => dlg.close());
   const save = () => { saveSettings(s); applySettings(s); summaries(); };
   body.querySelector('#set-fs').addEventListener('input', (e) => {
     s.fontScale = Number(e.target.value);
@@ -842,7 +840,8 @@ ${card(CARDS[4], `
   body.querySelector('#set-dl').addEventListener('click', () => downloadTiles(body.querySelector('#set-dl-out')));
   body.querySelector('#set-src').addEventListener('click', () => { dlg.close(); showSources(); });
   body.querySelector('#set-clear').addEventListener('click', async (e) => { await clearAll(); e.target.textContent = '已清除'; });
-  body.querySelector('#set-reset').addEventListener('click', () => {
+  const reset = dlg.querySelector('#set-reset');
+  reset.onclick = () => {
     Object.assign(s, JSON.parse(JSON.stringify(DEFAULTS)));
     save(); setBasemap(); showLayer(s.layer); dlg.close();
     $('#lbl-size').value = String(s.labelScale);
@@ -851,7 +850,7 @@ ${card(CARDS[4], `
     setLayerBar(s.layerBar);
     buildOverlayToggles();
     applyOverlayVisibility();
-  });
+  };
   dlg.showModal();
 }
 
@@ -1019,6 +1018,8 @@ async function main() {
   op.addEventListener('input', () => { setOpacity(Number(op.value)); op.setAttribute('aria-valuetext', `${Math.round(op.value * 100)}%`); });
   op.addEventListener('change', () => saveSettings(S.settings));
   $('#dlg-settings').addEventListener('close', () => updateStatus());
+  // Clicking the backdrop (outside the dialog box) closes the settings.
+  $('#dlg-settings').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   window.addEventListener('resize', placeLegend);
   S.map.on('resize', placeLegend);
   // Banners and the layer bar change the map's height without a window resize: keep Leaflet's size in step

@@ -1357,6 +1357,15 @@ function serve() {
     await page.keyboard.press('Escape');
   });
 
+  await check('settings: reset button sits in the header, no done button, backdrop click closes', async () => {
+    await page.click('#btn-settings');
+    await page.waitForSelector('#dlg-settings[open]');
+    assert(await page.isVisible('#dlg-settings .dlg-head #set-reset'), 'reset button should be in the header');
+    assert((await page.$('#set-done')) === null, 'done button should be gone');
+    await page.mouse.click(5, 5);
+    await page.waitForFunction(() => !document.getElementById('dlg-settings').open);
+  });
+
   await check('historical maps: base map choice and stacked overlays with opacity and attribution', async () => {
     const seen = [];
     await ctx.route(/gis\.sinica\.edu\.tw/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
