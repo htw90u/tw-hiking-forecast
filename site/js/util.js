@@ -104,6 +104,11 @@ export function html(strings, ...vals) {
   });
   return { __raw: true, html: out };
 }
+/** Only https links from data files are put into href/src (a javascript: or data: URL in a feed must never become a link). */
+export function safeUrl(u) {
+  try { return new URL(String(u)).protocol === 'https:' ? String(u) : ''; } catch { return ''; }
+}
+
 export function raw(s) { return { __raw: true, html: String(s) }; }
 export function esc(v) {
   if (v === null || v === undefined) return '';

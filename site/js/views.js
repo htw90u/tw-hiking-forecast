@@ -3,7 +3,7 @@ import { S } from './state.js';
 import { saveSettings } from './settings.js';
 import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty, intText, isStrongQuake,
-  beaufort, apparentTemp, eleText, bfNum,
+  beaufort, apparentTemp, eleText, bfNum, safeUrl,
 } from './util.js';
 import { getGrid, framesFor, layerDef, showLayer, stopAnimation, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL, lightningNear, loadWind, loadHeat, HEAT_WARN, WIND_DIRS } from './layers.js';
 import { sample, classRange, renderGrid } from './grid.js';
@@ -1074,8 +1074,8 @@ ${others.length ? html`<section class="card"><h3>其他景點</h3><ul class="col
 ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內）</h3><p>${towns.join('、')}</p></section>` : ''}
 <section class="card"><h3>各地震度</h3><table class="kv"><tbody>${q.areas.map((a) => html`<tr><th scope="row">${a.area}</th><td>${a.int}</td></tr>`)}</tbody></table></section>
 <p class="muted">${q.text || ''}</p>
-${strong && q.img ? html`<section class="card"><h3>氣象署地震報告圖</h3><img class="eq-report" src="${q.img}" alt="地震報告圖（震央與各地震度）" loading="lazy"></section>` : ''}
-<p><a href="${q.web}" target="_blank" rel="noopener">氣象署地震報告頁</a>${q.img ? html`・<a href="${q.img}" target="_blank" rel="noopener">報告圖</a>` : ''}</p>
+${strong && q.img ? html`<section class="card"><h3>氣象署地震報告圖</h3><img class="eq-report" src="${safeUrl(q.img)}" alt="地震報告圖（震央與各地震度）" loading="lazy"></section>` : ''}
+<p><a href="${safeUrl(q.web)}" target="_blank" rel="noopener">氣象署地震報告頁</a>${q.img ? html`・<a href="${safeUrl(q.img)}" target="_blank" rel="noopener">報告圖</a>` : ''}</p>
 <p class="note">震度 4 級以上的山區請留意落石、坍方與步道受損。</p>`;
   openSheet(`地震 M${q.mag}${strong ? '（強震）' : ''}`, body, { onRender: bindCommon, peek: true, quake: true });
   // Zoom to the felt area (stations with intensity >= 1, at least the 50 km ring) above the sheet.
@@ -1128,7 +1128,7 @@ ${t.rainTotal ? html`<section class="card"><h3>各地區總雨量預測</h3>${ra
 ${t.wind ? html`<section class="card"><h3>各地區風力預測</h3>${windTable(t.wind)}</section>` : ''}
 ${ty.tablesRestricted ? html`<section class="card"><h3>各地區風力、24 小時雨量與總雨量預測</h3>
 <p>這些預測表附有中央氣象署著作權聲明（未經書面授權不得轉載），本網站不直接顯示。</p>
-<p><a class="btn" href="${ty.tablesLink}" target="_blank" rel="noopener">到中央氣象署颱風消息查看</a></p></section>` : ''}
+<p><a class="btn" href="${safeUrl(ty.tablesLink)}" target="_blank" rel="noopener">到中央氣象署颱風消息查看</a></p></section>` : ''}
 <p class="src">資料來源：中央氣象署颱風消息與警報、颱風各地區風雨預測。</p>`;
   openSheet('颱風資訊', body, {
     onRender: (root) => {

@@ -1383,6 +1383,18 @@ function serve() {
     assert((await page.$('.leaflet-tile[src*="gibs.earthdata.nasa.gov"]')) === null, 'NASA tiles should be removed with the layer');
   });
 
+  await check('security: CSP present, data-file URLs must be https (javascript:/data: dropped), inline scripts blocked', async () => {
+    assert(await page.$('meta[http-equiv="Content-Security-Policy"]'), 'CSP meta tag missing');
+    const r = await page.evaluate(async () => {
+      const { safeUrl } = await import('./js/util.js');
+      return [safeUrl('https://www.cwa.gov.tw/x'), safeUrl('javascript:alert(1)'), safeUrl('data:text/html,x'), safeUrl('http://a.b'), safeUrl('not a url')];
+    });
+    assert(r[0] === 'https://www.cwa.gov.tw/x' && r.slice(1).every((x) => x === ''), `safeUrl results ${JSON.stringify(r)}`);
+    const ran = await page.evaluate(() => { window.__csp = 0; const s = document.createElement('script'); s.textContent = 'window.__csp = 1'; document.head.append(s); return window.__csp; });
+    assert(ran === 0, 'inline script executed despite the CSP');
+    errors.length = 0; // the blocked inline script above is expected to log a CSP violation
+  });
+
   await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
     await page.evaluate(() => localStorage.setItem('hikingwx.searchHistory.v1', JSON.stringify(['玉山'])));
     await page.click('#q', { clickCount: 3 });
