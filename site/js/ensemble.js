@@ -103,7 +103,8 @@ export function ensembleCharts(models) {
 export function ensembleCard() {
   return html`<section class="card" aria-labelledby="h-ens"><h3 id="h-ens">系集預報（10 天）</h3>
 <p class="note">同一個預報模式用略有差異的起始條件跑出數十個結果，結果越分散代表不確定性越大。實線為中位數，虛線為 10–90% 範圍。
-資料來自 Open-Meteo 的 ECMWF IFS（51 成員）與 GFS（GEFS）系集，由您的瀏覽器直接連線取得（CC BY 4.0），非氣象署發布；模式解析度約 25 km，山區僅供趨勢參考。</p>
+資料來自 Open-Meteo 的 ECMWF IFS（51 成員）與 GFS（GEFS）系集，由您的瀏覽器直接連線取得（CC BY 4.0），非氣象署發布。</p>
+<p class="note note-red">模式解析度約 25 km，山區僅供趨勢參考。</p>
 <button class="btn" id="btn-ens">載入系集預報</button><div id="ens-out" aria-live="polite"></div></section>`;
 }
 

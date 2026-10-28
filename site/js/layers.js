@@ -215,7 +215,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     const wf = id === 'wrf3' ? wrf3Frames()[S.layer.frame] : null;
     renderLegend({ ...grid.meta, kindOverride: kind, ...(wf ? { src: '中央氣象署 區域數值模式 WRF 3 km（M-A0064）', issued: S.manifest.layers.wrf3.time,
       ...(S.layer.wrf3Mode === 'temp' ? {} : { start: grid.meta.start, end: grid.meta.time, time: undefined }),
-      note: `模式輸出的格點預報（3 km 網格、每 6 小時一步、最長 84 小時），${S.layer.wrf3Mode === 'temp' ? '為 2 m 高度氣溫；模式地形高度與實際海拔不同，山區氣溫請與測站、氣象署山區預報對照。' : '為每 6 小時累積降水，由模式累積雨量相減而得，位置與強度都可能有偏差，不是機率，也不等於氣象署的定量降水預報。'}` } : {}) });
+      note: `模式輸出的格點預報（3 km 網格、每 6 小時一步、最長 84 小時），${S.layer.wrf3Mode === 'temp' ? '為 2 m 高度氣溫；模式地形高度與實際海拔不同，山區氣溫請與測站、氣象署山區預報對照。' : '為每 6 小時累積降水，由模式累積雨量相減而得。'}`,
+      ...(S.layer.wrf3Mode === 'temp' ? {} : { noteWarn: '位置與強度都可能有偏差，不是機率，也不等於氣象署的定量降水預報。' }) } : {}) });
     if (id === 'wrfg') {
       const mode = S.layer.wrfgMode || 'rain';
       renderLegend({ ...grid.meta, kindOverride: kind, src: '中央氣象署 全球模式（M-A0060）', issued: S.manifest.layers.wrfg.time,
@@ -377,7 +378,8 @@ async function showWind(keepFrame) {
   finishOverlay(ov);
   const t = w.times[i];
   renderLegend({ label: '風力預報（蒲福風級）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: w.issue, kindOverride: 'wind',
-    note: `色塊為鄉鎮預報（平地），箭頭指向風吹去的方向（縮小時每個畫面格只畫一個：登山預報點優先，其餘為鄉鎮預報，顏色較淡；放大可看到更多），數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風僅提供鄉鎮（平地），為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布；登山預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。` : '目前沒有陣風預報資料。'}6 級以上山區行走困難，8 級以上請避免稜線。` });
+    note: `色塊為鄉鎮預報（平地），箭頭指向風吹去的方向（縮小時每個畫面格只畫一個：登山預報點優先，其餘為鄉鎮預報，顏色較淡；放大可看到更多），數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風僅提供鄉鎮（平地），為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布。` : '目前沒有陣風預報資料。'}`,
+    noteWarn: `${w.gustSource ? '登山預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。' : ''}6 級以上山區行走困難，8 級以上請避免稜線。` });
   renderTimeControl();
 }
 

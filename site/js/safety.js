@@ -1,6 +1,8 @@
 // Rule-based hiking risk summary. Always lists the triggering reasons so the
 // level is never conveyed by colour alone.
 
+import { beaufort } from './util.js';
+
 export const LEVELS = [
   { id: 0, label: '正常', icon: '●', cls: 'lv0' },
   { id: 1, label: '注意', icon: '▲', cls: 'lv1' },
@@ -30,8 +32,8 @@ export function assess(ctx, th) {
   }
   if (ctx.radar !== null && ctx.radar !== undefined && ctx.radar >= 40) add(ctx.radar >= 50 ? 2 : 1, `雷達回波 ${ctx.radar.toFixed(0)} dBZ（強對流/大雨）`);
   const gust = Math.max(0, ...ctx.stations.slice(0, 3).map((s) => s.G ?? s.WS ?? 0));
-  if (gust >= th.gustRed) add(2, `鄰近測站陣風 ${gust} m/s（≥ ${th.gustRed}）`);
-  else if (gust >= th.gust) add(1, `鄰近測站陣風 ${gust} m/s（≥ ${th.gust}）`);
+  if (gust >= th.gustRed) add(2, `鄰近測站陣風 ${gust} m/s（${beaufort(gust)} 級，≥ ${th.gustRed} m/s）`);
+  else if (gust >= th.gust) add(1, `鄰近測站陣風 ${gust} m/s（${beaufort(gust)} 級，≥ ${th.gust} m/s）`);
   const cold = ctx.spotMinAT ?? null;
   if (cold !== null) {
     if (cold <= th.coldRed) add(2, `預報最低體感溫度 ${cold}°C（≤ ${th.coldRed}，失溫風險）`);
@@ -48,8 +50,8 @@ export function assess(ctx, th) {
   });
   const lt = ctx.lightning;
   if (lt && lt.n) add(lt.nearest <= 10 ? 2 : 1, `過去 1 小時 ${lt.n} 次閃電，最近 ${lt.nearest.toFixed(1)} km（雷擊風險，遠離稜線與空曠處）`);
-  if (ctx.gustFc >= th.gustRed) add(2, `未來 24 小時模式預報陣風 ${ctx.gustFc} m/s（≥ ${th.gustRed}）`);
-  else if (ctx.gustFc >= th.gust) add(1, `未來 24 小時模式預報陣風 ${ctx.gustFc} m/s（≥ ${th.gust}）`);
+  if (ctx.gustFc >= th.gustRed) add(2, `未來 24 小時模式預報陣風 ${ctx.gustFc} m/s（${beaufort(ctx.gustFc)} 級，≥ ${th.gustRed} m/s）`);
+  else if (ctx.gustFc >= th.gust) add(1, `未來 24 小時模式預報陣風 ${ctx.gustFc} m/s（${beaufort(ctx.gustFc)} 級，≥ ${th.gust} m/s）`);
   if (ctx.windBf >= 8) add(2, `未來 24 小時登山預報風力 ${ctx.windBf} 級（稜線行走危險）`);
   else if (ctx.windBf >= 6) add(1, `未來 24 小時登山預報風力 ${ctx.windBf} 級（強風，注意保暖與失足）`);
   const he = ctx.heat;

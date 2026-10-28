@@ -386,7 +386,7 @@ function wrfgCard(w, label) {
 ${raw(chart({ title: '2 m 氣溫（全球模式）', unit: '°C', times: w.times, series: [{ label: '氣溫', values: w.t2, kind: 'line', cls: 's1' }] }))}
 ${raw(chart({ title: '24 小時降水（全球模式）', unit: 'mm', times: w.dayTimes, zeroBase: true, series: [{ label: '24 小時降水', values: w.rain, kind: 'bar', cls: 's2' }] }))}
 ${raw(chart({ title: '10 m 風速（全球模式）', unit: 'm/s', times: w.times, zeroBase: true, series: [{ label: '風速', values: w.ws, kind: 'line', cls: 's3' }] }))}
-<p class="note">25 km 網格的地形比實際平滑，山區氣溫常偏高、風偏弱、降水位置不準；請與氣象署地點預報、系集預報與測站對照。</p></section>`;
+<p class="note note-red">25 km 網格的地形比實際平滑，山區氣溫常偏高、風偏弱、降水位置不準；請與氣象署地點預報、系集預報與測站對照。</p></section>`;
 }
 
 /** WRF 3 km series at a forecast spot or township centre: 2 m temperature, 6-hour rain and 10 m wind speed. */
@@ -410,7 +410,7 @@ function wrf3Card(w, label) {
 ${raw(chart({ title: '2 m 氣溫（模式）', unit: '°C', times: w.steps, series: [{ label: '氣溫', values: w.t2, kind: 'line', cls: 's1' }] }))}
 ${raw(chart({ title: '6 小時降水（模式）', unit: 'mm', times: w.steps, zeroBase: true, series: [{ label: '6 小時降水', values: w.rain, kind: 'bar', cls: 's2' }] }))}
 ${raw(chart({ title: '10 m 風速（模式）', unit: 'm/s', times: w.steps, zeroBase: true, series: [{ label: '風速', values: w.ws, kind: 'line', cls: 's3' }] }))}
-<p class="note">模式格點的地形高度與實際海拔不同，山區氣溫常偏高、風常偏弱；請與測站觀測及氣象署山區預報對照，不要單獨依此判斷。</p></section>`;
+<p class="note note-red">模式格點的地形高度與實際海拔不同，山區氣溫常偏高、風常偏弱；請與測站觀測及氣象署山區預報對照，不要單獨依此判斷。</p></section>`;
 }
 
 function minApparent(fc) {
@@ -420,7 +420,7 @@ function minApparent(fc) {
   return vals.length ? Math.min(...vals) : null;
 }
 
-const GUST_NOTE = '<p class="note">陣風：Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布，為鄉鎮所在約 10 km 網格的平地值；氣象署鄉鎮與登山預報只提供平均風，山區預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。</p>';
+const GUST_NOTE = '<p class="note">陣風：Open-Meteo 數值模式預報（CC BY 4.0），非氣象署發布，為鄉鎮所在約 10 km 網格的平地值；氣象署鄉鎮與登山預報只提供平均風。</p><p class="note note-red">山區預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。</p>';
 
 /** One-line summary of a hiking forecast for the next 24 h: weather, temperature, rain chance, wind. */
 function mtnBrief(fc, key) {
