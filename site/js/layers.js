@@ -61,6 +61,19 @@ export function nasaDate(back) {
 
 function satGrids() { return S.manifest?.layers?.satellite?.grids || {}; }
 
+/** Past frames of a satellite product (oldest first, newest last): the build keeps the last hours, the latest is always included. */
+function satFrames(key) {
+  const g = satGrids()[key];
+  if (!g) return [];
+  const h = g.history || [];
+  const last = h[h.length - 1];
+  return last && new Date(last.time) >= new Date(g.time) ? h : [...h, { time: g.time, meta: g.meta }];
+}
+
+function satIndex(frames) {
+  return S.layer.satIdx == null ? frames.length - 1 : Math.max(0, Math.min(S.layer.satIdx, frames.length - 1));
+}
+
 /** Wide-interval (大間距) classes: chosen by the user, or automatically when totals exceed 400 mm (CWA's advice). */
 export function useBigSpacing() {
   return S.settings.rainSpacing === 'big';
@@ -171,6 +184,7 @@ function playInfo() {
   if (id === 'radar') return grids(framesFor('radar'));
   if (id === 'wrf3') return grids(framesFor('wrf3'));
   if (id === 'wrfg') return grids(framesFor('wrfg'));
+  if (id === 'sat' && satGrids().ir) return grids(satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key).map((f) => f.meta));
   if (id === 'heat') return { n: S.heat?.times?.length || 0 };
   if (id === 'pop' || (id === 'wind' && (S.layer.windMode || 'fc') === 'fc') || (id === 'visib' && S.layer.visMode === 'fc')) return { n: S.wind?.times?.length || 0 };
   if (id === 'wind' && S.layer.windMode === 'aloft') return { n: wrfDs()?.steps?.length || 0 };
@@ -183,6 +197,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
   S.layer.id = id;
   if (!keepFrame) {
     S.layer.frame = id === 'sat' ? 0 : Math.max(0, framesFor(id).length - 1);
+    S.layer.satIdx = null;
     S.layer.period = id === 'nasa' ? NASA_DEFAULT_DAY : id === 'rainacc' ? Math.max(0, (S.manifest?.layers?.rainacc?.periods || []).findIndex((p) => p.id === '24h')) : 0;
   }
   document.querySelectorAll('.chip[data-layer]').forEach((b) => {
@@ -207,7 +222,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'wrf3' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = wrf3NowIndex(wrf3Frames());
     if (id === 'wrfg' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = 0;
     const frames = framesFor(id);
-    const path = PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
+    const sf = id === 'sat' ? satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key) : null;
+    const path = sf ? sf[satIndex(sf)]?.meta : PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
@@ -988,6 +1004,12 @@ export function renderTimeControl(meta) {
   } else if (id === 'sat') {
     const list = satGrids().ir ? SAT_MODES : S.sat;
     h = '<div class="seg tabs" role="radiogroup" aria-label="雲圖種類">' + list.map((x, i) => `<button class="seg-btn" role="radio" aria-checked="${i === S.layer.frame}" data-frame="${i}">${esc(x.label)}</button>`).join('') + '</div>';
+    const sf = satGrids().ir ? satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key) : [];
+    if (sf.length > 1) {
+      const si = satIndex(sf);
+      h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">雲圖時間</span><input id="sat-frame" type="range" min="0" max="${sf.length - 1}" value="${si}" aria-valuetext="${esc(fmtTime(sf[si].time))}"></label>
+<output id="sat-time">${esc(fmtTime(sf[si].time))}</output></div>`;
+    }
   } else if (id === 'nasa') {
     h = modeTabs('NASA 影像種類', NASA_MODES.map((m) => [m.id, m.label]), 'nasamode', S.layer.nasaMode || 'tc', { tc: '◉', snow: '❄' });
     h += '<div class="seg" role="radiogroup" aria-label="影像日期">' + Array.from({ length: NASA_DAYS }, (_, i) => {
@@ -1131,6 +1153,12 @@ export function renderTimeControl(meta) {
     S.layer.period = Number(b.dataset.period);
     showLayer(id, { keepFrame: true });
   }));
+  const sat = el.querySelector('#sat-frame');
+  if (sat) {
+    const sf = satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key);
+    sat.addEventListener('input', () => { stopAnimation(); el.querySelector('#sat-time').textContent = fmtTime(sf[Number(sat.value)]?.time); });
+    sat.addEventListener('change', () => { S.layer.satIdx = Number(sat.value); showLayer('sat', { keepFrame: true }); });
+  }
   el.querySelectorAll('[data-frame]').forEach((b) => b.addEventListener('click', () => {
     S.layer.frame = Number(b.dataset.frame);
     showLayer(id, { keepFrame: true });
@@ -1150,7 +1178,8 @@ function toggleAnimation() {
     S.layer.timer = setInterval(() => {
       const cur = playInfo();
       if (!cur || cur.n < 2) { stopAnimation(); return; }   // the mode or layer changed meanwhile
-      S.layer.frame = (S.layer.frame + 1) % cur.n;
+      if (S.layer.id === 'sat') S.layer.satIdx = ((S.layer.satIdx == null ? cur.n - 1 : S.layer.satIdx) + 1) % cur.n;
+      else S.layer.frame = (S.layer.frame + 1) % cur.n;
       showLayer(S.layer.id, { keepFrame: true });
     }, S.settings.reduceMotion ? 2500 : 800);
   });

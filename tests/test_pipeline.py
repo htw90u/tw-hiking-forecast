@@ -901,3 +901,28 @@ def test_wrfglobal_build(tmp_path, monkeypatch):
     calls.clear()
     assert wrfglobal.build(tmp_path, log, fetch, now, pts, open_grib=fake_open)["fresh"] is False and calls == [wrfglobal.META_KEY]
     log.close()
+
+
+def test_satellite_history_keeps_a_rolling_window(tmp_path):
+    from pipeline import satellite
+    written = []
+
+    def write(name):
+        written.append(name)
+        (tmp_path / f"{name}.png").write_bytes(b"x")
+        stamp = name.rsplit("_", 1)[1]
+        (tmp_path / f"{name}.json").write_text(json.dumps({"time": f"2026-10-28T{stamp[8:10]}:{stamp[10:12]}:00+08:00"}))
+
+    def run(t):
+        return satellite.update_history(tmp_path, "ir", t, write)
+
+    assert len(run("2026-10-28T08:00:00+08:00")) == 1
+    assert len(run("2026-10-28T08:10:00+08:00")) == 1          # too close to the stored frame: not stored
+    assert len(run("2026-10-28T08:30:00+08:00")) == 2
+    assert len(run("2026-10-28T08:30:00+08:00")) == 2          # same observation again: nothing new
+    for h, m in ((9, 0), (9, 30), (10, 0), (10, 30), (11, 0), (11, 30), (12, 0), (12, 30), (13, 0), (13, 30), (14, 0), (14, 30)):
+        frames = run(f"2026-10-28T{h:02d}:{m:02d}:00+08:00")
+    assert frames[0]["time"].startswith("2026-10-28T08:30"), "frames older than 6 h must be pruned, 8:30 kept"
+    assert not (tmp_path / "sat_ir_202610280800.png").exists() and (tmp_path / "sat_ir_202610280830.png").exists()
+    assert [f["time"] for f in frames] == sorted(f["time"] for f in frames)
+    assert len(written) == len(set(written))

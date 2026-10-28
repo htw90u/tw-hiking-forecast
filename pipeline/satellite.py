@@ -6,8 +6,12 @@ clouds with interpolation (smooth at high zoom), choose colour scales and
 report cloud-top temperature at a point.
 """
 import io
+import json
 import math
+import re
 import zipfile
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -118,3 +122,33 @@ def is_dark(albedo, raw=None) -> bool:
     """True when (almost) nothing in the visible picture is lit: night, so the picture carries no information."""
     ok = ~np.isnan(albedo) if raw is None else (~np.isnan(albedo)) & (raw > 0)
     return bool(ok.any() and np.percentile(albedo[ok], 99) < 0.03)
+
+
+def update_history(grids_dir: Path, key: str, t: str, write, min_gap_min: int = 25, keep_hours: int = 6) -> list:
+    """Keep a rolling set of past frames of one satellite product (the open data only ever offers the latest one).
+
+    Frames live as `sat_<key>_<yyyymmddHHMM>.json/png`; the Actions cache brings them back from the previous build.
+    A new frame is stored when `t` is at least `min_gap_min` after the newest stored one; frames older than
+    `keep_hours` before the newest are deleted. `write(name)` writes the layer under that file stem.
+    Returns [{time, meta}] oldest first (the latest observation may be newer than the last entry).
+    """
+    frames = []
+    for p in sorted(Path(grids_dir).glob(f"sat_{key}_*.json")):
+        try:
+            frames.append((datetime.fromisoformat(json.loads(p.read_text())["time"]), p.stem))
+        except (ValueError, KeyError, OSError):
+            p.unlink(missing_ok=True)
+    cur = datetime.fromisoformat(t)
+    if not frames or cur - frames[-1][0] >= timedelta(minutes=min_gap_min):
+        name = f"sat_{key}_" + re.sub(r"\D", "", t)[:12]
+        write(name)
+        frames.append((cur, name))
+    newest = max(frames[-1][0], cur)
+    keep = []
+    for ft, stem in frames:
+        if newest - ft > timedelta(hours=keep_hours):
+            for ext in ("json", "png"):
+                (Path(grids_dir) / f"{stem}.{ext}").unlink(missing_ok=True)
+        else:
+            keep.append({"time": ft.isoformat(), "meta": f"grids/{stem}.json"})
+    return keep

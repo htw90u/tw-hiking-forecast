@@ -227,6 +227,25 @@ function serve() {
     assert(n === 1, `satellite overlay images ${n}`);
   });
 
+  await check('satellite: past frames selectable with a time slider and playable', async () => {
+    await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const g = S.manifest.layers.satellite.grids;
+      const t0 = new Date(g.ir.time).getTime();
+      g.ir.history = [90, 60, 30].map((m) => ({ time: new Date(t0 - m * 60000).toISOString(), meta: g.ir.meta }));
+    });
+    await selectLayer('.chip[data-layer="sat"]');
+    await page.click('[data-frame="0"]');
+    await page.waitForSelector('#sat-frame');
+    assert((await page.$eval('#sat-frame', (e) => e.max)) === '3', 'slider should cover 3 past frames and the latest');
+    assert((await page.$eval('#sat-frame', (e) => e.value)) === '3', 'slider should start at the latest frame');
+    await page.$eval('#sat-frame', (e) => { e.value = '1'; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); });
+    await page.waitForFunction(() => document.querySelector('#sat-frame')?.value === '1');
+    await page.click('#btn-play');
+    await page.waitForFunction(() => document.querySelector('#sat-frame')?.value === '2', null, { timeout: 8000 });
+    await page.click('#btn-play');
+  });
+
   await check('QPF outlying islands placed at real coordinates (Matsu, Kinmen)', async () => {
     const r = await page.evaluate(async () => {
       const { getGrid, framesFor } = await import('./js/layers.js');

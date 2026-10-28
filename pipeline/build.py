@@ -604,9 +604,11 @@ class Builder:
                 extra = {"label": label, "unit": unit, "time": t, "src": ds_id}
                 if key == "vis" and satellite.is_dark(arr):
                     extra["note"] = "目前為夜間，可見光衛星沒有資料（畫面全黑），夜間請改用紅外線。"
-                grids.write_layer(self.out / "grids", f"sat_{key}", {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"],
-                                                                      "res": g["res"]}, scale, offset, extra)
-                layers[key] = {"meta": f"grids/sat_{key}.json", "time": t}
+                write = lambda name: grids.write_layer(self.out / "grids", name, {"data": arr, "lon0": g["lon0"], "lat0": g["lat0"],  # noqa: E731
+                                                                                   "res": g["res"]}, scale, offset, extra)
+                write(f"sat_{key}")
+                layers[key] = {"meta": f"grids/sat_{key}.json", "time": t,
+                               "history": satellite.update_history(self.out / "grids", key, t, write)}
             except Exception as e:  # noqa: BLE001
                 self.log.warn(f"satellite {ds_id}: {e}")
         imgs = self.satellite_images()
