@@ -42,10 +42,16 @@ export function riverTip(r) {
     alerts ? kv('警戒水位', esc(alerts)) : null, r.t ? kv('時間', esc(fmtTime(r.t))) : null].filter(Boolean).join('<br>');
 }
 
+/** "3398.18/3383.71(100%)": effective storage / capacity with the fill percentage capped at 100 %. */
+function storage(r) {
+  if (!r.cap) return fmt(r.vol, 2);
+  return `${fmt(r.vol, 2)}/${fmt(r.cap, 2)}(${Math.min(100, Math.round((r.vol / r.cap) * 100))}%)`;
+}
+
 export function reservoirTip(r) {
   const has = (v) => v !== null && v !== undefined;
   return [`<b class="tt-name">${esc(r.n)}</b>`, kv('狀態', RESERVOIR_STATUS[reservoirStatus(r)]), kv('水位', `${fmt(r.wl, 2)} m`),
-    has(r.vol) ? kv('有效蓄水量', `${fmt(r.vol, 2)}${r.cap ? `／容量 ${fmt(r.cap, 2)}` : ''}`) : null,
+    has(r.vol) ? kv('有效蓄水量', storage(r)) : null,
     has(r.inflow) ? kv('入流', `${fmt(r.inflow)} m³/s`) : null,
     has(r.outflow) ? kv('總放流', `${fmt(r.outflow)} m³/s`) : null,
     (r.spill ?? 0) > 0 ? kv('溢洪道放流', `${fmt(r.spill)} m³/s`) : null,
