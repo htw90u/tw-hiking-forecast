@@ -516,3 +516,26 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .chk input { width: 1.25rem; height: 1.25rem; }
 .hov { border-top: 1px solid var(--line); padding: .2rem 0; }
 .hov input[type=range] { flex: 1; min-width: 8rem; min-height: 44px; }
+.wind-mk.town { opacity: .75; }
+
+/* settings dialog: colour-coded folding cards (same look as the point panel), section jump bar, fixed action bar */
+#dlg-settings[open] { display: flex; flex-direction: column; }
+#dlg-settings { overflow: hidden; }
+#dlg-settings .dlg-body { overflow: auto; flex: 1; min-height: 0; padding-top: 0; }
+.sjump { position: sticky; top: 0; z-index: 2; background: var(--card); padding: .4rem 0; margin: 0; }
+.pjump button.on { background: var(--c); color: #fff; }
+[data-theme="dark"] .pjump button.on, [data-theme="contrast"] .pjump button.on, .pjump button.g-sun.on { color: #1c1400; }
+.scard { scroll-margin-top: 3.6rem; }
+.pcard.scard[open] .pc-s { display: block; }
+.scard .pc-s { white-space: normal; }
+.sgrp { display: flex; align-items: center; gap: .5rem; margin: .8rem 0 .2rem; font-size: .8rem; font-weight: 700; letter-spacing: .04em; color: var(--c); }
+.sgrp::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--c) 35%, var(--line)); }
+.scard .field select, .scard .field input[type="url"], .scard .field input[type="text"] { min-height: 44px; }
+.thr { display: grid; grid-template-columns: 1fr 4.6rem 4.6rem 4.2rem; gap: .5rem; align-items: center; min-height: 2.9rem; border-bottom: 1px solid var(--line); }
+.thr .num { width: 100%; min-height: 44px; text-align: center; }
+.thh { min-height: 1.8rem; font-size: .8rem; font-weight: 700; color: var(--muted); border-bottom: 0; text-align: center; }
+.sbtns { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+.sbar { position: sticky; bottom: 0; display: flex; gap: .6rem; margin: .6rem -.8rem -1rem; padding: .6rem .8rem .8rem; background: var(--card); border-top: 1px solid var(--line); box-shadow: 0 -4px 12px rgba(0,0,0,.08); }
+.sbar .btn { flex: 1; min-height: 44px; justify-content: center; }
+.sbar .btn.primary { background: var(--g-obs); color: #fff; border-color: var(--g-obs); }
+[data-theme="dark"] .sbar .btn.primary, [data-theme="contrast"] .sbar .btn.primary { color: #10171b; }

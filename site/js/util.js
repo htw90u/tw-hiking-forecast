@@ -156,3 +156,10 @@ export function isStrongQuake(q) {
 export function eleText(p) {
   return p && p.ele ? `${p.est ? '約 ' : ''}${p.ele} m` : '';
 }
+
+/** Beaufort number of a CWA forecast value: a number, or a bound written as text ('<= 1', '>= 6'); null otherwise. */
+export function bfNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const m = typeof v === 'string' ? v.match(/^\s*[<>]=?\s*(\d+)\s*$/) : null;
+  return m ? Number(m[1]) : null;
+}

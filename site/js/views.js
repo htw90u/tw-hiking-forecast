@@ -3,9 +3,9 @@ import { S } from './state.js';
 import { saveSettings } from './settings.js';
 import {
   getJSON, fmtTime, fmtNum, ageText, nearest, haversineKm, windDir, html, raw, esc, polygonContains, normCounty, intText, isStrongQuake,
-  beaufort, apparentTemp, eleText,
+  beaufort, apparentTemp, eleText, bfNum,
 } from './util.js';
-import { getGrid, framesFor, layerDef, showLayer, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL, lightningNear, loadWind, loadHeat, HEAT_WARN, WIND_DIRS } from './layers.js';
+import { getGrid, framesFor, layerDef, showLayer, stopAnimation, PERIOD_LAYERS, layerKind, attribution, OGDL_TEXT, OGDL_URL, lightningNear, loadWind, loadHeat, HEAT_WARN, WIND_DIRS } from './layers.js';
 import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
@@ -398,7 +398,8 @@ function mtnBrief(fc, key) {
   const col = (e, k) => within(e).map((i) => e.v[k]?.[i]).filter((v) => typeof v === 'number');
   const T = col(el(d3, '溫度'), 'Temperature');
   const pop = col(el(d3, '3小時降雨機率'), 'ProbabilityOfPrecipitation');
-  const bf = col(el(d3, '風速'), 'BeaufortScale');
+  const bfE = el(d3, '風速');
+  const bf = within(bfE).map((i) => bfNum(bfE.v.BeaufortScale?.[i])).filter((v) => v !== null);
   const wxE = el(d3, '天氣現象');
   const wx = wxE && within(wxE).length ? wxE.v.Weather?.[within(wxE)[0]] : null;
   const wdE = el(d3, '風向');
@@ -425,8 +426,8 @@ function maxWindBf(fc) {
   const e = el(fc?.d3, '風速');
   if (!e) return null;
   const now = Date.now();
-  const vals = e.t.map((t, i) => [new Date(t).getTime(), Number(e.v.BeaufortScale?.[i])])
-    .filter(([t, b]) => t + 3 * 3600e3 > now && t < now + 24 * 3600e3 && Number.isFinite(b)).map(([, b]) => b);
+  const vals = e.t.map((t, i) => [new Date(t).getTime(), bfNum(e.v.BeaufortScale?.[i])])
+    .filter(([t, b]) => t + 3 * 3600e3 > now && t < now + 24 * 3600e3 && b !== null).map(([, b]) => b);
   return vals.length ? Math.max(...vals) : null;
 }
 
@@ -639,6 +640,7 @@ function patchPanel(prev, next) {
 }
 
 export async function showPoint(lat, lon, opts = {}) {
+  stopAnimation();
   if (!S.focus) S.focus = L.layerGroup().addTo(S.map);
   S.focus.clearLayers();
   L.circleMarker([lat, lon], { radius: 9, weight: 3, color: '#000', fillColor: '#fff', fillOpacity: 0.9, className: 'focus-pt' }).addTo(S.focus);

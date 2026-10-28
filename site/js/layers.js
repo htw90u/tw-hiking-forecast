@@ -124,6 +124,24 @@ export function stopAnimation() {
   if (b) { b.textContent = '▶ 播放'; b.setAttribute('aria-pressed', 'false'); }
 }
 
+/** Play / pause button shared by every time-stepped layer (the radar has always had one). */
+function playButton() {
+  const playing = Boolean(S.layer.timer);
+  return `<button id="btn-play" class="btn" aria-pressed="${playing}">${playing ? '❚❚ 暫停' : '▶ 播放'}</button>`;
+}
+
+/** Number of steps (and a preloader) of the current layer when it can be played, else null. */
+function playInfo() {
+  const id = S.layer.id;
+  const grids = (list) => ({ n: list.length, pre: () => Promise.all(list.map((p) => getGrid(p))) });
+  if (id === 'radar') return grids(framesFor('radar'));
+  if (id === 'wrf3') return grids(framesFor('wrf3'));
+  if (id === 'heat') return { n: S.heat?.times?.length || 0 };
+  if (id === 'pop' || (id === 'wind' && (S.layer.windMode || 'fc') === 'fc') || (id === 'visib' && S.layer.visMode === 'fc')) return { n: S.wind?.times?.length || 0 };
+  if (id === 'wind' && S.layer.windMode === 'aloft') return { n: wrfDs()?.steps?.length || 0 };
+  return null;
+}
+
 export async function showLayer(id, { keepFrame = false } = {}) {
   const def = layerDef(id);
   if (S.layer.id !== id) stopAnimation();
@@ -251,10 +269,24 @@ function windNowIndex(times) {
   return i < 0 ? times.length - 1 : i;
 }
 
+/** [lat, lon, name] of each township (bounding-box centre), by TOWNCODE; computed once. */
+function townCentres() {
+  if (S.townCentres) return S.townCentres;
+  const out = {};
+  S.towns.forEach((f) => {
+    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+    const walk = (c) => { if (typeof c[0] === 'number') { x0 = Math.min(x0, c[0]); x1 = Math.max(x1, c[0]); y0 = Math.min(y0, c[1]); y1 = Math.max(y1, c[1]); } else c.forEach(walk); };
+    walk(f.geometry.coordinates);
+    out[f.properties.TOWNCODE] = [(y0 + y1) / 2, (x0 + x1) / 2, `${normCounty(f.properties.COUNTYNAME)}${f.properties.TOWNNAME}`];
+  });
+  S.townCentres = out;
+  return out;
+}
+
 /** Arrow pointing downwind (the wind comes from `fromDeg`), with the Beaufort number. */
-function windArrow(fromDeg, bf, colour, title) {
+function windArrow(fromDeg, bf, colour, title, town = false) {
   const html = `<span class="wa" style="--c:${colour}"><svg viewBox="0 0 24 24" style="transform:rotate(${fromDeg + 180}deg)" aria-hidden="true"><path d="M12 3v15M6.5 12.5 12 19l5.5-6.5"/></svg><b>${bf ?? ''}</b></span>`;
-  return L.divIcon({ className: 'wind-mk', html, iconSize: [30, 30] });
+  return L.divIcon({ className: town ? 'wind-mk town' : 'wind-mk', html, iconSize: [30, 30] });
 }
 
 async function showWind(keepFrame) {
@@ -295,23 +327,29 @@ async function showWind(keepFrame) {
     },
   });
   towns.addTo(ov);
-  // Mountain hiking forecasts: ridges are windier than the township centres. Strongest first, and
-  // arrows closer than 34 px to one already drawn are skipped (they reappear when zooming in).
-  const placed = [];
+  // One arrow per 42 px screen cell so the whole island is covered at any zoom: mountain hiking forecasts first (ridges are
+  // windier than the township centres), strongest first, then the township centres for the cells that are still empty.
+  const taken = new Set();
+  const place = (lat, lon, bf, wd, tip, zi, town) => {
+    const pt = S.map.latLngToLayerPoint([lat, lon]);
+    const key = `${Math.floor(pt.x / 42)},${Math.floor(pt.y / 42)}`;
+    if (taken.has(key)) return;
+    taken.add(key);
+    L.marker([lat, lon], { icon: windArrow(wd * 45, bf, hex(bf), '', town), keyboard: false, pane: 'spots', zIndexOffset: zi }).bindTooltip(tip).addTo(ov);
+  };
   const spotPos = Object.fromEntries(S.spots.map((p) => [p.k, p]));
   w.mountains.filter((m) => m.w[0][i] !== null && m.w[2][i] !== null).sort((a, b) => (b.w[1][i] ?? 0) - (a.w[1][i] ?? 0)).forEach((m) => {
-    const [bf, wd] = [m.w[1][i], m.w[2][i]];
     const sp = spotPos[m.k] || m; // snapped summit position when available
-    const pt = S.map.latLngToLayerPoint([sp.lat, sp.lon]);
-    if (placed.some((q) => q.distanceTo(pt) < 34)) return;
-    placed.push(pt);
-    L.marker([sp.lat, sp.lon], { icon: windArrow(wd * 45, bf, hex(bf)), keyboard: false, pane: 'spots', zIndexOffset: 200 })
-      .bindTooltip(`${esc(m.n)}（登山預報）：${windText(m.w, i)}`).addTo(ov);
+    place(sp.lat, sp.lon, m.w[1][i], m.w[2][i], `${esc(m.n)}（登山預報）：${windText(m.w, i)}`, 200, false);
+  });
+  const centres = townCentres();
+  Object.entries(w.towns).filter(([g, r]) => centres[g] && r[1]?.[i] != null && r[2]?.[i] != null).sort((a, b) => (b[1][1][i] ?? 0) - (a[1][1][i] ?? 0)).forEach(([g, r]) => {
+    place(centres[g][0], centres[g][1], r[1][i], r[2][i], `${esc(centres[g][2])}（鄉鎮預報）：${windText(r, i)}`, 0, true);
   });
   finishOverlay(ov);
   const t = w.times[i];
   renderLegend({ label: '風力預報（蒲福風級）', start: t, end: new Date(new Date(t).getTime() + 3 * 3600e3).toISOString(), issued: w.issue, kindOverride: 'wind',
-    note: `色塊為鄉鎮預報（平地），箭頭為登山預報點，指向風吹去的方向，數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風僅提供鄉鎮（平地），為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布；登山預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。` : '目前沒有陣風預報資料。'}6 級以上山區行走困難，8 級以上請避免稜線。` });
+    note: `色塊為鄉鎮預報（平地），箭頭指向風吹去的方向（縮小時每個畫面格只畫一個：登山預報點優先，其餘為鄉鎮預報，顏色較淡；放大可看到更多），數字為平均風蒲福風級；點選或停留可看陣風與體感溫度。${w.gustSource ? `陣風僅提供鄉鎮（平地），為 Open-Meteo 數值模式預報（${fmtTime(w.gustSource.time)} 取得，CC BY 4.0），非氣象署發布；登山預報點不提供模式陣風（模式地形高度遠低於山頂，會低估）。` : '目前沒有陣風預報資料。'}6 級以上山區行走困難，8 級以上請避免稜線。` });
   renderTimeControl();
 }
 
@@ -845,7 +883,7 @@ export function renderTimeControl(meta) {
     h = '<div class="seg" role="radiogroup" aria-label="WRF 3 km 項目">' + [['rain', '6小時降水'], ['temp', '2 m 氣溫']]
       .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === mode}" data-wrf3mode="${k}">${l}</button>`).join('') + '</div>';
     if (fr.length) {
-      h += `<label class="range"><span class="sr-only">預報時間</span><input id="wrf3-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+      h += `${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf3-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wrf3-time">${esc(fmtTime(t))}</output>`;
     }
   } else if (id === 'rainacc') {
@@ -896,7 +934,7 @@ export function renderTimeControl(meta) {
           ? `<button class="seg-btn alt" role="radio" aria-checked="${li === cur}" data-wrflevel="${li}"><b>10 m</b><span class="hpa">地面風</span></button>`
           : `<button class="seg-btn alt" role="radio" aria-checked="${li === cur}" data-wrflevel="${li}"><b>${esc(altText(w.z[li]))}</b><span class="hpa">${lv} hPa</span></button>`)).join('') + '</div>';
         const t = w.steps[S.layer.frame] || w.steps[0];
-        h += `<label class="range"><span class="sr-only">預報時間</span><input id="wrf-frame" type="range" min="0" max="${w.steps.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+        h += `${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf-frame" type="range" min="0" max="${w.steps.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wrf-time">${esc(fmtTime(t))}</output>`;
       }
     } else if (id === 'visib') {
@@ -908,7 +946,7 @@ export function renderTimeControl(meta) {
     }
     if (mode === 'fc' && id !== 'uv' && times.length) {
       const t = times[S.layer.frame] || times[0];
-      h += `<label class="range"><span class="sr-only">預報時間</span><input id="wind-frame" type="range" min="0" max="${times.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
+      h += `${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wind-frame" type="range" min="0" max="${times.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wind-time">${esc(fmtTime(t))}</output>`;
     }
   } else if (meta?.time) {
@@ -941,12 +979,12 @@ export function renderTimeControl(meta) {
   }));
   const w3 = el.querySelector('#wrf3-frame');
   if (w3) {
-    w3.addEventListener('input', () => { el.querySelector('#wrf3-time').textContent = fmtTime(wrf3Frames()[Number(w3.value)].time); });
+    w3.addEventListener('input', () => { stopAnimation(); el.querySelector('#wrf3-time').textContent = fmtTime(wrf3Frames()[Number(w3.value)].time); });
     w3.addEventListener('change', () => { S.layer.frame = Number(w3.value); showLayer('wrf3', { keepFrame: true }); });
   }
   const rf = el.querySelector('#wrf-frame');
   if (rf) {
-    rf.addEventListener('input', () => { el.querySelector('#wrf-time').textContent = fmtTime(wrfDs().steps[Number(rf.value)]); });
+    rf.addEventListener('input', () => { stopAnimation(); el.querySelector('#wrf-time').textContent = fmtTime(wrfDs().steps[Number(rf.value)]); });
     rf.addEventListener('change', () => { S.layer.frame = Number(rf.value); showLayer('wind', { keepFrame: true }); });
   }
   el.querySelectorAll('[data-watermode]').forEach((b) => b.addEventListener('click', () => {
@@ -959,7 +997,7 @@ export function renderTimeControl(meta) {
   }));
   const wf = el.querySelector('#wind-frame');
   if (wf) {
-    wf.addEventListener('input', () => { el.querySelector('#wind-time').textContent = fmtTime((id === 'heat' ? S.heat : S.wind).times[Number(wf.value)]); });
+    wf.addEventListener('input', () => { stopAnimation(); el.querySelector('#wind-time').textContent = fmtTime((id === 'heat' ? S.heat : S.wind).times[Number(wf.value)]); });
     wf.addEventListener('change', () => { S.layer.frame = Number(wf.value); showLayer(id, { keepFrame: true }); });
   }
   el.querySelectorAll('[data-qpfmode]').forEach((b) => b.addEventListener('click', () => {
@@ -985,14 +1023,17 @@ export function renderTimeControl(meta) {
 
 function toggleAnimation() {
   if (S.layer.timer) { stopAnimation(); return; }
-  const frames = framesFor('radar');
-  // Preload all frames before animating.
-  Promise.all(frames.map((f) => getGrid(f))).then(() => {
+  const info = playInfo();
+  if (!info || info.n < 2) return;
+  // Preload the pictures before stepping so the animation does not stutter.
+  Promise.resolve(info.pre ? info.pre() : null).then(() => {
     const b = document.getElementById('btn-play');
     if (b) { b.textContent = '❚❚ 暫停'; b.setAttribute('aria-pressed', 'true'); }
     S.layer.timer = setInterval(() => {
-      S.layer.frame = (S.layer.frame + 1) % frames.length;
-      showLayer('radar', { keepFrame: true });
-    }, S.settings.reduceMotion ? 2500 : 900);
+      const cur = playInfo();
+      if (!cur || cur.n < 2) { stopAnimation(); return; }   // the mode or layer changed meanwhile
+      S.layer.frame = (S.layer.frame + 1) % cur.n;
+      showLayer(S.layer.id, { keepFrame: true });
+    }, S.settings.reduceMotion ? 2500 : 800);
   });
 }

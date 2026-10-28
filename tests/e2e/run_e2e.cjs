@@ -86,6 +86,12 @@ function serve() {
   const page = await ctx.newPage();
   currentPage = page;
   const selectLayer = (sel) => selectLayerOn(page, sel);
+  // The settings cards remember whether they are folded: open all of them (and the advanced part) before using a control.
+  const openSettings = async () => {
+    await page.click('#btn-settings');
+    await page.waitForSelector('#dlg-settings[open]');
+    await page.evaluate(() => document.querySelectorAll('#dlg-settings details').forEach((d) => { d.open = true; }));
+  };
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
@@ -368,7 +374,7 @@ function serve() {
     await page.click('#sheet-close');
     assert(!(await page.evaluate(async () => (await import('./js/state.js')).S.quakeMode)), 'quake mode not cleared on close');
     assert((await page.$$('img.wx-grid')).length > 0, 'weather layer not restored after closing the quake view');
-    await page.click('#btn-settings');
+    await openSettings();
     await page.waitForSelector('#set-fs');
     await page.$eval('#set-fs', (el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.selectOption('#set-theme', 'contrast');
@@ -763,6 +769,30 @@ function serve() {
       return new Promise((resolve) => window.setTimeout(() => resolve({ n: document.querySelectorAll('[data-card="wrf3"] figure.chart').length, t: document.querySelector('[data-card="wrf3"]')?.textContent.includes('地形高度') }), 4000));
     });
     assert(card.n === 3 && card.t, `WRF 3 km card ${JSON.stringify(card)}`);
+    await page.click('#sheet-close').catch(() => {});
+    await selectLayer('.chip[data-layer="radar"]');
+  });
+
+  await check('play button on time-stepped layers: steps forward, pauses, stops when a point is queried; one arrow per screen cell', async () => {
+    await selectLayer('.chip[data-layer="wind"]');
+    await page.click('[data-windmode="fc"]');
+    await page.waitForSelector('#wind-frame');
+    assert(await page.$('#time-ctl #btn-play'), 'play button missing on the wind forecast');
+    const arrows = (await page.$$('.wind-mk')).length;
+    assert(arrows > 15, `wind arrows should cover the visible island with townships too: ${arrows}`);
+    assert((await page.$$('.wind-mk.town')).length > 0, 'township arrows missing');
+    const v0 = await page.$eval('#wind-frame', (e) => Number(e.value));
+    await page.click('#btn-play');
+    await page.waitForFunction((a) => document.querySelector('#wind-frame') && Number(document.querySelector('#wind-frame').value) !== a, v0, { timeout: 8000 });
+    assert((await page.getAttribute('#btn-play', 'aria-pressed')) === 'true', 'play button should show the playing state');
+    await page.click('#btn-play');
+    assert((await page.getAttribute('#btn-play', 'aria-pressed')) === 'false', 'pause did not stop the animation');
+    const v1 = await page.$eval('#wind-frame', (e) => e.value);
+    await page.waitForTimeout(1800);
+    assert((await page.$eval('#wind-frame', (e) => e.value)) === v1, 'animation kept running after pause');
+    await page.click('#btn-play');
+    await page.evaluate(async () => { const v = await import('./js/views.js'); const { S } = await import('./js/state.js'); await v.showPoint(S.spots[0].lat, S.spots[0].lon, {}); });
+    assert(await page.evaluate(async () => !(await import('./js/state.js')).S.layer.timer), 'querying a point should stop the animation');
     await page.click('#sheet-close').catch(() => {});
     await selectLayer('.chip[data-layer="radar"]');
   });
@@ -1214,7 +1244,7 @@ function serve() {
   });
 
   await check('OpenCycleMap without a key falls back to the Taiwan e-map with a notice', async () => {
-    await page.click('#btn-settings');
+    await openSettings();
     await page.fill('#set-tfkey', '');
     await page.dispatchEvent('#set-tfkey', 'change');
     await page.selectOption('#set-base', 'cycle');
@@ -1222,7 +1252,7 @@ function serve() {
     await page.waitForSelector('.base-note');
     const src = await page.$eval('.leaflet-tile-pane img', (i) => i.src).catch(() => '');
     assert(!src.includes('thunderforest'), 'keyless Thunderforest tiles requested');
-    await page.click('#btn-settings');
+    await openSettings();
     await page.selectOption('#set-base', 'topo');
     await page.keyboard.press('Escape');
     assert(!(await page.$('.base-note')), 'notice remains after switching back');
@@ -1270,7 +1300,7 @@ function serve() {
   await check('OpenCycleMap basemap uses the Thunderforest key from settings', async () => {
     const seen = [];
     await ctx.route(/tile\.thunderforest\.com/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }); });
-    await page.click('#btn-settings');
+    await openSettings();
     await page.waitForSelector('#set-tfkey');
     await page.fill('#set-tfkey', 'TESTKEY');
     await page.dispatchEvent('#set-tfkey', 'change');
@@ -1281,7 +1311,7 @@ function serve() {
     assert(seen.every((u) => u.includes('/cycle/') && u.includes('apikey=TESTKEY')), `bad tile url ${seen[0]}`);
     const attr = await page.textContent('.leaflet-control-attribution');
     assert(attr.includes('Thunderforest'), 'Thunderforest attribution missing');
-    await page.click('#btn-settings');
+    await openSettings();
     await page.selectOption('#set-base', 'topo');
     await page.keyboard.press('Escape');
     await ctx.unroute(/tile\.thunderforest\.com/);
@@ -1290,11 +1320,10 @@ function serve() {
   await check('historical maps: base map choice and stacked overlays with opacity and attribution', async () => {
     const seen = [];
     await ctx.route(/gis\.sinica\.edu\.tw/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
-    await page.click('#btn-settings');
+    await openSettings();
     await page.waitForSelector('#set-base');
     assert(await page.$eval('#set-base', (e) => [...e.options].some((o) => o.value === 'h_TM25K_2001')), 'historical base map missing');
     await page.selectOption('#set-base', 'h_TM25K_2001');
-    await page.evaluate(() => { document.querySelector('details.sub summary').click(); });
     await page.check('[data-hov="Sunriver_50K_N_2017"]');
     await page.check('[data-hov="TM25K_2003"]');
     await page.$eval('[data-hova="Sunriver_50K_N_2017"]', (e) => { e.value = '0.5'; e.dispatchEvent(new Event('input', { bubbles: true })); });
@@ -1306,9 +1335,8 @@ function serve() {
     assert(op.includes('0.5'), `overlay opacity not applied ${op}`);
     assert((await page.textContent('.leaflet-control-attribution')).includes('人文社會科學研究中心'), 'attribution missing');
     assert(await page.evaluate(() => JSON.parse(localStorage.getItem('hikingwx.settings.v1')).histOverlays.Sunriver_50K_N_2017 === 0.5), 'overlay choice not saved');
-    await page.click('#btn-settings');
+    await openSettings();
     await page.selectOption('#set-base', 'topo');
-    await page.evaluate(() => { document.querySelector('details.sub summary').click(); });
     await page.uncheck('[data-hov="Sunriver_50K_N_2017"]');
     await page.uncheck('[data-hov="TM25K_2003"]');
     await page.keyboard.press('Escape');
@@ -1318,7 +1346,7 @@ function serve() {
   await check('Thunderforest Landscape and Outdoors basemaps share the key; keyless falls back', async () => {
     const seen = [];
     await ctx.route(/tile\.thunderforest\.com/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
-    await page.click('#btn-settings');
+    await openSettings();
     await page.fill('#set-tfkey', 'TESTKEY');
     await page.dispatchEvent('#set-tfkey', 'change');
     for (const style of ['landscape', 'outdoors']) {
@@ -1331,7 +1359,7 @@ function serve() {
     await page.keyboard.press('Escape');
     await page.waitForSelector('.base-note');
     assert((await page.textContent('.base-note')).includes('Outdoors'), 'keyless notice does not name the map');
-    await page.click('#btn-settings');
+    await openSettings();
     await page.selectOption('#set-base', 'topo');
     await page.keyboard.press('Escape');
     await ctx.unroute(/tile\.thunderforest\.com/);
@@ -1341,7 +1369,7 @@ function serve() {
     const seen = [];
     await ctx.route(/tile\.thunderforest\.com/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 429, contentType: 'text/plain', body: 'quota exceeded' }); });
     await page.evaluate(() => localStorage.removeItem('hikingwx.tfOver.v1'));
-    await page.click('#btn-settings');
+    await openSettings();
     await page.waitForSelector('#set-tfkey');
     await page.fill('#set-tfkey', 'QUOTAKEY');                // a key no earlier test used, so no tile comes from the browser cache
     await page.dispatchEvent('#set-tfkey', 'change');
@@ -1360,11 +1388,11 @@ function serve() {
     await page.waitForTimeout(1500);
     assert(seen.length === 0, `Thunderforest was asked again after the quota fallback: ${seen.length} requests`);
     assert((await page.textContent('.base-note')).includes('額度'), 'notice missing after reload');
-    await page.click('#btn-settings');
+    await openSettings();
     await page.selectOption('#set-base', 'topo');             // choosing a map clears the fallback
     await page.keyboard.press('Escape');
     assert((await page.evaluate(() => localStorage.getItem('hikingwx.tfOver.v1'))) === null, 'choosing a map should clear the fallback');
-    await page.click('#btn-settings');
+    await openSettings();
     await page.fill('#set-tfkey', '');
     await page.dispatchEvent('#set-tfkey', 'change');
     await page.keyboard.press('Escape');

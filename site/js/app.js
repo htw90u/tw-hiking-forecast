@@ -701,48 +701,100 @@ function openSettings() {
   const body = dlg.querySelector('.dlg-body');
   const opt = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(typeof v === 'string' ? v : v.label)}</option>`).join('');
   const th = s.thresholds;
+  // Cards in the colours of the point panel's groups; the open / closed state is remembered, the one-line summary shows the current choices.
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  let open = { look: 1 };
+  try { open = JSON.parse(localStorage.getItem('hikingwx.settingsCards.v1') || 'null') || open; } catch { /* use the default */ }
+  const CARDS = [['look', 'obs', '◐', '外觀與閱讀', '外觀'], ['map', 'fc', '▦', '地圖與底圖', '地圖'], ['layer', 'water', '◫', '圖層顯示', '圖層'],
+    ['safe', 'sun', '⚠', '安全評估門檻', '門檻'], ['data', 'info', '⛁', '資料與離線', '資料']];
+  const grp = (t) => `<div class="sgrp">${t}</div>`;
+  const card = ([id, g, icon, title], inner) => `<details class="pcard scard g-${g}" id="sc-${id}" data-scard="${id}"${open[id] ? ' open' : ''}><summary><span class="pc-ic" aria-hidden="true">${icon}</span><span class="pc-tx"><span class="pc-t">${title}</span><span class="pc-s" id="ss-${id}"></span></span><span class="pc-chev" aria-hidden="true">▾</span></summary><div class="pc-body">${inner}</div></details>`;
+  const statusRows = Object.entries(S.manifest?.status || {});
+  const nPass = statusRows.filter(([, v]) => v.ok).length;
+  const thRow = (label, a, b, unit, le = false) => `<div class="thr"><b>${label}</b><label><span class="sr-only">${label}注意</span><input type="number" class="num" data-th="${a}" value="${th[a]}"></label><label><span class="sr-only">${label}危險</span><input type="number" class="num" data-th="${b}" value="${th[b]}"></label><span class="muted">${unit}</span></div>`;
   body.innerHTML = `
-<fieldset><legend>閱讀與顯示</legend>
-<label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
-<p class="note">也可在地圖右上角「選項」直接切換文字版／圖示版。</p>
-<label class="field">字體大小 <input type="range" id="set-fs" min="0.9" max="2" step="0.05" value="${s.fontScale}" aria-valuetext="${Math.round(s.fontScale * 100)}%"> <output id="set-fs-out">${Math.round(s.fontScale * 100)}%</output></label>
+<nav class="pjump sjump" aria-label="設定分區">${CARDS.map(([id, g, icon, , short]) => `<button type="button" class="g-${g}" data-sjump="${id}"><span aria-hidden="true">${icon}</span> ${short}</button>`).join('')}</nav>
+${card(CARDS[0], `
+${grp('主題與色盤')}
 <label class="field">主題 <select id="set-theme">${opt({ auto: '跟隨系統', light: '淺色', dark: '深色', contrast: '高對比（黑底黃字）' }, s.theme)}</select></label>
 <label class="field">色盤 <select id="set-pal">${opt(PALETTE_NAMES, s.palette)}</select></label>
 <p class="note">「色弱友善」使用明度遞增的色階，紅綠色弱或藍黃色弱皆可分辨；「高對比」適合強光下或低視力。</p>
-<label class="tog"><input type="checkbox" id="set-bar"${s.layerBar !== false ? ' checked' : ''}> 顯示底部圖層列</label>
-<label class="tog"><input type="checkbox" id="set-smooth"${s.smooth !== false ? ' checked' : ''}> 圖層平滑顯示（關閉則顯示原始格點）</label>
+${grp('文字')}
+<label class="field">字體大小 <input type="range" id="set-fs" min="0.9" max="2" step="0.05" value="${s.fontScale}" aria-valuetext="${pct(s.fontScale)}"> <output id="set-fs-out">${pct(s.fontScale)}</output></label>
 <label class="tog"><input type="checkbox" id="set-bold"${s.boldText ? ' checked' : ''}> 粗體文字</label>
-<label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>
-</fieldset>
-<fieldset><legend>底圖</legend>
+${grp('動畫與版面')}
+<label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
+<p class="note">也可在地圖右上角「選項」直接切換文字版／圖示版。</p>
+<label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>`)}
+${card(CARDS[1], `
+${grp('底圖')}
 <label class="field">底圖 <select id="set-base">${opt(BASEMAPS, s.basemap)}</select></label>
-<label class="field">自訂圖磚網址 <input type="url" id="set-custom" value="${esc(s.customTile)}" placeholder="https://.../{z}/{x}/{y}.png"></label>
-<label class="field">Thunderforest API key <input type="text" id="set-tfkey" value="${esc(s.tfKey)}" autocomplete="off" spellcheck="false" placeholder="${S.manifest?.config?.thunderforestKey ? '已使用本站提供的 key' : '選填'}"></label>
-<p class="note" id="set-tf-note">OpenCycleMap、Landscape、Outdoors 由 Thunderforest 提供，共用同一組 API key（至 thunderforest.com 註冊免費 Hobby 方案即可取得）；未設定時改以等高線地形圖顯示。</p>
-<p class="note">「歷史：」底圖來自中央研究院人社中心（CC BY-NC，需標示出處，不可商業使用）。</p>
-<details class="sub"><summary>疊加歷史地圖（可多選，疊在底圖上方）</summary><div class="in">
+<p class="note" id="set-tf-note">戶外、地景、自行車地圖由 Thunderforest 提供；額度用完或沒有 key 時自動改用臺灣通用電子地圖。「歷史：」底圖來自中央研究院人社中心（CC BY-NC，需標示出處，不可商業使用）。</p>
+${grp('歷史地圖疊加')}
+<p class="note">疊在底圖上方（可多選）；沒有資料的區域是透明的，會露出下方底圖，JPEG 類圖磚有資料處為不透明，請用透明度調整。</p>
 ${HIST_OVER.map((h) => `<div class="hov"><label class="tog"><input type="checkbox" data-hov="${h.id}"${(s.histOverlays || {})[h.id] !== undefined ? ' checked' : ''}> ${esc(h.label)}</label>
 <label class="field">透明度 <input type="range" min="0.2" max="1" step="0.1" data-hova="${h.id}" value="${(s.histOverlays || {})[h.id] ?? 0.8}" aria-label="${esc(h.label)} 不透明度"></label></div>`).join('')}
-<p class="note">沒有資料的區域是透明的，會露出下方底圖；JPEG 類圖磚有資料處為不透明，請用透明度調整。</p></div></details>
+<details class="sub"><summary>進階：自訂圖磚網址、Thunderforest API key</summary><div class="in">
+<label class="field">自訂圖磚網址 <input type="url" id="set-custom" value="${esc(s.customTile)}" placeholder="https://.../{z}/{x}/{y}.png"></label>
 <p class="note">可填入魯地圖等提供 XYZ 圖磚的網址（請遵守該服務的使用條款）。</p>
-<button class="btn" id="set-dl">下載目前範圍底圖供離線使用</button> <output id="set-dl-out"></output>
-</fieldset>
-<fieldset><legend>安全評估門檻</legend>
-<div class="grid2">
-<label>時雨量 注意 ≥ <input type="number" class="num" data-th="rain1h" value="${th.rain1h}"> mm</label><label>危險 ≥ <input type="number" class="num" data-th="rain1hRed" value="${th.rain1hRed}"> mm</label>
-<label>24h 雨量 注意 ≥ <input type="number" class="num" data-th="rain24" value="${th.rain24}"> mm</label><label>危險 ≥ <input type="number" class="num" data-th="rain24Red" value="${th.rain24Red}"> mm</label>
-<label>陣風 注意 ≥ <input type="number" class="num" data-th="gust" value="${th.gust}"> m/s</label><label>危險 ≥ <input type="number" class="num" data-th="gustRed" value="${th.gustRed}"> m/s</label>
-<label>體感溫度 注意 ≤ <input type="number" class="num" data-th="cold" value="${th.cold}"> °C</label><label>危險 ≤ <input type="number" class="num" data-th="coldRed" value="${th.coldRed}"> °C</label>
-</div></fieldset>
-<fieldset><legend>資料與離線</legend>
+<label class="field">Thunderforest API key <input type="text" id="set-tfkey" value="${esc(s.tfKey)}" autocomplete="off" spellcheck="false" placeholder="${S.manifest?.config?.thunderforestKey ? '已使用本站提供的 key' : '選填'}"></label>
+<p class="note">至 thunderforest.com 註冊免費 Hobby 方案即可取得；填入後優先於本站的 key。</p></div></details>
+<button class="btn" id="set-dl">下載目前範圍底圖供離線使用</button> <output id="set-dl-out"></output>`)}
+${card(CARDS[2], `
+<label class="tog"><input type="checkbox" id="set-bar"${s.layerBar !== false ? ' checked' : ''}> 顯示底部圖層列</label>
+<label class="tog"><input type="checkbox" id="set-smooth"${s.smooth !== false ? ' checked' : ''}> 圖層平滑顯示（關閉則顯示原始格點）</label>`)}
+${card(CARDS[3], `
+<p class="note">任一項達到門檻就會在登山安全評估列出；「注意」為黃色提示，「危險」為紅色警示。</p>
+<div class="thr thh"><span></span><span>注意</span><span>危險</span><span></span></div>
+${thRow('時雨量', 'rain1h', 'rain1hRed', 'mm ≥')}
+${thRow('24 小時雨量', 'rain24', 'rain24Red', 'mm ≥')}
+${thRow('陣風', 'gust', 'gustRed', 'm/s ≥')}
+${thRow('體感溫度', 'cold', 'coldRed', '°C ≤')}`)}
+${card(CARDS[4], `
 <p>資料更新：${esc(fmtTime(S.manifest?.built))}</p>
-<table class="kv"><tbody>${Object.entries(S.manifest?.status || {}).map(([k, v]) => `<tr><th scope="row">${esc(k)}</th><td>${v.ok ? '<span class="ok">PASS</span>' : `<span class="bad">FAIL</span> ${esc(v.error || '')}`}</td></tr>`).join('')}</tbody></table>
-<button class="btn" id="set-src">資料來源與授權</button>
-<button class="btn" id="set-clear">清除最近查詢與收藏</button>
-<button class="btn" id="set-reset">恢復預設設定</button>
-</fieldset>`;
-  const save = () => { saveSettings(s); applySettings(s); };
-  const pct = (v) => `${Math.round(v * 100)}%`;
+<details class="sub"><summary>各項資料任務狀態<small>${nPass} 項 PASS${statusRows.length - nPass ? `・${statusRows.length - nPass} 項 FAIL` : ''}</small></summary><div class="in"><table class="kv"><tbody>${statusRows.map(([k, v]) => `<tr><th scope="row">${esc(k)}</th><td>${v.ok ? '<span class="ok">PASS</span>' : `<span class="bad">FAIL</span> ${esc(v.error || '')}`}</td></tr>`).join('')}</tbody></table></div></details>
+<div class="sbtns"><button class="btn" id="set-src">資料來源與授權</button>
+<button class="btn" id="set-clear">清除最近查詢與收藏</button></div>`)}
+<div class="sbar"><button class="btn" id="set-reset">恢復預設設定</button><button class="btn primary" id="set-done">完成</button></div>`;
+  const summaries = () => {
+    const themes = { auto: '自動主題', light: '淺色', dark: '深色', contrast: '高對比' };
+    const nOver = Object.keys(s.histOverlays || {}).filter((k) => HIST_OVER.some((h) => h.id === k)).length;
+    const lines = {
+      look: `${themes[s.theme] || s.theme}・色盤「${(PALETTE_NAMES[s.palette] || s.palette).replace(/\s*[（(].*$/, '')}」・字體 ${pct(s.fontScale)}`,
+      map: `底圖：${(BASEMAPS[s.basemap]?.label || s.basemap).replace(/\s*[（(].*$/, '')}${nOver ? `・疊加 ${nOver} 項` : ''}`,
+      layer: `底部圖層列：${s.layerBar !== false ? '開' : '關'}・平滑顯示：${s.smooth !== false ? '開' : '關'}`,
+      safe: `時雨量 ${s.thresholds.rain1h}/${s.thresholds.rain1hRed} mm・陣風 ${s.thresholds.gust}/${s.thresholds.gustRed} m/s`,
+      data: `更新 ${fmtTime(S.manifest?.built)}・${nPass} 項 PASS${statusRows.length - nPass ? `・${statusRows.length - nPass} 項 FAIL` : ''}`,
+    };
+    Object.entries(lines).forEach(([k, v]) => { const el = body.querySelector(`#ss-${k}`); if (el) el.textContent = v; });
+  };
+  summaries();
+  // Section jump bar: open and scroll to a card, highlight the one in view; the open / closed state is remembered.
+  const scrollTo = (el) => body.scrollTo({ top: body.scrollTop + el.getBoundingClientRect().top - body.getBoundingClientRect().top - body.querySelector('.sjump').offsetHeight, behavior: s.reduceMotion ? 'auto' : 'smooth' });
+  body.querySelectorAll('[data-sjump]').forEach((b) => b.addEventListener('click', () => {
+    const d = body.querySelector(`#sc-${b.dataset.sjump}`);
+    d.open = true;
+    forced = b.dataset.sjump;   // the last cards cannot scroll up to the top: keep the clicked one highlighted until the user scrolls by hand
+    markJump();
+    scrollTo(d);
+  }));
+  body.querySelectorAll('details.scard').forEach((d) => d.addEventListener('toggle', () => {
+    open[d.dataset.scard] = d.open ? 1 : 0;
+    try { localStorage.setItem('hikingwx.settingsCards.v1', JSON.stringify(open)); } catch { /* storage blocked */ }
+  }));
+  let forced = null;
+  const markJump = () => {
+    const top = body.getBoundingClientRect().top + 90;
+    let cur = 'look';
+    body.querySelectorAll('details.scard').forEach((d) => { if (d.getBoundingClientRect().top <= top) cur = d.dataset.scard; });
+    if (forced) cur = forced;
+    body.querySelectorAll('[data-sjump]').forEach((b) => { b.classList.toggle('on', b.dataset.sjump === cur); if (b.dataset.sjump === cur) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); });
+  };
+  body.onscroll = markJump;
+  ['wheel', 'touchstart', 'keydown'].forEach((ev) => body.addEventListener(ev, () => { forced = null; }, { passive: true }));
+  markJump();
+  body.querySelector('#set-done').addEventListener('click', () => dlg.close());
+  const save = () => { saveSettings(s); applySettings(s); summaries(); };
   body.querySelector('#set-fs').addEventListener('input', (e) => {
     s.fontScale = Number(e.target.value);
     body.querySelector('#set-fs-out').textContent = pct(s.fontScale);
@@ -753,7 +805,7 @@ ${HIST_OVER.map((h) => `<div class="hov"><label class="tog"><input type="checkbo
   body.querySelector('#set-ui').addEventListener('change', (e) => { s.ui = e.target.value; save(); buildUiOptions(); });
   body.querySelector('#set-theme').addEventListener('change', (e) => { s.theme = e.target.value; save(); });
   body.querySelector('#set-pal').addEventListener('change', (e) => { s.palette = e.target.value; save(); showLayer(S.layer.id, { keepFrame: true }); });
-  body.querySelector('#set-bar').addEventListener('change', (e) => setLayerBar(e.target.checked));
+  body.querySelector('#set-bar').addEventListener('change', (e) => { setLayerBar(e.target.checked); summaries(); });
   body.querySelector('#set-smooth').addEventListener('change', (e) => { s.smooth = e.target.checked; save(); showLayer(S.layer.id, { keepFrame: true }); });
   body.querySelector('#set-bold').addEventListener('change', (e) => { s.boldText = e.target.checked; save(); });
   body.querySelector('#set-motion').addEventListener('change', (e) => { s.reduceMotion = e.target.checked; save(); if (s.reduceMotion) stopAnimation(); });

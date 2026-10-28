@@ -836,3 +836,10 @@ def test_wrf3_build(tmp_path, monkeypatch):
     calls.clear()
     assert wrf3.build(tmp_path, log, fetch, now, pts, open_grib=fake_open)["fresh"] is False and calls == [wrf3.META_KEY]
     log.close()
+
+
+def test_wind_bounds_are_numbers():
+    assert wind._num("<= 1") == 1 and wind._num(">= 6") == 6 and wind._num(">= 11") == 11 and wind._num(3.4) == 3 and wind._num("x") is None and wind._num(None) is None
+    doc = {"d3": {"風速": {"t": ["2026-10-28T06:00:00+08:00", "2026-10-28T09:00:00+08:00"], "v": {"WindSpeed": ["<= 1", ">= 11"], "BeaufortScale": ["<= 1", ">= 6"]}}}}
+    out = wind._series(doc)
+    assert out["2026-10-28T06:00:00+08:00"][:2] == (1, 1) and out["2026-10-28T09:00:00+08:00"][:2] == (11, 6)

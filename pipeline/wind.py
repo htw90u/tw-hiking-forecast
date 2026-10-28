@@ -6,6 +6,7 @@ daily UV index) and, when present, gusts.json (Open-Meteo model gusts, since CWA
 no gusts), and writes one compact wind.json for the wind, rain-probability and UV layers and the point panel.
 """
 import json
+import re
 from pathlib import Path
 
 from .gusts import window_max
@@ -48,10 +49,12 @@ def _uv(doc):
 
 
 def _num(v):
+    """Rounded number; CWA writes calm and strong wind as bounds ('<= 1', '>= 6', '>= 11'): the bound itself is returned."""
     try:
         return int(round(float(v)))
     except (TypeError, ValueError):
-        return None
+        m = re.match(r"\s*[<>]=?\s*(\d+(?:\.\d+)?)\s*$", v) if isinstance(v, str) else None
+        return int(round(float(m.group(1)))) if m else None
 
 
 def build(out_dir: Path) -> dict:
