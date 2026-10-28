@@ -63,7 +63,7 @@ export function chart({ title, unit, times, series, zeroBase = false }) {
     return s.kind === 'bar' ? `${s.label} 合計 ${vals.reduce((a, b) => a + b, 0).toFixed(1)}${unit}，最大 ${mx}${unit}`
       : `${s.label} 最高 ${mx}${unit}、最低 ${mn}${unit}`;
   }).join('；');
-  return `<figure class="chart"><figcaption><strong>${esc(title)}</strong>（${esc(unit)}） ${legend}</figcaption>
+  return `<figure class="chart"><figcaption><div class="chart-title"><strong>${esc(title)}</strong>（${esc(unit)}）</div><div class="chart-legend">${legend}</div></figcaption>
 <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${title}：${summary}`)}" preserveAspectRatio="none">${g}</svg>
 <p class="chart-sum">${esc(summary)}</p></figure>`;
 }

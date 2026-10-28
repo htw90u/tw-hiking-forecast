@@ -226,7 +226,9 @@ pre.text { white-space: pre-wrap; font: inherit; font-size: .9rem; }
 
 /* ---------- charts */
 .chart { margin: .5rem 0; }
-.chart figcaption { font-size: .85rem; display: flex; flex-wrap: wrap; gap: .3rem .7rem; align-items: center; }
+.chart figcaption { font-size: .85rem; }
+.chart-title { font-size: .95rem; margin-bottom: .15rem; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: .2rem .8rem; align-items: center; font-size: .8rem; color: var(--muted); }
 .chart svg { width: 100%; height: 9rem; display: block; }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart text { fill: var(--muted); font-size: 11px; }
@@ -239,6 +241,7 @@ pre.text { white-space: pre-wrap; font: inherit; font-size: .9rem; }
 .lg.s1::before { border-color: var(--s1); } .lg.s3::before { border-color: var(--s3); } .lg.s4::before { border-color: var(--s4); }
 .lg.dash::before { border-top-style: dashed; }
 .lg.bar::before { height: .8rem; border: 0; background: var(--s2); width: .8rem; }
+details.tbl summary { font-size: .8rem; font-weight: 400; color: var(--muted); }
 details.tbl table { border-collapse: collapse; font-size: .8rem; }
 details.tbl th, details.tbl td { border: 1px solid var(--line); padding: .1rem .3rem; text-align: right; }
 
