@@ -291,7 +291,7 @@ function fcBrief(d3, gust = null) {
   let i = pop.t.findIndex((t) => new Date(t).getTime() + 3 * 3600e3 > Date.now());
   if (i < 0) i = pop.t.length - 1;
   const t = pop.t[i];
-  return { pop: pop.v.ProbabilityOfPrecipitation[i] ?? null, wx: valueAt(el(d3, '天氣現象'), 'Weather', t), T: valueAt(el(d3, '溫度'), 'Temperature', t),
+  return { t, pop: pop.v.ProbabilityOfPrecipitation[i] ?? null, wx: valueAt(el(d3, '天氣現象'), 'Weather', t), T: valueAt(el(d3, '溫度'), 'Temperature', t),
     AT: valueAt(el(d3, '體感溫度'), 'ApparentTemperature', t), ws: valueAt(el(d3, '風速'), 'WindSpeed', t), bf: valueAt(el(d3, '風速'), 'BeaufortScale', t), g: gust?.[t] ?? null };
 }
 
@@ -878,16 +878,18 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     near: cardize(nearHtml, { id: 'near', grp: 'info', summary: near2 }),
     mtns: cardize(station ? mountainsCard(station.lat, station.lon) : peak ? mountainsCard(lat, lon, 10, peak.k) : '', { id: 'mtns', grp: 'info', icon: '▲', summary: '' }),
   };
-  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'fc', 'town', 'rain', 'heat', 'wrf3', 'wrfg', 'mtnFc', 'aloft', 'hydro', 'ens', 'sun', 'mtns', 'near'];
+  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'aloft', 'fc', 'mtnFc', 'town', 'rain', 'heat', 'wrf3', 'wrfg', 'hydro', 'ens', 'sun', 'mtns', 'near'];
   const present = order.filter((k) => cardsOut[k]);
   const groupsPresent = Object.keys(GROUPS).filter((g) => present.some((k) => cardsOut[k].includes(`data-grp="${g}"`)));
   const bf = (n) => (n === null || n === undefined ? '—' : `${n} 級`);
   const sT = brief?.T ?? ws0?.T ?? null;
+  const briefSrc = brief ? `${spotFc ? '地點預報' : townFc ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}鄉鎮預報` : '鄰近山頭預報'}・${fmtTime(brief.t)}–${fmtTime(new Date(new Date(brief.t).getTime() + 3 * 3600e3).toISOString(), { date: false })}（降雨機率、溫度、風力為此 3 小時時段；完整預報見下方${spotFc ? '「地點預報」' : townFc ? '「鄉鎮預報」' : '「鄰近山頭預報」'}卡片）` : '';
   const strip = html`<div class="pstrip">
 <div class="pill ${LEVELS[risk.level].cls === 'lv0' ? '' : LEVELS[risk.level].cls}"><b>${LEVELS[risk.level].label}</b>安全評估</div>
 <div class="pill"><b>${brief?.pop != null ? `${brief.pop}%` : '—'}</b>降雨機率</div>
 <div class="pill"><b>${sT !== null ? `${fmtNum(sT, 0)}°C` : '—'}</b>${brief?.AT != null ? `體感 ${brief.AT}°` : '氣溫'}</div>
-<div class="pill ${(brief?.bf ?? 0) >= 6 ? 'lv1' : ''}"><b>${bf(brief?.bf ?? (ws0?.WS !== undefined ? beaufort(ws0.WS) : null))}</b>${brief?.g != null ? `陣風 ${beaufort(brief.g)} 級` : '風力'}</div></div>`;
+<div class="pill ${(brief?.bf ?? 0) >= 6 ? 'lv1' : ''}"><b>${bf(brief?.bf ?? (ws0?.WS !== undefined ? beaufort(ws0.WS) : null))}</b>${brief?.g != null ? `陣風 ${beaufort(brief.g)} 級` : '風力'}</div></div>
+${briefSrc ? html`<p class="pstrip-src">${briefSrc}</p>` : ''}`;
   const jumpChips = groupsPresent.map((g) => `<button type="button" class="g-${g}" data-jump="${g}">${GROUPS[g].label}</button>`).join('');
   const jump = html`<div class="pjump" role="group" aria-label="跳到區段">${raw(jumpChips)}</div>
 <div class="ptools"><button type="button" id="btn-ens-jump">系集預報</button><button type="button" data-cards="open">全部展開</button><button type="button" data-cards="close">全部收合</button></div>`;
