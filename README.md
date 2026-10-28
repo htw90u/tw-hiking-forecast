@@ -96,3 +96,7 @@ eslint site/js site/sw.js tests/e2e          # 前端 lint
 * 山頭：© OpenStreetMap contributors（ODbL），建置時由 Overpass API 取得 `natural=peak`，每週更新；與氣象署登山預報點同名且 5 km 內者視為同一座、只顯示有預報的那個；下載範圍涵蓋福建沿海，不在臺灣任何鄉鎮界內的山頭（例如福建的同名山）會被剔除。OSM 未填海拔的山頭以 Open-Meteo 地形模型估算並標示「約 N m」。每座山頭附所在縣市鄉鎮（內政部行政區界，經 taiwan-atlas；位於界線 0.4 km 內的山同時列出兩邊，例如「臺中市和平區／苗栗縣泰安鄉」），搜尋結果與面板都會顯示，方便分辨同名山。
 * 山頭分類（百岳、小百岳等）：在 `pipeline/data/peak_lists/` 放清單 JSON 即會在建置時標記，格式見該資料夾 README；更新清單不需重新下載 OSM。
 * 本工具的安全評估為自動規則判斷，僅供參考，請以現場狀況與官方資訊為準。
+
+## Claude Code 技能
+
+`.claude/skills/taste-skill/`：[leonxlnx/taste-skill](https://github.com/leonxlnx/taste-skill)（commit 12af471，v2.1.5，MIT）前端設計品味技能，用於調整介面外觀時（見 `docs/TODO.md`「介面外觀」）。腳本需要 Node 22+ 與本機 Chrome／Chromium。
