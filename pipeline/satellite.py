@@ -124,7 +124,7 @@ def is_dark(albedo, raw=None) -> bool:
     return bool(ok.any() and np.percentile(albedo[ok], 99) < 0.03)
 
 
-def update_history(grids_dir: Path, key: str, t: str, write, min_gap_min: int = 25, keep_hours: int = 6) -> list:
+def update_history(grids_dir: Path, key: str, t: str, write, min_gap_min: int = 15, keep_hours: int = 6) -> list:
     """Keep a rolling set of past frames of one satellite product (the open data only ever offers the latest one).
 
     Frames live as `sat_<key>_<yyyymmddHHMM>.json/png`; the Actions cache brings them back from the previous build.

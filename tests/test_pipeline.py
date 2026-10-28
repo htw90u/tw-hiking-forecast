@@ -920,6 +920,7 @@ def test_satellite_history_keeps_a_rolling_window(tmp_path):
     assert len(run("2026-10-28T08:10:00+08:00")) == 1          # too close to the stored frame: not stored
     assert len(run("2026-10-28T08:30:00+08:00")) == 2
     assert len(run("2026-10-28T08:30:00+08:00")) == 2          # same observation again: nothing new
+    assert len(run("2026-10-28T08:50:00+08:00")) == 3          # a 20-minute step (the build cadence) is stored
     for h, m in ((9, 0), (9, 30), (10, 0), (10, 30), (11, 0), (11, 30), (12, 0), (12, 30), (13, 0), (13, 30), (14, 0), (14, 30)):
         frames = run(f"2026-10-28T{h:02d}:{m:02d}:00+08:00")
     assert frames[0]["time"].startswith("2026-10-28T08:30"), "frames older than 6 h must be pruned, 8:30 kept"
