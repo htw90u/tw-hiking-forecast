@@ -10,6 +10,7 @@ export const DEFAULTS = {
   palette: 'cwa',        // cwa | cvd (color-vision-deficiency safe) | contrast
   basemap: 'outdoors',   // outdoors | landscape | cycle | topo | emap | photo | osm | custom (Thunderforest maps fall back to emap)
   basemapVer: 2,         // bumped when the default basemap changes: everyone gets the new default once
+  histOverlays: {},      // historical maps stacked on the base map: {layer id: opacity}
   customTile: '',
   tfKey: '',             // personal Thunderforest API key (OpenCycleMap); overrides the site key
   showRainGauges: true,  // rain-only stations in the nearby-station list

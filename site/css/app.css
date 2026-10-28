@@ -514,3 +514,5 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 
 .chk { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
 .chk input { width: 1.25rem; height: 1.25rem; }
+.hov { border-top: 1px solid var(--line); padding: .2rem 0; }
+.hov input[type=range] { flex: 1; min-width: 8rem; min-height: 44px; }

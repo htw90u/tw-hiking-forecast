@@ -9,6 +9,30 @@ import {
 } from './views.js';
 import { clearAll, toggleFav, listFav, pointId } from './store.js';
 
+// Historical maps of Academia Sinica RCHSS (臺灣百年歷史地圖 WMTS; CC BY-NC). The RESTful tile address works; the KVP one answers 500.
+// Tiles outside a map's coverage come back transparent, so partial maps can be stacked on any base map.
+const HIST_ATTR = '歷史地圖 © <a href="https://gis.sinica.edu.tw/tileserver/">中央研究院人文社會科學研究中心 GIS 專題中心</a> (CC BY-NC)';
+const histUrl = (h) => `https://gis.sinica.edu.tw/tileserver/file-exists.php?img=${h.id}-${h.ext}-{z}-{x}-{y}`;
+const HIST_BASE = [
+  { id: 'TM25K_1989', ext: 'jpg', max: 18, label: '經建1版地形圖 1:25,000（1989）' },
+  { id: 'TM25K_1993', ext: 'jpg', max: 17, label: '經建2版地形圖 1:25,000（1993）' },
+  { id: 'TM25K_2001', ext: 'jpg', max: 17, label: '經建3版地形圖 1:25,000（2001）' },
+  { id: 'TM50K_1990', ext: 'png', max: 17, label: '經建1版地形圖 1:50,000（1990）' },
+  { id: 'TM50K_1996', ext: 'png', max: 17, label: '經建2版地形圖 1:50,000（1996）' },
+  { id: 'TM50K_1956', ext: 'jpg', max: 18, label: '臺灣地形圖 1:50,000（1956）' },
+  { id: 'JM50K_1924', ext: 'jpg', max: 17, label: '日治五萬分一地形圖（1924）' },
+  { id: 'JM20K_1904', ext: 'jpg', max: 18, label: '日治臺灣堡圖 1:20,000（1904）' },
+];
+// Stack on top of the base map (oldest first); outside their coverage the base map shows through.
+const HIST_OVER = [
+  { id: 'JM50K_1916', ext: 'jpg', max: 17, label: '日治蕃地地形圖 1:50,000（1916）・山地' },
+  { id: 'JM20K_1921', ext: 'jpg', max: 17, label: '日治臺灣堡圖 1:20,000（1921 大正版）' },
+  { id: 'Yushan_50K_1933', ext: 'png', max: 17, label: '新高登山地圖（1933）・玉山一帶' },
+  { id: 'TM25K_2003', ext: 'jpg', max: 17, label: '經建4版地形圖 1:25,000（2003）・部分地區' },
+  { id: 'TM50K_2003', ext: 'png', max: 17, label: '經建3版地形圖 1:50,000（2003）・部分地區' },
+  { id: 'Sunriver_50K_N_2017', ext: 'png', max: 15, label: '臺灣歷史人文全覽圖 北島（2017）' },
+];
+
 const BASEMAPS = {
   topo: { label: '等高線地形圖 (OpenTopoMap)', url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', max: 17, sub: 'abc',
     attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | © <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' },
@@ -24,10 +48,12 @@ const BASEMAPS = {
     attr: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', noBulk: true, tf: 'Landscape' },
   outdoors: { label: '戶外地圖 (Thunderforest Outdoors)', url: 'https://{s}.tile.thunderforest.com/outdoors/{z}/{x}/{y}{r}.png?apikey={apikey}', max: 22, sub: 'abc',
     attr: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', noBulk: true, tf: 'Outdoors' },
+  ...Object.fromEntries(HIST_BASE.map((h) => [`h_${h.id}`, { label: `歷史：${h.label}`, url: histUrl(h), max: h.max, hist: true, noBulk: true, attr: HIST_ATTR }])),
   custom: { label: '自訂圖磚網址', url: '', max: 19, attr: '自訂底圖' },
 };
 
 let baseLayer = null;
+let histLayers = [];
 let strongLayer = null;
 const STRONG_QUAKE_MS = 3 * 864e5;
 
@@ -89,7 +115,21 @@ function setBasemap() {
     }
     baseLayer.addTo(S.map);
   }
+  setHistOverlays();
   if (S.manifest) updateStatus();
+}
+
+/** Historical maps stacked above the base map (settings.histOverlays: {id: opacity}). */
+function setHistOverlays() {
+  histLayers.forEach((l) => S.map.removeLayer(l));
+  histLayers = [];
+  const on = S.settings.histOverlays || {};
+  HIST_OVER.forEach((h, i) => {
+    if (on[h.id] === undefined) return;
+    const l = L.tileLayer(histUrl(h), { maxZoom: 22, maxNativeZoom: h.max, opacity: Number(on[h.id]) || 0.8, zIndex: 2 + i, attribution: HIST_ATTR, crossOrigin: true });
+    l.addTo(S.map);
+    histLayers.push(l);
+  });
 }
 
 // ---------------------------------------------------------------- overlays
@@ -690,6 +730,11 @@ function openSettings() {
 <label class="field">自訂圖磚網址 <input type="url" id="set-custom" value="${esc(s.customTile)}" placeholder="https://.../{z}/{x}/{y}.png"></label>
 <label class="field">Thunderforest API key <input type="text" id="set-tfkey" value="${esc(s.tfKey)}" autocomplete="off" spellcheck="false" placeholder="${S.manifest?.config?.thunderforestKey ? '已使用本站提供的 key' : '選填'}"></label>
 <p class="note" id="set-tf-note">OpenCycleMap、Landscape、Outdoors 由 Thunderforest 提供，共用同一組 API key（至 thunderforest.com 註冊免費 Hobby 方案即可取得）；未設定時改以等高線地形圖顯示。</p>
+<p class="note">「歷史：」底圖來自中央研究院人社中心（CC BY-NC，需標示出處，不可商業使用）。</p>
+<details class="sub"><summary>疊加歷史地圖（可多選，疊在底圖上方）</summary><div class="in">
+${HIST_OVER.map((h) => `<div class="hov"><label class="tog"><input type="checkbox" data-hov="${h.id}"${(s.histOverlays || {})[h.id] !== undefined ? ' checked' : ''}> ${esc(h.label)}</label>
+<label class="field">透明度 <input type="range" min="0.2" max="1" step="0.1" data-hova="${h.id}" value="${(s.histOverlays || {})[h.id] ?? 0.8}" aria-label="${esc(h.label)} 不透明度"></label></div>`).join('')}
+<p class="note">沒有資料的區域是透明的，會露出下方底圖；JPEG 類圖磚有資料處為不透明，請用透明度調整。</p></div></details>
 <p class="note">可填入魯地圖等提供 XYZ 圖磚的網址（請遵守該服務的使用條款）。</p>
 <button class="btn" id="set-dl">下載目前範圍底圖供離線使用</button> <output id="set-dl-out"></output>
 </fieldset>
@@ -724,6 +769,13 @@ function openSettings() {
   body.querySelector('#set-bold').addEventListener('change', (e) => { s.boldText = e.target.checked; save(); });
   body.querySelector('#set-motion').addEventListener('change', (e) => { s.reduceMotion = e.target.checked; save(); if (s.reduceMotion) stopAnimation(); });
   body.querySelector('#set-base').addEventListener('change', (e) => { s.basemap = e.target.value; try { localStorage.removeItem(TF_OVER_KEY); } catch { /* ignore */ } save(); setBasemap(); });
+  const histChange = () => {
+    s.histOverlays = {};
+    body.querySelectorAll('[data-hov]').forEach((c) => { if (c.checked) s.histOverlays[c.dataset.hov] = Number(body.querySelector(`[data-hova="${c.dataset.hov}"]`).value); });
+    save(); setHistOverlays();
+  };
+  body.querySelectorAll('[data-hov]').forEach((c) => c.addEventListener('change', histChange));
+  body.querySelectorAll('[data-hova]').forEach((c) => c.addEventListener('input', histChange));
   body.querySelector('#set-custom').addEventListener('change', (e) => {
     const v = e.target.value.trim();
     if (v && !/^https:\/\/.+\{z\}.+\{x\}.+\{y\}|^https:\/\/.+\{z\}.+\{y\}.+\{x\}/.test(v)) { e.target.setCustomValidity('網址需為 https 並包含 {z} {x} {y}'); e.target.reportValidity(); return; }
@@ -751,7 +803,7 @@ function openSettings() {
 async function downloadTiles(out) {
   if (!baseLayer) return;
   if ((BASEMAPS[S.settings.basemap] || {}).noBulk) {
-    out.textContent = 'Thunderforest 底圖不提供批次下載（用量計費）；瀏覽過的圖磚仍會快取供離線使用。';
+    out.textContent = 'Thunderforest 與歷史地圖底圖不提供批次下載（避免大量請求）；瀏覽過的圖磚仍會快取供離線使用。';
     return;
   }
   const b = S.map.getBounds();

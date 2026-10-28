@@ -1220,7 +1220,7 @@ export function showSources() {
 <p class="note">颱風各地區風力、24小時雨量與總雨量預測表附有中央氣象署著作權聲明，未取得授權前本網站不顯示。</p></section>
 <section class="card"><h3>其他來源</h3><ul>
 <li>行政區界：taiwan-atlas（MIT），資料來源內政部。</li>
-<li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap／Landscape／Outdoors（Maps © Thunderforest）。</li>
+<li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap／Landscape／Outdoors（Maps © Thunderforest）、歷史地圖：中央研究院人社中心臺灣百年歷史地圖（CC BY-NC，非商業使用）。</li>
 <li>陣風預報：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 數值模式（CC BY 4.0），非中央氣象署發布；體感溫度：氣象署預報值，測站體感為依溫度、濕度、風速以氣象署公式估算（含山頭海拔估算：Copernicus DEM 90 m 地形模型）。</li>
 <li>山頭（非氣象署登山預報點）：© OpenStreetMap contributors，依開放資料庫授權（ODbL 1.0）使用，每週更新；點選時顯示鄰近鄉鎮預報。</li>
 <li>地圖程式庫：Leaflet（BSD-2）、topojson-client（ISC）。</li></ul></section>`;

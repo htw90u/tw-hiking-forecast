@@ -1,5 +1,5 @@
 // Service worker: offline app shell, last-known data, and visited map tiles.
-const VERSION = 'v54';
+const VERSION = 'v55';
 const SHELL = `shell-${VERSION}`;
 const DATA = 'data';
 const TILES = 'tiles';
@@ -11,7 +11,7 @@ const SHELL_FILES = [
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'vendor/topojson/topojson-client.min.js',
   'geo/towns-10t.json', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
-const TILE_HOSTS = ['tile.opentopomap.org', 'wmts.nlsc.gov.tw', 'tile.openstreetmap.org'];
+const TILE_HOSTS = ['tile.opentopomap.org', 'wmts.nlsc.gov.tw', 'tile.openstreetmap.org', 'gis.sinica.edu.tw'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));

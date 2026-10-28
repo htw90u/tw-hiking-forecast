@@ -1217,6 +1217,34 @@ function serve() {
     await ctx.unroute(/tile\.thunderforest\.com/);
   });
 
+  await check('historical maps: base map choice and stacked overlays with opacity and attribution', async () => {
+    const seen = [];
+    await ctx.route(/gis\.sinica\.edu\.tw/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
+    await page.click('#btn-settings');
+    await page.waitForSelector('#set-base');
+    assert(await page.$eval('#set-base', (e) => [...e.options].some((o) => o.value === 'h_TM25K_1989')), 'historical base map missing');
+    await page.selectOption('#set-base', 'h_TM25K_1989');
+    await page.evaluate(() => { document.querySelector('details.sub summary').click(); });
+    await page.check('[data-hov="Sunriver_50K_N_2017"]');
+    await page.check('[data-hov="TM25K_2003"]');
+    await page.$eval('[data-hova="Sunriver_50K_N_2017"]', (e) => { e.value = '0.5'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1500);
+    assert(seen.some((u) => u.includes('TM25K_1989-jpg-')), 'historical base tile not requested');
+    assert(seen.some((u) => u.includes('Sunriver_50K_N_2017-png-')) && seen.some((u) => u.includes('TM25K_2003-jpg-')), 'overlay tiles not requested');
+    const op = await page.$$eval('.leaflet-tile-pane .leaflet-layer', (l) => l.map((x) => x.style.opacity));
+    assert(op.includes('0.5'), `overlay opacity not applied ${op}`);
+    assert((await page.textContent('.leaflet-control-attribution')).includes('人文社會科學研究中心'), 'attribution missing');
+    assert(await page.evaluate(() => JSON.parse(localStorage.getItem('hikingwx.settings.v1')).histOverlays.Sunriver_50K_N_2017 === 0.5), 'overlay choice not saved');
+    await page.click('#btn-settings');
+    await page.selectOption('#set-base', 'topo');
+    await page.evaluate(() => { document.querySelector('details.sub summary').click(); });
+    await page.uncheck('[data-hov="Sunriver_50K_N_2017"]');
+    await page.uncheck('[data-hov="TM25K_2003"]');
+    await page.keyboard.press('Escape');
+    await ctx.unroute(/gis\.sinica\.edu\.tw/);
+  });
+
   await check('Thunderforest Landscape and Outdoors basemaps share the key; keyless falls back', async () => {
     const seen = [];
     await ctx.route(/tile\.thunderforest\.com/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
