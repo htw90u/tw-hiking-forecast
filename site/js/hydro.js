@@ -33,16 +33,22 @@ export function townAlerts(h, county, town) {
 
 const fmt = (v, nd = 1) => (v === null || v === undefined ? '—' : Number(v).toFixed(nd));
 
+/** Tooltips are short stacked lines (name and status first), not one long sentence. */
 export function riverTip(r) {
   const alerts = [['一級', r.a1], ['二級', r.a2], ['三級', r.a3]].filter(([, v]) => v !== null && v !== undefined).map(([n, v]) => `${n} ${v} m`).join('、');
-  return `${esc(r.n)}${r.river ? `（${esc(r.river)}）` : ''}：水位 ${fmt(r.wl, 2)} m・${RIVER_STATUS[riverStatus(r)]}${alerts ? `・警戒水位 ${alerts}` : ''}${r.t ? `・${esc(fmtTime(r.t))}` : ''}`;
+  return [`<b>${esc(r.n)}${r.river ? `（${esc(r.river)}）` : ''}</b>・${RIVER_STATUS[riverStatus(r)]}`, `水位 ${fmt(r.wl, 2)} m`,
+    alerts ? `警戒水位 ${esc(alerts)}` : null, r.t ? esc(fmtTime(r.t)) : null].filter(Boolean).join('<br>');
 }
 
 export function reservoirTip(r) {
-  const parts = [`水位 ${fmt(r.wl, 2)} m`, r.vol !== null && r.vol !== undefined ? `有效蓄水量 ${fmt(r.vol, 2)}${r.cap ? `／容量 ${fmt(r.cap, 2)}` : ''}` : null,
-    r.inflow !== null && r.inflow !== undefined ? `入流 ${fmt(r.inflow)} m³/s` : null, r.outflow !== null && r.outflow !== undefined ? `總放流 ${fmt(r.outflow)} m³/s` : null,
-    (r.spill ?? 0) > 0 ? `溢洪道放流 ${fmt(r.spill)} m³/s` : null, (r.plan ?? 0) > 0 ? `預定洩洪 ${fmt(r.plan)} m³/s${r.planT ? `（${fmtTime(r.planT)}）` : ''}` : null].filter(Boolean);
-  return `${esc(r.n)}：${RESERVOIR_STATUS[reservoirStatus(r)]}・${esc(parts.join('・'))}${r.t ? `・${esc(fmtTime(r.t))}` : ''}`;
+  const has = (v) => v !== null && v !== undefined;
+  const lines = [`<b>${esc(r.n)}</b>・${RESERVOIR_STATUS[reservoirStatus(r)]}`, `水位 ${fmt(r.wl, 2)} m`,
+    has(r.vol) ? `有效蓄水量 ${fmt(r.vol, 2)}${r.cap ? `／容量 ${fmt(r.cap, 2)}` : ''}` : null,
+    has(r.inflow) || has(r.outflow) ? `${has(r.inflow) ? `入流 ${fmt(r.inflow)}` : ''}${has(r.inflow) && has(r.outflow) ? '・' : ''}${has(r.outflow) ? `總放流 ${fmt(r.outflow)}` : ''} m³/s` : null,
+    (r.spill ?? 0) > 0 ? `溢洪道放流 ${fmt(r.spill)} m³/s` : null,
+    (r.plan ?? 0) > 0 ? `預定洩洪 ${fmt(r.plan)} m³/s${r.planT ? `（${esc(fmtTime(r.planT))}）` : ''}` : null,
+    r.t ? esc(fmtTime(r.t)) : null].filter(Boolean);
+  return lines.join('<br>');
 }
 
 /** Card for the point panel: debris-flow alerts of the township, river stations and reservoirs nearby (15 km). */
