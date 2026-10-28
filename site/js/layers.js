@@ -220,7 +220,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
       const mode = S.layer.wrfgMode || 'rain';
       renderLegend({ ...grid.meta, kindOverride: kind, src: '中央氣象署 全球模式（M-A0060）', issued: S.manifest.layers.wrfg.time,
         ...(mode === 'rain' ? { start: grid.meta.start, end: grid.meta.time, time: undefined } : {}),
-        note: `全球模式 0.25°（約 25 km）網格，預報到第 16 天（前 10 天每 6 小時、之後每 12 小時，這裡每天取一個時間）。${mode === 'rain' ? '為該日前 24 小時累積降水，由模式累積雨量相減而得，山區細節與強度偏差大，只適合看遠期趨勢與降雨範圍。' : mode === 'msl' ? '海平面氣壓（hPa）：低壓、颱風與鋒面看低值，高壓看高值，可看出天氣系統的移動。' : '2 m 氣溫；25 km 網格的地形比實際平滑，山區氣溫偏高，請以地點預報為準。'}` });
+        note: `全球模式 0.25°（約 25 km）網格，預報到第 16 天（前 10 天每 6 小時、之後每 12 小時，這裡每天取一個時間）。${mode === 'rain' ? '為該日前 24 小時累積降水，由模式累積雨量相減而得。' : mode === 'msl' ? '海平面氣壓（hPa）：低壓、颱風與鋒面看低值，高壓看高值，可看出天氣系統的移動。' : '2 m 氣溫。'}`,
+        noteWarn: mode === 'rain' ? '山區細節與強度偏差大，只適合看遠期趨勢與降雨範圍。' : mode === 'temp' ? '25 km 網格的地形比實際平滑，山區氣溫偏高，請以地點預報為準。' : '' });
     }
     renderTimeControl(grid.meta);
   } catch (e) {
@@ -822,7 +823,7 @@ ${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm
   else if (meta.period) when = meta.period;
   else if (meta.time) when = fmtTime(meta.time);
   const title = meta.title ? `<img class="qpf-title" src="data/${esc(meta.title)}" alt="氣象署原圖標題（含發布與有效時間）">` : '';
-  const note = meta.note ? `<p class="note">${esc(meta.note)}</p>` : '';
+  const note = (meta.note ? `<p class="note">${esc(meta.note)}</p>` : '') + (meta.noteWarn ? `<p class="note note-red">${esc(meta.noteWarn)}</p>` : '');
   const qpfNote = meta.kind === 'class' ? '<p class="note">由氣象署定量降水預報圖自動對位轉換；時間以原圖標題為準。</p>' : '';
   // The layer name and time go to the banner at the top of the map; the legend keeps the unit and colours.
   setBanner((meta.label || def.label).replace(/（雨量站內插）/, ''), when);

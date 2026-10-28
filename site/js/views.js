@@ -381,7 +381,8 @@ function wrfgOf(pts, key) {
 function wrfgCard(w, label) {
   if (!w) return html``;
   return html`<section class="card" aria-labelledby="h-wrfg"><h3 id="h-wrfg">全球模式 16 天趨勢</h3>
-<p class="note">氣象署全球模式（0.25°、約 25 km 網格；${esc(fmtTime(w.init))} 起報，前 10 天每 6 小時、之後每 12 小時），取「${esc(label)}」所在格點。這是模式輸出，遠期（一週以上）只適合看趨勢，不要當作逐日預報。</p>
+<p class="note">氣象署全球模式（0.25°、約 25 km 網格；${esc(fmtTime(w.init))} 起報，前 10 天每 6 小時、之後每 12 小時），取「${esc(label)}」所在格點。</p>
+<p class="note note-red">這是模式輸出，遠期（一週以上）只適合看趨勢，不要當作逐日預報。</p>
 ${raw(chart({ title: '2 m 氣溫（全球模式）', unit: '°C', times: w.times, series: [{ label: '氣溫', values: w.t2, kind: 'line', cls: 's1' }] }))}
 ${raw(chart({ title: '24 小時降水（全球模式）', unit: 'mm', times: w.dayTimes, zeroBase: true, series: [{ label: '24 小時降水', values: w.rain, kind: 'bar', cls: 's2' }] }))}
 ${raw(chart({ title: '10 m 風速（全球模式）', unit: 'm/s', times: w.times, zeroBase: true, series: [{ label: '風速', values: w.ws, kind: 'line', cls: 's3' }] }))}

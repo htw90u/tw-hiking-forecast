@@ -47,6 +47,7 @@ a { color: var(--accent); }
 .skip:focus { left: .5rem; }
 .muted { color: var(--muted); }
 .note { color: var(--muted); font-size: .85rem; }
+.note-red { color: var(--lv2); font-weight: 600; }
 .ok { color: var(--lv0); font-weight: 700; }
 .bad, .warn-txt { color: var(--lv2); font-weight: 700; }
 
