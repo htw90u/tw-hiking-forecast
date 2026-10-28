@@ -980,8 +980,8 @@ function serve() {
     await page.waitForFunction(() => document.querySelectorAll('#q-results li.hist').length === 1);
     assert((await page.$eval('#q-results li.hist', (e) => e.textContent)).includes('玉山'), 'the wrong entry was deleted');
     await page.click('#q-results li.hist .tag, #q-results li.hist');           // choosing an entry searches again
-    await page.waitForSelector('#q-results li[data-i]');
-    assert((await page.inputValue('#q')) === '玉山', 'history entry should fill the search box');
+    await page.waitForSelector('#sheet.open', { timeout: 20000 });                  // ...and opens the best match
+    await page.click('#sheet-close').catch(() => {});
     await page.fill('#q', '');
     await page.focus('#q');
     await page.click('#q-results .hist-clear');
@@ -1364,6 +1364,19 @@ function serve() {
     assert((await page.$('#set-done')) === null, 'done button should be gone');
     await page.mouse.click(5, 5);
     await page.waitForFunction(() => !document.getElementById('dlg-settings').open);
+  });
+
+  await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
+    await page.evaluate(() => localStorage.setItem('hikingwx.searchHistory.v1', JSON.stringify(['玉山'])));
+    await page.click('#q', { clickCount: 3 });
+    await page.fill('#q', '');
+    await page.click('#q-results li.hist');
+    await page.waitForSelector('#sheet:not([hidden])');
+    await page.click('#sheet-close');
+    await page.fill('#q', '玉山');
+    await page.evaluate(() => document.getElementById('search-form').requestSubmit());
+    await page.waitForSelector('#sheet:not([hidden])');
+    await page.click('#sheet-close');
   });
 
   await check('historical maps: base map choice and stacked overlays with opacity and attribution', async () => {

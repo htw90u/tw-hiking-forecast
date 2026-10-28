@@ -671,7 +671,7 @@ function bindSearch() {
     }
     if (e.target.closest('[data-hclear]')) { saveSearchHistory([]); showHistory(); input.focus(); return; }
     const h = e.target.closest('[data-h]');
-    if (h) { input.value = loadSearchHistory()[Number(h.dataset.h)] || ''; input.dispatchEvent(new Event('input')); input.focus(); return; }
+    if (h) { input.value = loadSearchHistory()[Number(h.dataset.h)] || ''; input.dispatchEvent(new Event('input')); if (results[0]) choose(results[0]); else input.focus(); return; }
     const star = e.target.closest('[data-fav]');
     if (star) {
       e.stopPropagation();
@@ -697,7 +697,13 @@ function bindSearch() {
     if (e.key === 'ArrowUp') (li.previousElementSibling || input).focus();
     if (e.key === 'Escape') { list.hidden = true; input.focus(); }
   });
-  document.getElementById('search-form').addEventListener('submit', (e) => e.preventDefault());
+  // The search button (and Enter) opens the best match; with no text it shows the history.
+  document.getElementById('search-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!input.value.trim()) { showHistory(); input.focus(); return; }
+    results = search(input.value);
+    if (results[0]) choose(results[0]);
+  });
 }
 
 // ---------------------------------------------------------------- settings dialog
