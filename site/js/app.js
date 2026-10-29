@@ -378,11 +378,36 @@ function updateLabels() {
 }
 
 // ---------------------------------------------------------------- controls
+// Layer groups: the bar shows the chips of one group, the tabs above them switch the group.
+const LAYER_GROUPS = [
+  ['rain', '降水', ['radar', 'qpe1h', 'rainacc', 'qpf1h', 'qpf', 'pop', 'tyrain']],
+  ['wx', '天氣', ['temp', 'wind', 'uv', 'heat', 'visib', 'lightning']],
+  ['model', '模式', ['wrf3', 'wrfg', 'mm']],
+  ['image', '影像', ['sat', 'nasa']],
+  ['hydro', '水文', ['water', 'debris']],
+];
+const groupOf = (id) => LAYER_GROUPS.find((g) => g[2].includes(id))?.[0];
+
+/** Show the chips of one group (default: the group of the chosen layer). */
+function showGroup(key) {
+  const g = LAYER_GROUPS.find((x) => x[0] === key) || LAYER_GROUPS[0];
+  S.layerGroup = g[0];
+  document.querySelectorAll('#chips [data-layer]').forEach((b) => { b.hidden = !g[2].includes(b.dataset.layer); });
+  document.querySelectorAll('#chip-groups [data-group]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.group === g[0])));
+  const first = document.querySelector('#chips [data-layer]:not([hidden])');
+  if (first) first.parentElement.scrollLeft = 0;
+}
+
 function buildChips() {
   const box = document.getElementById('chips');
+  const tabs = document.getElementById('chip-groups');
   const tyTables = S.typhoon?.tables || {};
   const items = LAYERS.filter((l) => !l.typhoonOnly || (S.typhoon?.active && (tyTables.rain24 || tyTables.rainTotal)));
-  box.innerHTML = items.filter((l) => l.id !== 'none').map((l) => `<button class="chip" role="radio" data-layer="${l.id}" aria-checked="${l.id === S.settings.layer}"${l.id === 'none' ? '' : ` title="${esc(l.label)}（選取中再點一次可關閉圖層）"`}>${esc(l.label)}</button>`).join('');
+  box.innerHTML = items.filter((l) => l.id !== 'none').map((l) => `<button class="chip" role="radio" data-layer="${l.id}" data-group="${groupOf(l.id) || ''}" aria-checked="${l.id === S.settings.layer}"${l.id === 'none' ? '' : ` title="${esc(l.label)}（選取中再點一次可關閉圖層）"`}>${esc(l.label)}</button>`).join('');
+  tabs.innerHTML = LAYER_GROUPS.filter((g) => g[2].some((id) => box.querySelector(`[data-layer="${id}"]`)))
+    .map((g) => `<button type="button" class="seg-btn" role="tab" data-group="${g[0]}" aria-checked="false">${g[1]}</button>`).join('');
+  tabs.querySelectorAll('[data-group]').forEach((b) => b.addEventListener('click', () => showGroup(b.dataset.group)));
+  showGroup(groupOf(S.settings.layer) || LAYER_GROUPS[0][0]);
   box.querySelectorAll('[data-layer]').forEach((b) => b.addEventListener('click', () => {
     let id = b.dataset.layer;
     // Choosing a weather layer during the earthquake view shows it again.
@@ -397,7 +422,7 @@ function buildChips() {
   // Arrow-key navigation inside the radio group.
   box.addEventListener('keydown', (e) => {
     if (!['ArrowRight', 'ArrowLeft'].includes(e.key)) return;
-    const btns = [...box.querySelectorAll('[data-layer]')];
+    const btns = [...box.querySelectorAll('[data-layer]:not([hidden])')];
     const i = btns.indexOf(document.activeElement);
     if (i < 0) return;
     const n = btns[(i + (e.key === 'ArrowRight' ? 1 : -1) + btns.length) % btns.length];
@@ -554,6 +579,7 @@ function showMyLocation(c) {
 function updateBarLabel() {
   const l = LAYERS.find((x) => x.id === S.settings.layer);
   $('#bar-show-layer').textContent = l && l.id !== 'none' ? `：${l.label}` : '';
+  if (l && l.id !== 'none' && S.syncedLayer !== l.id) { S.syncedLayer = l.id; if (groupOf(l.id)) showGroup(groupOf(l.id)); }
 }
 
 /** Text / icon interface switch in the map options panel (other display settings are in 設定). */
@@ -587,11 +613,11 @@ function updateStatus() {
   const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
   const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">${ico('wave')}</span><span>${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Base-map notice: a short warning pill; the full sentence opens under the strip (and stays in the text for screen readers).
-  const baseNote = S.baseNotice ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
+  const baseNote = S.baseNotice && !S.baseNoteDone ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
   const upd = `<span class="sp sp-plain">資料更新 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
-  el.innerHTML = `<div class="strip-row">${tyBanner}${eqBanner}${baseNote}${off ? '<span class="sp sp-off">離線・顯示快取資料</span>' : ''}${upd}${failed.length ? `<span class="sp sp-warn">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}<button type="button" class="sp sp-link" id="btn-sources">資料來源：中央氣象署</button></div>${S.baseNotice ? `<p class="strip-detail" id="base-detail" hidden>${esc(S.baseNotice)}</p>` : ''}`;
-  el.querySelector('#btn-sources').addEventListener('click', showSources);
+  el.innerHTML = `<div class="strip-row">${tyBanner}${eqBanner}${baseNote}${off ? '<span class="sp sp-off">離線・顯示快取資料</span>' : ''}${upd}${failed.length ? `<span class="sp sp-warn">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}</div>${S.baseNotice && !S.baseNoteDone ? `<p class="strip-detail" id="base-detail" hidden>${esc(S.baseNotice)}</p>` : ''}`;
   const bn = el.querySelector('.base-note');
+  if (bn && !S.baseNoteTimer) S.baseNoteTimer = setTimeout(() => { S.baseNoteDone = true; updateStatus(); }, 10000);
   if (bn) bn.addEventListener('click', () => { const d = el.querySelector('#base-detail'); d.hidden = !d.hidden; bn.setAttribute('aria-expanded', String(!d.hidden)); });
   el.querySelector('#ty-banner')?.addEventListener('click', showTyphoon);
   placeLegend();

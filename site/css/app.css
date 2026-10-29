@@ -643,3 +643,11 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 #mm-split .sp-a, #mm-split .sp-b { position: absolute; top: 5.2rem; padding: .1rem .4rem; font-size: .8rem; font-weight: 700; white-space: nowrap; background: rgba(255,255,255,.92); color: #111; border-radius: .6rem; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
 #mm-split .sp-a { right: 50%; margin-right: 6px; }
 #mm-split .sp-b { left: 50%; margin-left: 6px; }
+
+/* layer groups: tabs above the chips of the chosen group */
+.layer-groups { display: flex; gap: 0; margin: 0 0 calc(var(--u) * .3); border-bottom: 1.5px solid var(--line); }
+.layer-groups .seg-btn { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 .3rem; background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 0; margin-bottom: -1.5px; color: var(--muted); font-weight: 600; box-shadow: none; white-space: nowrap; }
+.layer-groups .seg-btn[aria-checked="true"] { color: var(--accent); border-bottom-color: var(--accent); background: none; font-weight: 700; }
+[data-theme="contrast"] .layer-groups .seg-btn[aria-checked="true"] { border-bottom-width: 4px; }
+.controls .layer-groups { margin-right: 46px; }
+@media (min-width: 700px) { .layer-groups .seg-btn { flex: 0 0 7rem; } }

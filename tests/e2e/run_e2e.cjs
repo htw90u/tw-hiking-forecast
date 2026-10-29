@@ -48,7 +48,13 @@ async function openOptions(page) {
   await page.waitForSelector('#opts-ui [data-ui]', { state: 'visible' });
 }
 async function selectLayerOn(page, sel) {
-  if ((await page.getAttribute(sel, 'aria-checked')) !== 'true') await page.click(sel);
+  if ((await page.getAttribute(sel, 'aria-checked')) === 'true') return;
+  // The layer bar shows one group at a time: open the group of the chip first.
+  if (!(await page.isVisible(sel))) {
+    const g = await page.getAttribute(sel, 'data-group');
+    if (g) await page.click(`#chip-groups [data-group="${g}"]`);
+  }
+  await page.click(sel);
 }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -398,7 +404,8 @@ function serve() {
 
   await check('sources & licence panel with OGDL attribution', async () => {
     await page.click('#sheet-close').catch(() => {});
-    await page.click('#btn-sources');
+    await page.click('#btn-settings');
+    await page.click('#set-src');
     await page.waitForSelector('#sheet-title:has-text("資料來源")');
     const t = await page.textContent('#sheet-body');
     for (const want of ['顯名聲明', '中央氣象署', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0041']) assert(t.includes(want), `panel lacks ${want}`);
