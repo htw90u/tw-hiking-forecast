@@ -392,9 +392,9 @@ const groupOf = (id) => LAYER_GROUPS.find((g) => g[2].includes(id))?.[0];
 function showGroup(key) {
   const g = LAYER_GROUPS.find((x) => x[0] === key) || LAYER_GROUPS[0];
   S.layerGroup = g[0];
-  document.querySelectorAll('#chips [data-layer]').forEach((b) => { b.hidden = !g[2].includes(b.dataset.layer); });
+  document.querySelectorAll('#chips [data-layer]').forEach((b) => b.classList.toggle('grp-off', !g[2].includes(b.dataset.layer)));
   document.querySelectorAll('#chip-groups [data-group]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.group === g[0])));
-  const first = document.querySelector('#chips [data-layer]:not([hidden])');
+  const first = document.querySelector('#chips [data-layer]:not(.grp-off)');
   if (first) first.parentElement.scrollLeft = 0;
 }
 
@@ -422,7 +422,7 @@ function buildChips() {
   // Arrow-key navigation inside the radio group.
   box.addEventListener('keydown', (e) => {
     if (!['ArrowRight', 'ArrowLeft'].includes(e.key)) return;
-    const btns = [...box.querySelectorAll('[data-layer]:not([hidden])')];
+    const btns = [...box.querySelectorAll('[data-layer]:not(.grp-off)')];
     const i = btns.indexOf(document.activeElement);
     if (i < 0) return;
     const n = btns[(i + (e.key === 'ArrowRight' ? 1 : -1) + btns.length) % btns.length];
