@@ -632,6 +632,8 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .mm-note.note-red { color: var(--lv2); font-weight: 600; }
 .mm-models { flex-wrap: nowrap; gap: .3rem; }
 .mm-models .seg-btn { padding: .25rem .5rem; font-size: .9rem; white-space: nowrap; flex: 0 1 auto; }
+.mm-models .mm-cmp { margin-left: auto; }
+.mm-models .mm-cmp[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .mm-view { display: flex; gap: .3rem; margin: .4rem 0 .2rem; }
 .mm-view .seg-btn { padding: .25rem .5rem; font-size: .9rem; white-space: nowrap; flex: 0 1 auto; }
 

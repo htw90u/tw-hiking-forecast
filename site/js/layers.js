@@ -572,10 +572,21 @@ const MM_WARN = {
 
 function mmVar() { return S.layer.mmVar === 'wind' ? 'wind' : 'rain'; }
 
-/** Rain view: one model, swipe (curtain) between two, difference of two, or consensus of all; the comparisons need two models. */
+/** Models shown: the chosen one, or (compare switched on, rain only) the ticked ones. */
+function mmSel() {
+  const list = mmModels();
+  const one = list.includes(S.layer.mmModel) ? S.layer.mmModel : list[0];
+  if (mmVar() !== 'rain' || !S.layer.mmCompare) return [one];
+  const s = list.filter((x) => (S.layer.mmSel || []).includes(x));
+  return s.length ? s : [one];
+}
+
+/** Rain view: one model; with two ticked a swipe (curtain), difference or consensus; with three or more the consensus. */
 function mmView() {
-  if (mmVar() !== 'rain' || mmModels().length < 2) return 'one';
-  return ['swipe', 'diff', 'cons'].includes(S.layer.mmView) ? S.layer.mmView : 'one';
+  const n = mmSel().length;
+  if (n < 2) return 'one';
+  if (n > 2) return 'cons';
+  return ['swipe', 'diff', 'cons'].includes(S.layer.mmView) ? S.layer.mmView : 'swipe';
 }
 
 /** Models that have data for the chosen variable (WRF 3 km comes from its own files, the others from the multi-model build). */
@@ -585,23 +596,10 @@ function mmModels() {
   return MM_ORDER.filter((id) => (id === 'wrf3' ? Boolean(L_.wrf3 && (mmVar() === 'rain' ? L_.wrf3.rain?.length : L_.wrf3.steps?.length)) : Boolean(mm[id]?.rain?.length)));
 }
 
-function mmId() {
-  const list = mmModels();
-  return list.includes(S.layer.mmModel) ? S.layer.mmModel : list[0];
-}
-
-/** The second model of a swipe / difference: always a different one from the first. */
-function mmIdB() {
-  const list = mmModels().filter((x) => x !== mmId());
-  return list.includes(S.layer.mmModelB) ? S.layer.mmModelB : list[0];
-}
+function mmId() { return mmSel()[0]; }
 
 /** Models taking part in the current view. */
-function mmCmpIds() {
-  const v = mmView();
-  if (v === 'cons') return mmModels();
-  return v === 'one' ? [mmId()] : [mmId(), mmIdB()];
-}
+function mmCmpIds() { return mmView() === 'one' ? [mmId()] : mmSel(); }
 
 const tkey = (t) => new Date(t).getTime();
 
@@ -890,18 +888,18 @@ function mmTimeControl() {
   const v = mmVar();
   const models = mmModels();
   if (!models.length) return '<span class="muted">目前沒有模式預報資料</span>';
-  const id = mmId();
   const m = mmCurrent();
   const times = mmTimes();
   const view = mmView();
-  const btns = (list, cur, attr, label) => `<div class="seg mm-models" role="radiogroup" aria-label="${label}">` + list.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === cur}" data-${attr}="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('') + '</div>';
+  const cmp = v === 'rain' && Boolean(S.layer.mmCompare);
+  const sel = mmSel();
   let h = modeTabs('模式預報項目', [['rain', '降雨'], ['wind', '風']], 'mmvar', v, { rain: 'umbrella', wind: 'wind' });
-  if (v === 'rain' && models.length > 1) {
-    h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['one', '單一'], ['swipe', '捲簾'], ['diff', '差值'], ['cons', '共識']]
+  h += `<div class="seg mm-models" role="${cmp ? 'group' : 'radiogroup'}" aria-label="模式">` + models.map((x) => `<button class="seg-btn" role="${cmp ? 'checkbox' : 'radio'}" aria-checked="${sel.includes(x)}" data-mmmodel="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('')
+    + (v === 'rain' && models.length > 1 ? `<button class="seg-btn mm-cmp" aria-pressed="${cmp}" data-mmcmp>比較</button>` : '') + '</div>';
+  if (sel.length === 2) {
+    h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['swipe', '捲簾'], ['diff', '差值'], ['cons', '共識']]
       .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === view}" data-mmview="${k}">${l}</button>`).join('') + '</div>';
   }
-  if (view !== 'cons') h += btns(models, id, 'mmmodel', view === 'one' ? '模式' : '模式一');
-  if (view === 'swipe' || view === 'diff') h += btns(models.filter((x) => x !== id), mmIdB(), 'mmmodelb', '模式二');
   const res = Math.max(...mmCmpIds().map((x) => MM_INFO[x].res));
   h += `${m.stale ? '<p class="mm-note">最新一輪暫時無法更新</p>' : ''}<p class="mm-note note-red">${esc(v === 'rain' ? MM_WARN.rain[res] : m.warnWind)}</p>`;
   if (times.length) {
@@ -1538,15 +1536,22 @@ export function renderTimeControl(meta) {
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });
   }));
-  el.querySelectorAll('[data-mmmodelb]').forEach((b) => b.addEventListener('click', () => {
+  el.querySelectorAll('[data-mmcmp]').forEach((b) => b.addEventListener('click', () => {
     const t = mmCurrentTime();
-    S.layer.mmModelB = b.dataset.mmmodelb;
+    const cur = mmSel();
+    S.layer.mmCompare = !S.layer.mmCompare;
+    if (S.layer.mmCompare) S.layer.mmSel = [...new Set([...cur, mmModels().find((x) => !cur.includes(x))])].filter(Boolean);
+    else S.layer.mmModel = cur[0];
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });
   }));
   el.querySelectorAll('[data-mmmodel]').forEach((b) => b.addEventListener('click', async () => {
     const t = mmCurrentTime();
-    S.layer.mmModel = b.dataset.mmmodel;
+    const id = b.dataset.mmmodel;
+    if (S.layer.mmCompare && mmVar() === 'rain') {
+      const cur = mmSel();
+      S.layer.mmSel = cur.includes(id) ? (cur.length > 1 ? cur.filter((x) => x !== id) : cur) : [...cur, id];
+    } else S.layer.mmModel = id;
     await mmEnsureWind();
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });

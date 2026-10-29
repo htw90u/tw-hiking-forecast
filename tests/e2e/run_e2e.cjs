@@ -1527,6 +1527,7 @@ function serve() {
     const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}); });
     if (has.length < 2) { console.log('SKIP no multi-model data built locally'); return; }
     await selectLayer('.chip[data-layer="mm"]');
+    await page.click('[data-mmcmp]');
     await page.waitForSelector('[data-mmview]');
     await page.click('[data-mmview="swipe"]');
     await page.waitForSelector('#mm-split');
@@ -1538,9 +1539,7 @@ function serve() {
     assert(x1 > x0, `divider should move with the arrow key (${x0} -> ${x1})`);
     const clip = await page.$eval('.leaflet-mmA-pane', (e) => e.style.clip);
     assert(/rect\(/.test(clip), `pane clip missing: ${clip}`);
-    const a = await page.getAttribute('[data-mmmodel][aria-checked="true"]', 'data-mmmodel');
-    const b = await page.getAttribute('[data-mmmodelb][aria-checked="true"]', 'data-mmmodelb');
-    assert(a && b && a !== b, `compared models must differ (${a}, ${b})`);
+    assert((await page.$$('[data-mmmodel][aria-checked="true"]')).length === 2, 'two models must be ticked');
     await page.click('[data-mmview="diff"]');
     await page.waitForSelector('img.wx-grid');
     await page.waitForFunction(() => !document.querySelector('#mm-split'));
@@ -1548,9 +1547,9 @@ function serve() {
     await page.click('[data-mmview="cons"]');
     await page.waitForFunction(() => document.querySelector('[data-mmview="cons"]')?.getAttribute('aria-checked') === 'true');
     await page.waitForSelector('img.wx-grid');
-    assert(!(await page.$('[data-mmmodel]')), 'consensus uses every model: no model buttons');
-    await page.click('[data-mmview="one"]');
-    await page.waitForSelector('[data-mmmodel]');
+    await page.click('[data-mmcmp]');
+    await page.waitForFunction(() => !document.querySelector('[data-mmview]'));
+    assert((await page.$$('[data-mmmodel][aria-checked="true"]')).length === 1, 'compare off: one model');
   });
 
   await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
