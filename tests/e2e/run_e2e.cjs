@@ -1562,6 +1562,20 @@ function serve() {
     const clip = await page.$eval('.leaflet-mmA-pane', (e) => e.style.clip);
     assert(/rect\(/.test(clip), `pane clip missing: ${clip}`);
     assert((await page.$$('[data-mmmodel][aria-checked="true"]')).length === 2, 'two models must be ticked');
+    const ids = await page.$$eval('[data-mmmodel]', (b) => b.map((x) => x.dataset.mmmodel));
+    if (ids.length >= 3) {
+      const third = await page.$eval('[data-mmmodel][aria-checked="false"]', (e) => e.dataset.mmmodel);
+      await page.click(`[data-mmmodel="${third}"]`);
+      await page.waitForFunction((t) => document.querySelector(`[data-mmmodel="${t}"]`)?.getAttribute('aria-checked') === 'true', third);
+      assert((await page.$$('[data-mmmodel][aria-checked="true"]')).length === 2, 'swipe and difference keep exactly two models');
+      await page.click('[data-mmview="cons"]');
+      const other = await page.$eval('[data-mmmodel][aria-checked="false"]', (e) => e.dataset.mmmodel);
+      await page.click(`[data-mmmodel="${other}"]`);
+      await page.waitForFunction(() => document.querySelectorAll('[data-mmmodel][aria-checked="true"]').length === 3);
+      assert(await page.$('[data-mmview]'), 'the view buttons must stay with three models');
+      await page.click('[data-mmview="swipe"]');
+      await page.waitForFunction(() => document.querySelectorAll('[data-mmmodel][aria-checked="true"]').length === 2);
+    }
     await page.click('[data-mmview="diff"]');
     await page.waitForSelector('img.wx-grid');
     await page.waitForFunction(() => !document.querySelector('#mm-split'));

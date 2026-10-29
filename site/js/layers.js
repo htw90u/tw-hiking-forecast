@@ -592,16 +592,22 @@ function mmSel() {
   const list = mmModels();
   const one = list.includes(S.layer.mmModel) ? S.layer.mmModel : list[0];
   if (mmVar() === 'wind' || !S.layer.mmCompare) return [one];
-  const s = list.filter((x) => (S.layer.mmSel || []).includes(x));
-  return (s.length ? s : [one]).slice(0, mmVar() === 'rain' ? 4 : 2);   // only the rain has a consensus of many models
+  let raw = (S.layer.mmSel || []).filter((x) => list.includes(x));   // in the order they were ticked
+  if (raw.length > mmMax()) raw = raw.slice(-mmMax());
+  return raw.length ? list.filter((x) => raw.includes(x)) : [one];
 }
+
+/** The view the user chose (swipe, difference or, for rain, the agreement of many models). */
+function mmWant() {
+  return ['swipe', 'diff', ...(mmVar() === 'rain' ? ['cons'] : [])].includes(S.layer.mmView) ? S.layer.mmView : 'swipe';
+}
+
+/** Swipe and difference compare exactly two models; the agreement map takes up to four. */
+function mmMax() { return mmVar() === 'rain' && mmWant() === 'cons' ? 4 : 2; }
 
 /** Rain view: one model; with two ticked a swipe (curtain), difference or consensus; with three or more the consensus. */
 function mmView() {
-  const n = mmSel().length;
-  if (n < 2) return 'one';
-  if (n > 2) return 'cons';
-  return ['swipe', 'diff', ...(mmVar() === 'rain' ? ['cons'] : [])].includes(S.layer.mmView) ? S.layer.mmView : 'swipe';
+  return mmSel().length < 2 ? 'one' : mmWant();
 }
 
 /** Models that have data for the chosen variable (WRF 3 km comes from its own files, the others from the multi-model build). */
@@ -917,8 +923,8 @@ function mmTimeControl() {
   let h = modeTabs('模式預報項目', Object.entries(MM_VARS).map(([k, x]) => [k, x.label]), 'mmvar', v, Object.fromEntries(Object.entries(MM_VARS).map(([k, x]) => [k, x.icon])));
   h += `<div class="seg mm-models" role="${cmp ? 'group' : 'radiogroup'}" aria-label="模式">` + models.map((x) => `<button class="seg-btn" role="${cmp ? 'checkbox' : 'radio'}" aria-checked="${sel.includes(x)}" data-mmmodel="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('')
     + (v !== 'wind' && models.length > 1 ? `<button class="seg-btn mm-cmp" aria-pressed="${cmp}" data-mmcmp>比較</button>` : '') + '</div>';
-  if (sel.length === 2) {
-    h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['swipe', '捲簾'], ['diff', '差值'], ...(v === 'rain' ? [['cons', '共識']] : [])]
+  if (sel.length >= 2) {
+    h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['swipe', '捲簾'], ['diff', '差值'], ...(v === 'rain' ? [['cons', '一致度']] : [])]
       .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === view}" data-mmview="${k}">${l}</button>`).join('') + '</div>';
   }
   const res = Math.max(...mmCmpIds().map((x) => MM_INFO[x].res));
@@ -1556,6 +1562,7 @@ export function renderTimeControl(meta) {
   el.querySelectorAll('[data-mmview]').forEach((b) => b.addEventListener('click', () => {
     const t = mmCurrentTime();
     S.layer.mmView = b.dataset.mmview;
+    S.layer.mmSel = (S.layer.mmSel || []).filter((x) => mmSel().includes(x)).slice(-mmMax());   // swipe and difference keep the two ticked last
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });
   }));
@@ -1572,9 +1579,9 @@ export function renderTimeControl(meta) {
     const t = mmCurrentTime();
     const id = b.dataset.mmmodel;
     if (S.layer.mmCompare && mmVar() !== 'wind') {
-      const cur = mmSel();
-      const max = mmVar() === 'rain' ? 4 : 2;
-      S.layer.mmSel = cur.includes(id) ? (cur.length > 1 ? cur.filter((x) => x !== id) : cur) : [...(cur.length >= max ? cur.slice(0, max - 1) : cur), id];
+      const cur = (S.layer.mmSel || []).filter((x) => mmSel().includes(x));
+      // A third model replaces the one ticked first, unless the agreement map (up to four models) is chosen.
+      S.layer.mmSel = cur.includes(id) ? (cur.length > 1 ? cur.filter((x) => x !== id) : cur) : [...cur, id].slice(-mmMax());
     } else S.layer.mmModel = id;
     await mmEnsureWind();
     mmKeepTime(t);
