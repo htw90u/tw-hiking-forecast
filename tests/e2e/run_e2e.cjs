@@ -1516,6 +1516,36 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
   });
 
+  await check('multi-model compare: swipe divider moves, difference and consensus draw on the common lattice, models stay different', async () => {
+    const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}); });
+    if (has.length < 2) { console.log('SKIP no multi-model data built locally'); return; }
+    await selectLayer('.chip[data-layer="mm"]');
+    await page.waitForSelector('[data-mmview]');
+    await page.click('[data-mmview="swipe"]');
+    await page.waitForSelector('#mm-split');
+    assert((await page.$$('img.wx-grid')).length >= 2, 'swipe needs two overlays');
+    const x0 = await page.$eval('#mm-split', (e) => e.getBoundingClientRect().left);
+    await page.focus('#mm-split');
+    await page.keyboard.press('ArrowRight');
+    const x1 = await page.$eval('#mm-split', (e) => e.getBoundingClientRect().left);
+    assert(x1 > x0, `divider should move with the arrow key (${x0} -> ${x1})`);
+    const clip = await page.$eval('.leaflet-mmA-pane', (e) => e.style.clip);
+    assert(/rect\(/.test(clip), `pane clip missing: ${clip}`);
+    const a = await page.getAttribute('[data-mmmodel][aria-checked="true"]', 'data-mmmodel');
+    const b = await page.getAttribute('[data-mmmodelb][aria-checked="true"]', 'data-mmmodelb');
+    assert(a && b && a !== b, `compared models must differ (${a}, ${b})`);
+    await page.click('[data-mmview="diff"]');
+    await page.waitForSelector('img.wx-grid');
+    await page.waitForFunction(() => !document.querySelector('#mm-split'));
+    assert((await page.textContent('#legend')).includes('mm'), 'difference legend missing');
+    await page.click('[data-mmview="cons"]');
+    await page.waitForFunction(() => document.querySelector('[data-mmview="cons"]')?.getAttribute('aria-checked') === 'true');
+    await page.waitForSelector('img.wx-grid');
+    assert(!(await page.$('[data-mmmodel]')), 'consensus uses every model: no model buttons');
+    await page.click('[data-mmview="one"]');
+    await page.waitForSelector('[data-mmmodel]');
+  });
+
   await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
     await page.evaluate(() => localStorage.setItem('hikingwx.searchHistory.v1', JSON.stringify(['玉山'])));
     await page.click('#q', { clickCount: 3 });

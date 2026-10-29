@@ -2,7 +2,7 @@
 import { S } from './state.js';
 import { ico } from './icons.js';
 import { getJSON, fmtTime, esc, normCounty, beaufort, haversineKm, apparentTemp } from './util.js';
-import { loadGrid, renderGrid } from './grid.js';
+import { loadGrid, renderGrid, sample } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
 import { saveSettings } from './settings.js';
 import { loadAloft, stepOf, compass, altText } from './aloft.js';
@@ -88,7 +88,7 @@ export function layerKind(id) {
   if (id === 'qpf' && S.layer.qpfMode === 'acc') return 'rainacc';
   if (id === 'wrf3') return S.layer.wrf3Mode === 'temp' ? 'temp' : 'rain';
   if (id === 'wrfg') return { msl: 'msl', temp: 'temp' }[S.layer.wrfgMode] || 'rain';
-  if (id === 'mm') return 'rain';
+  if (id === 'mm') return mmVar() === 'rain' ? { diff: 'rdiff', cons: 'rcons' }[mmView()] || 'rain' : 'rain';
   if (id === 'sat' && satGrids().ir) return SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].kind;
   return layerDef(id).kind;
 }
@@ -188,7 +188,7 @@ function playInfo() {
   if (id === 'radar') return grids(framesFor('radar'));
   if (id === 'wrf3') return grids(framesFor('wrf3'));
   if (id === 'wrfg') return grids(framesFor('wrfg'));
-  if (id === 'mm') return mmVar() === 'rain' ? grids(framesFor('mm')) : { n: mmWindSteps().length };
+  if (id === 'mm') return mmVar() === 'rain' ? { n: mmFrames().length, pre: mmPreload } : { n: mmWindSteps().length };
   if (id === 'sat' && satGrids().ir) return grids(satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key).map((f) => f.meta));
   if (id === 'heat') return { n: S.heat?.times?.length || 0 };
   if (id === 'pop' || (id === 'wind' && (S.layer.windMode || 'fc') === 'fc') || (id === 'visib' && S.layer.visMode === 'fc')) return { n: S.wind?.times?.length || 0 };
@@ -261,6 +261,7 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'wrfg' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = 0;
     if (id === 'mm' && mmVar() === 'wind') { await showMMWind(keepFrame); return; }
     if (id === 'mm' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = mmNowIndex(mmFrames());
+    if (id === 'mm' && mmView() !== 'one') { await showMMCompare(); return; }
     const frames = framesFor(id);
     const sf = id === 'sat' ? satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key) : null;
     const path = sf ? sf[satIndex(sf)]?.meta : PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
@@ -571,6 +572,12 @@ const MM_WARN = {
 
 function mmVar() { return S.layer.mmVar === 'wind' ? 'wind' : 'rain'; }
 
+/** Rain view: one model, swipe (curtain) between two, difference of two, or consensus of all; the comparisons need two models. */
+function mmView() {
+  if (mmVar() !== 'rain' || mmModels().length < 2) return 'one';
+  return ['swipe', 'diff', 'cons'].includes(S.layer.mmView) ? S.layer.mmView : 'one';
+}
+
 /** Models that have data for the chosen variable (WRF 3 km comes from its own files, the others from the multi-model build). */
 function mmModels() {
   const L_ = S.manifest?.layers || {};
@@ -583,6 +590,21 @@ function mmId() {
   return list.includes(S.layer.mmModel) ? S.layer.mmModel : list[0];
 }
 
+/** The second model of a swipe / difference: always a different one from the first. */
+function mmIdB() {
+  const list = mmModels().filter((x) => x !== mmId());
+  return list.includes(S.layer.mmModelB) ? S.layer.mmModelB : list[0];
+}
+
+/** Models taking part in the current view. */
+function mmCmpIds() {
+  const v = mmView();
+  if (v === 'cons') return mmModels();
+  return v === 'one' ? [mmId()] : [mmId(), mmIdB()];
+}
+
+const tkey = (t) => new Date(t).getTime();
+
 function mmCurrent() {
   const id = mmId();
   const L_ = S.manifest?.layers || {};
@@ -593,11 +615,34 @@ function mmCurrent() {
 }
 
 /** Rain frames of the chosen model: [{meta, time}] (the 6 hours ending at `time`). */
-function mmFrames() {
-  const id = mmId();
+function mmRawFrames(id) {
   const L_ = S.manifest?.layers || {};
   if (id === 'wrf3') return (L_.wrf3?.rain || []).map((x) => ({ meta: x.meta, time: L_.wrf3.steps[x.fh / 6] }));
   return (L_.mm?.models?.[id]?.rain || []).map((x) => ({ meta: x.meta, time: x.time }));
+}
+
+/** Rain steps of the view: the chosen model's own, or in a comparison only the times the compared models share
+ *  (consensus: the longest model's times where at least two models have data). */
+function mmFrames() {
+  const view = mmView();
+  if (view === 'one') return mmRawFrames(mmId());
+  const ids = mmCmpIds();
+  const base = view === 'cons' ? [...ids].sort((a, b) => mmRawFrames(b).length - mmRawFrames(a).length)[0] : ids[0];
+  const sets = ids.map((id) => new Set(mmRawFrames(id).map((f) => tkey(f.time))));
+  const need = view === 'cons' ? 2 : ids.length;
+  return mmRawFrames(base).filter((f) => sets.filter((s) => s.has(tkey(f.time))).length >= need);
+}
+
+/** Load the grids of every step of the view ahead of an animation. */
+async function mmPreload() {
+  const ids = mmCmpIds();
+  for (const f of mmFrames()) {
+    await Promise.all(ids.map((id) => {
+      const x = mmRawFrames(id).find((y) => tkey(y.time) === tkey(f.time));
+      return x ? getGrid(x.meta) : null;
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+  }
 }
 
 /** Valid times of the chosen model for the chosen variable. */
@@ -687,6 +732,145 @@ function windField(g, uv, k, tip) {
   return ov;
 }
 
+// Common lattice of the difference and consensus maps (covers Taiwan and the sea around it).
+const CMP_BOUNDS = [117, 20, 125, 27];
+const CMP_RES = 0.05;
+const CONS_MM = 10;
+
+/** Value of a grid at a point: NaN outside its area, 0 where it holds no rain. */
+function cellValue(g, lat, lon) {
+  const [w, s, e, n] = g.bounds;
+  if (lon < w || lon >= e || lat <= s || lat > n) return NaN;
+  return sample(g, lat, lon) ?? 0;
+}
+
+/** Grid of B - A (difference) or of the number of models at or above CONS_MM (consensus) on the common lattice. */
+function compareGrid(view, grids) {
+  const [w, s, e, n] = CMP_BOUNDS;
+  const nx = Math.round((e - w) / CMP_RES);
+  const ny = Math.round((n - s) / CMP_RES);
+  const values = new Float32Array(nx * ny).fill(NaN);
+  for (let j = 0; j < ny; j += 1) {
+    const lat = n - (j + 0.5) * CMP_RES;
+    for (let i = 0; i < nx; i += 1) {
+      const lon = w + (i + 0.5) * CMP_RES;
+      const v = grids.map((g) => cellValue(g, lat, lon));
+      if (view === 'diff') {
+        if (!Number.isNaN(v[0]) && !Number.isNaN(v[1]) && (v[0] >= 0.5 || v[1] >= 0.5)) values[j * nx + i] = v[1] - v[0];
+      } else {
+        const have = v.filter((x) => !Number.isNaN(x));
+        const hits = have.filter((x) => x >= CONS_MM).length;
+        if (have.length >= 2 && hits > 0) values[j * nx + i] = hits;
+      }
+    }
+  }
+  return { meta: { kind: view }, w: nx, h: ny, values, bounds: CMP_BOUNDS, parts: [] };
+}
+
+/** Swipe handle: a draggable vertical divider over the map; the model names sit at its two sides. */
+function swipeHandle(panes, names) {
+  const box = S.map.getContainer();
+  const frac = () => (S.layer.mmSplit ?? 0.5);
+  const el = document.createElement('div');
+  el.id = 'mm-split';
+  el.setAttribute('role', 'slider');
+  el.setAttribute('aria-label', '捲簾位置');
+  el.setAttribute('aria-valuemin', '0');
+  el.setAttribute('aria-valuemax', '100');
+  el.tabIndex = 0;
+  el.innerHTML = `<span class="sp-a">${esc(names[0])}</span><span class="sp-grip" aria-hidden="true"></span><span class="sp-b">${esc(names[1])}</span>`;
+  const clip = () => {
+    const size = S.map.getSize();
+    const x = Math.round(size.x * frac());
+    el.style.left = `${x}px`;
+    el.setAttribute('aria-valuenow', String(Math.round(frac() * 100)));
+    const nw = S.map.containerPointToLayerPoint([0, 0]);
+    const se = S.map.containerPointToLayerPoint([size.x, size.y]);
+    const cx = S.map.containerPointToLayerPoint([x, 0]).x;
+    const pad = 2000; // generous vertical / horizontal margins: the panes also hold the image beyond the viewport
+    panes[0].style.clip = `rect(${nw.y - pad}px, ${cx}px, ${se.y + pad}px, ${nw.x - pad}px)`;
+    panes[1].style.clip = `rect(${nw.y - pad}px, ${se.x + pad}px, ${se.y + pad}px, ${cx}px)`;
+  };
+  const move = (clientX) => {
+    const r = box.getBoundingClientRect();
+    S.layer.mmSplit = Math.max(0.05, Math.min(0.95, (clientX - r.left) / r.width));
+    clip();
+  };
+  el.addEventListener('pointerdown', (ev) => {
+    el.setPointerCapture(ev.pointerId);
+    S.map.dragging.disable();
+    const onMove = (m) => move(m.clientX);
+    const onUp = () => { el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerup', onUp); el.removeEventListener('pointercancel', onUp); S.map.dragging.enable(); };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    ev.preventDefault();
+  });
+  el.addEventListener('keydown', (ev) => {
+    const d = { ArrowLeft: -0.02, ArrowRight: 0.02, Home: -1, End: 1 }[ev.key];
+    if (d === undefined) return;
+    S.layer.mmSplit = Math.max(0.05, Math.min(0.95, ev.key === 'Home' ? 0.05 : ev.key === 'End' ? 0.95 : frac() + d));
+    clip();
+    ev.preventDefault();
+  });
+  box.appendChild(el);
+  S.map.on('move zoom resize', clip);
+  clip();
+  return () => { S.map.off('move zoom resize', clip); el.remove(); panes.forEach((p) => { p.style.clip = ''; }); };
+}
+
+function mmPane(name) {
+  return S.map.getPane(name) || S.map.createPane(name);
+}
+
+/** Swipe, difference and consensus views of the rain layer. */
+async function showMMCompare() {
+  const view = mmView();
+  const ids = mmCmpIds();
+  const frames = mmFrames();
+  const f = frames[Math.min(S.layer.frame, frames.length - 1)];
+  if (!f) { clearOverlay(); renderLegend(null, '這幾個模式沒有共同的預報時間'); renderTimeControl(); return; }
+  const grids = await Promise.all(ids.map((id) => {
+    const x = mmRawFrames(id).find((y) => tkey(y.time) === tkey(f.time));
+    return x ? getGrid(x.meta) : null;
+  }));
+  if (S.layer.id !== 'mm' || mmView() !== view) return;
+  const have = ids.map((id, i) => ({ id, g: grids[i] })).filter((x) => x.g);
+  const infos = have.map((x) => ({ ...MM_INFO[x.id], init: x.id === 'wrf3' ? S.manifest.layers.wrf3?.time : S.manifest.layers.mm?.models?.[x.id]?.init }));
+  const name = (x) => x.short || x.label;
+  const meta = { start: new Date(tkey(f.time) - 6 * 3600e3).toISOString(), end: f.time, license: 'mm', src: infos.map((x) => x.src).join('；'),
+    licenseText: [...new Set(have.map((x) => (x.id === 'wrf3' ? '中央氣象署開放資料' : S.manifest.layers.mm?.models?.[x.id]?.license)).filter(Boolean))].join('、'),
+    issued: infos.map((x) => x.init).filter(Boolean).sort()[0] };
+  if (view === 'swipe') {
+    if (have.length < 2) { clearOverlay(); renderLegend(null, '此時間缺少其中一個模式的資料'); renderTimeControl(); return; }
+    const { kind, colour, opts } = renderParams('mm');
+    const panes = [mmPane('mmA'), mmPane('mmB')];
+    const ov = L.layerGroup();
+    have.forEach((x, i) => {
+      [x.g, ...(x.g.parts || [])].forEach((g) => {
+        const [w, s, e, n] = g.bounds;
+        L.imageOverlay(gridImage(g, kind, colour, opts), [[s, w], [n, e]], { opacity: layerOpacity('mm'), interactive: false, className: 'wx-grid', pane: i ? 'mmB' : 'mmA' }).addTo(ov);
+      });
+    });
+    let off = null;
+    ov.on('add', () => { off = swipeHandle(panes, infos.map(name)); });
+    ov.on('remove', () => { if (off) off(); off = null; });
+    clearOverlay(); // the old handle must go before the new one is added
+    finishOverlay(ov);
+    renderLegend({ label: `${name(infos[0])}｜${name(infos[1])} 6 小時雨量`, ...meta, kindOverride: kind, unit: 'mm', time: undefined });
+  } else {
+    if (have.length < 2) { clearOverlay(); renderLegend(null, '此時間缺少其中一個模式的資料'); renderTimeControl(); return; }
+    const cg = compareGrid(view, have.map((x) => x.g));
+    const { kind, colour, opts } = renderParams('mm');
+    const [w, s, e, n] = cg.bounds;
+    const ov = L.imageOverlay(gridImage(cg, kind, colour, opts), [[s, w], [n, e]], { opacity: layerOpacity('mm'), interactive: false, className: 'wx-grid' });
+    finishOverlay(L.layerGroup([ov]));
+    renderLegend({ label: view === 'diff' ? `${name(infos[1])} − ${name(infos[0])} 6 小時雨量差` : `各模式 6 小時雨量 ≥ ${CONS_MM} mm（共 ${have.length} 個模式）`,
+      ...meta, kindOverride: kind, time: undefined, unit: view === 'diff' ? 'mm' : '' });
+  }
+  renderTimeControl();
+}
+
 async function showMMWind(keepFrame) {
   const id = mmId();
   const m = mmCurrent();
@@ -709,9 +893,17 @@ function mmTimeControl() {
   const id = mmId();
   const m = mmCurrent();
   const times = mmTimes();
+  const view = mmView();
+  const btns = (list, cur, attr, label) => `<div class="seg mm-models" role="radiogroup" aria-label="${label}">` + list.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === cur}" data-${attr}="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('') + '</div>';
   let h = modeTabs('模式預報項目', [['rain', '降雨'], ['wind', '風']], 'mmvar', v, { rain: 'umbrella', wind: 'wind' });
-  h += '<div class="seg mm-models" role="radiogroup" aria-label="模式">' + models.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === id}" data-mmmodel="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('') + '</div>';
-  h += `${m.stale ? '<p class="mm-note">最新一輪暫時無法更新</p>' : ''}<p class="mm-note note-red">${esc(v === 'rain' ? m.warnRain : m.warnWind)}</p>`;
+  if (v === 'rain' && models.length > 1) {
+    h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['one', '單一'], ['swipe', '捲簾'], ['diff', '差值'], ['cons', '共識']]
+      .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === view}" data-mmview="${k}">${l}</button>`).join('') + '</div>';
+  }
+  if (view !== 'cons') h += btns(models, id, 'mmmodel', view === 'one' ? '模式' : '模式一');
+  if (view === 'swipe' || view === 'diff') h += btns(models.filter((x) => x !== id), mmIdB(), 'mmmodelb', '模式二');
+  const res = Math.max(...mmCmpIds().map((x) => MM_INFO[x].res));
+  h += `${m.stale ? '<p class="mm-note">最新一輪暫時無法更新</p>' : ''}<p class="mm-note note-red">${esc(v === 'rain' ? MM_WARN.rain[res] : m.warnWind)}</p>`;
   if (times.length) {
     const i = Math.min(S.layer.frame, times.length - 1);
     h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="mm-frame" type="range" min="0" max="${times.length - 1}" value="${i}" aria-valuetext="${esc(fmtTime(times[i]))}"></label>
@@ -1102,6 +1294,8 @@ function legendUnit(kind, unit) {
   if (kind === 'uv') return ['單位', '指數'];
   if (kind === 'heat') return ['單位', '指數'];
   if (kind === 'msl') return ['單位', 'hPa'];
+  if (kind === 'rdiff') return ['差值', 'mm'];
+  if (kind === 'rcons') return ['≥10 mm', '模式數'];
   if (kind === 'visib') return ['單位', 'km'];
   if (kind === 'intensity') return ['單位', '震度'];
   if (kind === 'vis') return ['單位', '反照率'];
@@ -1125,7 +1319,7 @@ function colourStrip(scale, kind) {
   const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).reverse().join('');
   const lbls = scale.map((x, i) => {
     if ((n - 1 - i) % step) return ''; // count down from the top class so the highest value is always labelled
-    const text = kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
+    const text = kind === 'rdiff' ? (i ? String(x[0]).replace('-', '−') : '') : kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
     return `<span style="bottom:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
   }).join('');
   return `<span class="lg-strip" style="--n:${n};--ch:${n > 16 ? 8 : n > 13 ? 9.5 : 12.5}px"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
@@ -1335,6 +1529,18 @@ export function renderTimeControl(meta) {
     const t = mmCurrentTime();
     S.layer.mmVar = b.dataset.mmvar;
     await mmEnsureWind();
+    mmKeepTime(t);
+    showLayer('mm', { keepFrame: true });
+  }));
+  el.querySelectorAll('[data-mmview]').forEach((b) => b.addEventListener('click', () => {
+    const t = mmCurrentTime();
+    S.layer.mmView = b.dataset.mmview;
+    mmKeepTime(t);
+    showLayer('mm', { keepFrame: true });
+  }));
+  el.querySelectorAll('[data-mmmodelb]').forEach((b) => b.addEventListener('click', () => {
+    const t = mmCurrentTime();
+    S.layer.mmModelB = b.dataset.mmmodelb;
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });
   }));

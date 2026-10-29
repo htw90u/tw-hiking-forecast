@@ -632,3 +632,14 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .mm-note.note-red { color: var(--lv2); font-weight: 600; }
 .mm-models { flex-wrap: nowrap; gap: .3rem; }
 .mm-models .seg-btn { padding: .25rem .5rem; font-size: .9rem; white-space: nowrap; flex: 0 1 auto; }
+.mm-view { display: flex; gap: .3rem; margin: .4rem 0 .2rem; }
+.mm-view .seg-btn { padding: .25rem .5rem; font-size: .9rem; white-space: nowrap; flex: 0 1 auto; }
+
+/* swipe (curtain) divider over the map */
+#mm-split { position: absolute; top: 0; bottom: 0; width: 44px; margin-left: -22px; z-index: 650; cursor: ew-resize; touch-action: none; outline: none; }
+#mm-split .sp-grip { position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+#mm-split .sp-grip::after { content: ""; position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 1px 4px rgba(0,0,0,.4); }
+#mm-split:focus-visible .sp-grip::after { box-shadow: 0 0 0 3px var(--accent); }
+#mm-split .sp-a, #mm-split .sp-b { position: absolute; top: 5.2rem; padding: .1rem .4rem; font-size: .8rem; font-weight: 700; white-space: nowrap; background: rgba(255,255,255,.92); color: #111; border-radius: .6rem; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+#mm-split .sp-a { right: 50%; margin-right: 6px; }
+#mm-split .sp-b { left: 50%; margin-left: 6px; }
