@@ -663,3 +663,8 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 :root[data-ui="text"] .controls .tools { margin-top: .1rem; padding: 0 .6rem .15rem; }
 :root[data-ui="icon"] .layer-groups { display: none; }
 :root[data-ui="icon"] #chips .chip[hidden] { display: flex; }
+/* Short screens (phones in landscape): no group tabs, every layer in the one row. */
+@media (max-height: 500px) {
+  .layer-groups { display: none; }
+  #chips .chip[hidden] { display: inline-block; }
+}
