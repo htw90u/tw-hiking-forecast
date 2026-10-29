@@ -609,3 +609,7 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .pill b, .pl b, table, output, .ticks, .lg-strip, .tc-play output, .seg-btn { font-variant-numeric: tabular-nums; }
 /* fade hint at the right edge of the status strip when more pills are scrolled out of view */
 .strip-row { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+.qlist { margin: .4rem 0 0; }
+.qlist summary { min-height: 44px; }
+.more-st { margin: .2rem 0 0; }
+.more-st summary { min-height: 44px; }

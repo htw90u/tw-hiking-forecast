@@ -1,7 +1,10 @@
 // Rule-based hiking risk summary. Always lists the triggering reasons so the
 // level is never conveyed by colour alone.
 
-import { beaufort } from './util.js';
+import { beaufort, fmtTime } from './util.js';
+
+/** Strong earthquakes (last 3 days, max intensity >= 5 or magnitude >= 6) count within this distance: danger inside the first, caution inside the second. */
+export const STRONG_QUAKE_KM = { danger: 50, caution: 150 };
 
 export const LEVELS = [
   { id: 0, label: '正常', icon: '●', cls: 'lv0' },
@@ -11,14 +14,14 @@ export const LEVELS = [
 
 /**
  * ctx: { rain1h, rainToday, qpfMax:[lo,hi]|null, radar, temp, stations:[{G,WS,T,R1h,R24h,d}],
- *        spotMinAT, warnings:[{ph,sig}], typhoon:{active, inForecastCone}, quakes:[{iv, d, time}],
+ *        spotMinAT, warnings:[{ph,sig,end}], typhoon:{active, inForecastCone}, quakes:[{iv, mag, d, int, time}] (last 3 days, any distance),
  *        lightning:{n, nearest km}|null, windBf: max Beaufort in the next 24 h of the hiking forecast,
  *        heat: {max, warnMax}|null (township heat-injury index, next 24 h),
  *        gustFc: max model gust (m/s) in the next 24 h }
  */
 export function assess(ctx, th) {
   const reasons = [];
-  const add = (lv, text) => reasons.push({ lv, text });
+  const add = (lv, text, link = {}) => reasons.push({ lv, text, ...link });
   const r1 = Math.max(ctx.rain1h ?? 0, ...ctx.stations.slice(0, 3).map((s) => s.R1h ?? 0));
   if (r1 >= th.rain1hRed) add(2, `近1小時雨量 ${r1} mm（≥ ${th.rain1hRed}）`);
   else if (r1 >= th.rain1h) add(1, `近1小時雨量 ${r1} mm（≥ ${th.rain1h}）`);
@@ -41,13 +44,18 @@ export function assess(ctx, th) {
   }
   (ctx.warnings || []).forEach((w) => {
     const severe = /豪雨|颱風|大豪雨|超大豪雨/.test(w.ph || '');
-    add(severe ? 2 : 1, `所在縣市有 ${w.ph}${w.sig || ''}`);
+    add(severe ? 2 : 1, `所在縣市有 ${w.ph}${w.sig || ''}${w.end ? `（至 ${fmtTime(w.end)}）` : ''}`);
   });
-  if (ctx.typhoon && ctx.typhoon.active) add(ctx.typhoon.near ? 2 : 1, `颱風警報發布中${ctx.typhoon.name ? `（${ctx.typhoon.name}）` : ''}`);
+  if (ctx.typhoon && ctx.typhoon.active) add(ctx.typhoon.near ? 2 : 1, `颱風警報發布中${ctx.typhoon.name ? `（${ctx.typhoon.name}）` : ''}`, { typhoon: true });
+  let otherQuakes = 0;
   (ctx.quakes || []).forEach((q) => {
-    if (q.iv >= 5) add(2, `${q.d.toFixed(0)} km 內地震，最大震度 ${q.int}（落石、坍方風險）`);
-    else if (q.iv >= 4) add(1, `${q.d.toFixed(0)} km 內地震，最大震度 ${q.int}（注意落石）`);
+    const strong = q.iv >= 5 || q.mag >= 6;
+    const where = `距此 ${q.d.toFixed(0)} km 發生強震 M${q.mag}・最大震度 ${q.int}（${fmtTime(q.time)}）`;
+    if (strong && q.d <= STRONG_QUAKE_KM.danger) add(2, `${where}：落石、坍方、餘震`, { quake: q.time });
+    else if (strong && q.d <= STRONG_QUAKE_KM.caution) add(1, `${where}：注意餘震與落石`, { quake: q.time });
+    else if (q.d <= 50 && q.iv >= 4) otherQuakes += 1;
   });
+  if (otherQuakes) add(1, `50 km 內另有 ${otherQuakes} 起地震（最大震度 4 級以上，注意落石）`);
   const lt = ctx.lightning;
   if (lt && lt.n) add(lt.nearest <= 10 ? 2 : 1, `過去 1 小時 ${lt.n} 次閃電，最近 ${lt.nearest.toFixed(1)} km（雷擊風險，遠離稜線與空曠處）`);
   if (ctx.gustFc >= th.gustRed) add(2, `未來 24 小時模式預報陣風 ${ctx.gustFc} m/s（${beaufort(ctx.gustFc)} 級，≥ ${th.gustRed} m/s）`);

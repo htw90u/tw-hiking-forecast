@@ -1431,6 +1431,28 @@ function serve() {
     errors.length = 0; // the blocked inline script above is expected to log a CSP violation
   });
 
+  await check('safety assessment: strong earthquakes (M>=6 or intensity >=5, last 3 days) are danger within 50 km, caution to 150 km', async () => {
+    const r = await page.evaluate(async () => {
+      const { assess } = await import('./js/safety.js');
+      const { S } = await import('./js/state.js');
+      const base = { stations: [], warnings: [] };
+      const run = (quakes) => assess({ ...base, quakes }, S.settings.thresholds).reasons.filter((x) => /地震|強震/.test(x.text));
+      const t = new Date().toISOString();
+      return {
+        near: run([{ iv: 5.5, mag: 6.2, d: 22, int: '5強', time: t }]),
+        mid: run([{ iv: 5, mag: 5.8, d: 100, int: '5弱', time: t }]),
+        far: run([{ iv: 6, mag: 7, d: 300, int: '6弱', time: t }]),
+        mag6: run([{ iv: 3, mag: 6.1, d: 30, int: '3級', time: t }]),
+        small: run([{ iv: 4, mag: 4.5, d: 20, int: '4級', time: t }, { iv: 4, mag: 4.1, d: 40, int: '4級', time: t }, { iv: 2, mag: 3, d: 5, int: '2級', time: t }]),
+      };
+    });
+    assert(r.near.length === 1 && r.near[0].lv === 2 && r.near[0].quake && /強震 M6\.2/.test(r.near[0].text), `near ${JSON.stringify(r.near)}`);
+    assert(r.mid.length === 1 && r.mid[0].lv === 1 && /餘震/.test(r.mid[0].text), `mid ${JSON.stringify(r.mid)}`);
+    assert(r.far.length === 0, `far ${JSON.stringify(r.far)}`);
+    assert(r.mag6.length === 1 && r.mag6[0].lv === 2, `magnitude 6 with low intensity ${JSON.stringify(r.mag6)}`);
+    assert(r.small.length === 1 && r.small[0].lv === 1 && /2 起/.test(r.small[0].text), `small quakes grouped ${JSON.stringify(r.small)}`);
+  });
+
   await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
     await page.evaluate(() => localStorage.setItem('hikingwx.searchHistory.v1', JSON.stringify(['玉山'])));
     await page.click('#q', { clickCount: 3 });

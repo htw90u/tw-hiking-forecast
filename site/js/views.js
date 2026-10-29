@@ -739,8 +739,9 @@ export async function showPoint(lat, lon, opts = {}) {
 
   const county = normCounty(town?.COUNTYNAME);
   const countyWarn = (S.warnings?.counties || []).find((c) => normCounty(c.county) === county);
-  const quakesNear = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < 3 * 864e5)
-    .map((q) => ({ ...q, d: haversineKm(lat, lon, q.lat, q.lon) })).filter((q) => q.d <= 50);
+  const quakes3d = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < 3 * 864e5)
+    .map((q) => ({ ...q, d: haversineKm(lat, lon, q.lat, q.lon) }));
+  const quakesNear = quakes3d.filter((q) => q.d <= 50);
   const qpfFirst = vals.qpf0?.range || null;
   const ty = S.typhoon?.active ? { active: true, name: S.typhoon.cyclones.map((c) => c.cname).join('、'), near: true } : null;
   const fcForCold = spotFc || townFc;
@@ -749,7 +750,7 @@ export async function showPoint(lat, lon, opts = {}) {
     rain1h: vals.qpe1h?.v ?? null, rainToday: Math.max(vals.rainday?.v ?? 0, vals.acc_24h?.v ?? 0) || null, qpfMax: qpfFirst, radar: vals.radar?.v ?? null,
     stations: stationsAll.slice(0, 8).map((x) => x.it), spotMinAT: minApparent(fcForCold),
     warnings: countyWarn?.hazards || [], typhoon: ty, heat,
-    quakes: quakesNear.map((q) => ({ iv: q.maxInt, d: q.d, int: intText(q.maxInt) })),
+    quakes: quakes3d.map((q) => ({ iv: q.maxInt, mag: q.mag, d: q.d, int: intText(q.maxInt), time: q.time })),
     lightning: lightningNear(lat, lon, 15), windBf: maxWindBf(spotFc || nearFc),
     // Model gusts describe the township's flat grid cell: they say nothing about a ridge, so a spot or a peak only uses the CWA mean wind.
     gustFc: spotFc || nearFc || peak ? null : maxGust24(gustSeries(town?.TOWNCODE)),
@@ -831,14 +832,10 @@ ${b ? html`<br><small>${b}</small>` : html`<br><small class="muted">暫無預報
     : '';
 
   const hydroHtml = hydroCard(S.hydro, lat, lon, town?.COUNTYNAME, town?.TOWNNAME);
-  const warnHtml = countyWarn?.hazards?.length
-    ? html`<section class="card warn" aria-labelledby="h-warn"><h3 id="h-warn">${county} 警特報</h3><ul>${countyWarn.hazards.map((h) => html`<li>${h.ph}${h.sig}（至 ${fmtTime(h.end)}）</li>`)}</ul></section>`
-    : '';
-  const tyHtml = S.typhoon?.active ? html`<section class="card warn"><h3>颱風警報中</h3><button class="btn" data-open="typhoon">查看颱風路徑、風力與雨量預測</button></section>` : '';
-  const qHtml = quakesNear.length ? html`<section class="card"><h3>近 3 天 50 km 內地震</h3><ul>${quakesNear.map((q) => html`<li><button class="link" data-quake="${q.time}">${fmtTime(q.time)} 規模 ${q.mag}</button> <span class="meta">距此 ${q.d.toFixed(0)} km・最大震度 ${intText(q.maxInt)}</span></li>`)}</ul></section>` : '';
 
   const riskHtml = html`<section class="card risk ${LEVELS[risk.level].cls}" aria-labelledby="h-risk"><h3 id="h-risk">登山安全評估</h3>
-${risk.reasons.length ? html`<ul>${risk.reasons.map((r) => html`<li>${lvBadge(r.lv)} ${r.text}</li>`)}</ul>` : html`<p>目前未觸發警示條件。</p>`}
+${risk.reasons.length ? html`<ul>${risk.reasons.map((r) => html`<li>${lvBadge(r.lv)} ${r.text}${r.quake ? html` <button type="button" class="link" data-quake="${r.quake}">地震詳情 ›</button>` : ''}${r.typhoon ? html` <button type="button" class="link" data-open="typhoon">路徑與雨量 ›</button>` : ''}</li>`)}</ul>` : html`<p>目前未觸發警示條件。</p>`}
+${quakesNear.length ? html`<details class="qlist"><summary>近 3 天 50 km 內地震（${quakesNear.length} 起）</summary><ul>${quakesNear.map((q) => html`<li><button type="button" class="link" data-quake="${q.time}">${fmtTime(q.time)} 規模 ${q.mag}</button> <span class="meta">距此 ${q.d.toFixed(0)} km・最大震度 ${intText(q.maxInt)}</span></li>`)}</ul></details>` : ''}
 <p class="note">依門檻自動判斷，僅供參考；請以現場狀況與官方資訊為準。門檻可在「設定」調整。</p></section>`;
   const nowHtml = html`<section class="card" aria-labelledby="h-now"><h3 id="h-now">此處即時格點值</h3><table class="kv"><tbody>
 ${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1小時雨量', 'qpe1h', 'mm'))}${raw(vrow('未來1小時雨量', 'qpf1h', 'mm'))}${raw(vrow('溫度分析', 'temp', '°C'))}${raw(vrow('雲頂溫度（紅外線）', 'satir', '°C', 0))}
@@ -854,7 +851,7 @@ ${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1�
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
   const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站'}</h3>
 <label class="chk"><input type="checkbox" id="st-rain"${showRain ? ' checked' : ''}> 顯示雨量站</label>
-${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 6).map(({ it, d }) => stationLine(it, d))}</ul><p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}
+${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 1).map(({ it, d }) => stationLine(it, d))}</ul>${otherStations.length > 1 ? html`<details class="more-st"><summary>另有 ${Math.min(5, otherStations.length - 1)} 個鄰近測站</summary><ul class="stations">${otherStations.slice(1, 6).map(({ it, d }) => stationLine(it, d))}</ul></details>` : ''}<p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}
 ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`;
   const nearHtml = near.length ? html`<section class="card"><h3>附近景點／山岳</h3><ul>${near}</ul></section>` : '';
 
@@ -890,9 +887,6 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
   const cardsOut = {
     risk: cardize(riskHtml, { id: 'risk', grp: 'safe', title: '登山安全評估', titleId: 'h-risk', open: true, alert: risk.level > 0, extra: `risk ${LEVELS[risk.level].cls}`,
       summary: risk.reasons.length ? `${LEVELS[risk.level].label}・${risk.reasons.length} 項觸發：${risk.reasons.slice(0, 2).map((r) => r.text.replace(/（.*?）/g, '')).join('、')}` : '正常・目前未觸發警示條件' }),
-    warn: cardize(warnHtml, { id: 'warn', grp: 'safe', icon: '!', alert: true, summary: countyWarn?.hazards?.map((h) => `${h.ph}${h.sig}`).join('、') }),
-    ty: cardize(tyHtml, { id: 'ty', grp: 'safe', icon: '🌀', alert: true, summary: S.typhoon?.cyclones?.map((c) => c.cname).join('、') }),
-    quake: cardize(qHtml, { id: 'quake', grp: 'safe', icon: '≈', summary: `${quakesNear.length} 起・最近規模 ${quakesNear[0]?.mag}` }),
     station: station ? cardize(stationCard(station), { id: 'station', grp: 'obs', open: true, summary: `${fmtTime(station.t)}・${station.T !== undefined ? `${fmtNum(station.T)}°C` : ''}` }) : '',
     now: cardize(nowHtml, { id: 'now', grp: 'obs', summary: nowSum }),
     stations: cardize(stationsHtml, { id: 'stations', grp: 'obs', open: true, summary: stSum }),
@@ -910,7 +904,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     near: cardize(nearHtml, { id: 'near', grp: 'info', summary: near2 }),
     mtns: cardize(station ? mountainsCard(station.lat, station.lon) : peak ? mountainsCard(lat, lon, 10, peak.k) : '', { id: 'mtns', grp: 'info', icon: '▲', summary: '' }),
   };
-  const order = ['risk', 'warn', 'ty', 'quake', 'station', 'now', 'stations', 'aloft', 'fc', 'mtnFc', 'town', 'rain', 'heat', 'wrf3', 'wrfg', 'hydro', 'ens', 'sun', 'mtns', 'near'];
+  const order = ['risk', 'station', 'fc', 'mtnFc', 'town', 'now', 'stations', 'aloft', 'rain', 'heat', 'wrf3', 'wrfg', 'hydro', 'ens', 'sun', 'mtns', 'near'];
   const present = order.filter((k) => cardsOut[k]);
   const groupsPresent = Object.keys(GROUPS).filter((g) => present.some((k) => cardsOut[k].includes(`data-grp="${g}"`)));
   const bf = (n) => (n === null || n === undefined ? '—' : `${n} 級`);
