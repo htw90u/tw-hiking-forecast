@@ -404,7 +404,7 @@ function serve() {
 
   await check('sources & licence panel with OGDL attribution', async () => {
     await page.click('#sheet-close').catch(() => {});
-    await page.click('#btn-settings');
+    await openSettings();
     await page.click('#set-src');
     await page.waitForSelector('#sheet-title:has-text("資料來源")');
     const t = await page.textContent('#sheet-body');
@@ -469,7 +469,7 @@ function serve() {
     await page.waitForFunction(() => !document.querySelector('.chip[aria-checked="true"]'));
     assert(!(await page.$('.chip[data-layer="none"]')), 'the 關閉圖層 chip should be gone');
     assert((await page.$$('img.wx-grid')).length === 0, 'weather overlay still shown after toggling off');
-    await page.click('.chip[data-layer="radar"]');
+    await selectLayer('.chip[data-layer="radar"]');
     await page.waitForFunction(() => document.querySelector('.chip[data-layer="radar"]')?.getAttribute('aria-checked') === 'true');
   });
 
@@ -1412,7 +1412,7 @@ function serve() {
   await check('NASA imagery layer: true colour and snow tiles from GIBS, date buttons, acknowledgement, red caution', async () => {
     const seen = [];
     await ctx.route(/gibs\.earthdata\.nasa\.gov/, (r) => { seen.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(PNG1, 'base64') }); });
-    await page.click('.chip[data-layer="nasa"]');
+    await selectLayer('.chip[data-layer="nasa"]');
     await page.waitForSelector('#legend .lg-body .note-red', { state: 'attached' });
     await page.waitForFunction(() => document.querySelector('.leaflet-tile[src*="gibs.earthdata.nasa.gov"]'));
     assert(seen.some((u) => /MODIS_Terra_CorrectedReflectance_TrueColor\/default\/\d{4}-\d\d-\d\d\/GoogleMapsCompatible_Level9\//.test(u)), `true colour tile URL: ${seen[0]}`);
@@ -1421,7 +1421,7 @@ function serve() {
     await page.waitForFunction(() => document.querySelector('.leaflet-tile[src*="NDSI_Snow_Cover"]'));
     await page.click('[data-nasaday="3"]');
     await page.waitForFunction(() => document.querySelectorAll('[data-nasaday][aria-checked="true"]').length === 1 && document.querySelector('[data-nasaday="3"][aria-checked="true"]'));
-    await page.click('.chip[data-layer="radar"]');
+    await selectLayer('.chip[data-layer="radar"]');
     await page.waitForFunction(() => !document.querySelector('.leaflet-tile[src*="gibs.earthdata.nasa.gov"]'));
     assert((await page.$('.leaflet-tile[src*="gibs.earthdata.nasa.gov"]')) === null, 'NASA tiles should be removed with the layer');
   });
