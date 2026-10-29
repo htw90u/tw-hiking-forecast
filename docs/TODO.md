@@ -84,7 +84,7 @@
 - [x] NASA GIBS 真彩色與積雪圖層（2026-10-28）：「NASA影像」圖層；其餘 GIBS 候選（IMERG、Himawari、火點、氣溶膠）見下方評估。
 - [ ] 災防科技中心（NCDR）資料服務平台 datahub.ncdr.nat.gov.tw：申請帳號與授權後，評估山區閃洪預警、平原淹水預警、短延時推估雨量、坡地災害 API（datahub 網域已可從開發環境連線）。
 
-- [x] 模式預報圖層第 1 階段（2026-10-29）：降雨、風；ECMWF IFS、AIFS、GFS、WRF 3 km 切換。第 2 階段（捲簾、差值、一致度，降雨）已完成。氣溫與氣壓（含捲簾、差值）已完成。後續：風的比較（示意圖 `docs/ui-multimodel-layer-mock.png`）；WRF 15 km／全球模式（24 小時）尚未併入。
+- [x] 模式預報圖層第 1 階段（2026-10-29）：降雨、風；ECMWF IFS、AIFS、GFS、WRF 3 km 切換。第 2 階段（捲簾、差值、一致度，降雨）已完成。氣溫與氣壓（含捲簾、差值）、風的比較（捲簾、風速差）已完成。後續：（示意圖 `docs/ui-multimodel-layer-mock.png`）；WRF 15 km／全球模式（24 小時）尚未併入。
 
 ### 外部資料評估（2026-10-28）
 - NASA GIBS（gibs.earthdata.nasa.gov，WMTS 圖磚，免金鑰、開放使用，需標示「NASA GIBS / ESDIS」；本環境可連線）。可用圖層：MODIS／VIIRS 真彩色（解析度 250 m～1 km，每日一張，可看雲況與山區積雪）、MODIS NDSI 積雪（玉山、雪山冬季積雪參考）、IMERG 降雨強度（全球 10 km、30 分鐘，可與雷達互相驗證）、VIIRS 火點（熱異常）、氣溶膠 AOD（霾害、沙塵）、Himawari AHI（Band13 紅外線、Band3 可見光 1 km、Air Mass）、NDVI、地表溫度。做法：Leaflet 直接掛 WMTS 圖磚（EPSG:3857 `best`），時間參數取日期，不需建置階段處理；真彩色與積雪優先。

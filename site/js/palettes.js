@@ -157,6 +157,9 @@ const DIFF_LABELS = ['< −50', '−50 ～ −20', '−20 ～ −10', '−10 ～
 const DIFF2_BOUNDS = [-1000, -8, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 8];
 const DIFF2_COLOURS = ['#053061', '#2166ac', '#4393c3', '#92c5de', '#d1e5f0', '#e6e6e6', '#fddbc7', '#f4a582', '#d6604d', '#b2182b', '#67001f'];
 const DIFF2_LABELS = ['< −8', '−8 ～ −4', '−4 ～ −2', '−2 ～ −1', '−1 ～ −0.5', '±0.5 內', '0.5 ～ 1', '1 ～ 2', '2 ～ 4', '4 ～ 8', '≥ 8'];
+// Wind speed difference (second model minus first, m/s): purple = weaker, green = stronger.
+const WDIFF_BOUNDS = [-1000, -8, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 8];
+const WDIFF_COLOURS = ['#40004b', '#762a83', '#9970ab', '#c2a5cf', '#e7d4e8', '#e6e6e6', '#d9f0d3', '#a6dba0', '#5aae61', '#1b7837', '#00441b'];
 const CONS_COLOURS = ['#fee391', '#fe9929', '#d95f0e', '#8c2d04'];
 const CONS_LABELS = ['1 個', '2 個', '3 個', '4 個'];
 
@@ -164,6 +167,7 @@ export const SCALES = {
   rdiff: { cwa: zip(DIFF_BOUNDS, DIFF_COLOURS, DIFF_LABELS), cvd: zip(DIFF_BOUNDS, DIFF_COLOURS, DIFF_LABELS), contrast: zip(DIFF_BOUNDS, DIFF_COLOURS, DIFF_LABELS) },
   tdiff: { cwa: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), cvd: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), contrast: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS) },
   pdiff: { cwa: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), cvd: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), contrast: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS) },
+  wdiff: { cwa: zip(WDIFF_BOUNDS, WDIFF_COLOURS, DIFF2_LABELS), cvd: zip(WDIFF_BOUNDS, WDIFF_COLOURS, DIFF2_LABELS), contrast: zip(WDIFF_BOUNDS, WDIFF_COLOURS, DIFF2_LABELS) },
   rcons: { cwa: zip([1, 2, 3, 4], CONS_COLOURS, CONS_LABELS), cvd: zip([1, 2, 3, 4], CONS_COLOURS, CONS_LABELS), contrast: zip([1, 2, 3, 4], CONS_COLOURS, CONS_LABELS) },
   rain: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   radar: { cwa: zip(RADAR_BOUNDS, CWA_RADAR), cvd: zip(RADAR_BOUNDS, VIRIDIS13), contrast: zip(RADAR_BOUNDS, CONTRAST_RADAR) },

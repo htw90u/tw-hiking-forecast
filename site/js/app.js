@@ -389,13 +389,17 @@ const LAYER_GROUPS = [
 const groupOf = (id) => LAYER_GROUPS.find((g) => g[2].includes(id))?.[0];
 
 /** Show the chips of one group (default: the group of the chosen layer). */
-function showGroup(key) {
+function showGroup(key, reset = true) {
   const g = LAYER_GROUPS.find((x) => x[0] === key) || LAYER_GROUPS[0];
   S.layerGroup = g[0];
   document.querySelectorAll('#chips [data-layer]').forEach((b) => b.classList.toggle('grp-off', !g[2].includes(b.dataset.layer)));
   document.querySelectorAll('#chip-groups [data-group]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.group === g[0])));
-  const first = document.querySelector('#chips [data-layer]:not(.grp-off)');
-  if (first) first.parentElement.scrollLeft = 0;
+  if (reset) { const first = document.querySelector('#chips [data-layer]:not(.grp-off)'); if (first) first.parentElement.scrollLeft = 0; }
+}
+
+/** Keep the chosen layer's chip in view (a layer beyond the visible edge must not scroll back out of sight). */
+function revealChip(id) {
+  document.querySelector(`#chips [data-layer="${id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 function buildChips() {
@@ -579,7 +583,7 @@ function showMyLocation(c) {
 function updateBarLabel() {
   const l = LAYERS.find((x) => x.id === S.settings.layer);
   $('#bar-show-layer').textContent = l && l.id !== 'none' ? `：${l.label}` : '';
-  if (l && l.id !== 'none' && S.syncedLayer !== l.id) { S.syncedLayer = l.id; if (groupOf(l.id)) showGroup(groupOf(l.id)); }
+  if (l && l.id !== 'none' && S.syncedLayer !== l.id) { S.syncedLayer = l.id; if (groupOf(l.id) && groupOf(l.id) !== S.layerGroup) showGroup(groupOf(l.id)); revealChip(l.id); }
 }
 
 /** Text / icon interface switch in the map options panel (other display settings are in 設定). */

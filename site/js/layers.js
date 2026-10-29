@@ -92,6 +92,7 @@ export function layerKind(id) {
     const v = mmVar();
     const view = mmView();
     if (v === 'temp') return view === 'diff' ? 'tdiff' : 'temp';
+    if (v === 'wind') return view === 'diff' ? 'wdiff' : 'wind';
     if (v === 'msl') return view === 'diff' ? 'pdiff' : 'msl';
     return mmVar() === 'rain' ? { diff: 'rdiff', cons: 'rcons' }[view] || 'rain' : 'rain';
   }
@@ -591,7 +592,7 @@ function mmVar() { return ['wind', 'temp', 'msl'].includes(S.layer.mmVar) ? S.la
 function mmSel() {
   const list = mmModels();
   const one = list.includes(S.layer.mmModel) ? S.layer.mmModel : list[0];
-  if (mmVar() === 'wind' || !S.layer.mmCompare) return [one];
+  if (!S.layer.mmCompare) return [one];
   let raw = (S.layer.mmSel || []).filter((x) => list.includes(x));   // in the order they were ticked
   if (raw.length > mmMax()) raw = raw.slice(-mmMax());
   return raw.length ? list.filter((x) => raw.includes(x)) : [one];
@@ -675,11 +676,18 @@ function mmTimes() {
   return mmWindSteps();
 }
 
+function windStepsOf(id) {
+  if (id === 'wrf3') return S.wrf3?.steps || S.manifest?.layers?.wrf3?.steps || [];
+  return S.mmWind?.[id]?.steps || [];
+}
+
+/** Time steps of the wind view: the chosen model's, or in a comparison the ones both models have. */
 function mmWindSteps() {
   const id = mmId();
   if (!id) return [];
-  if (id === 'wrf3') return S.wrf3?.steps || S.manifest?.layers?.wrf3?.steps || [];
-  return S.mmWind?.[id]?.steps || [];
+  if (mmView() === 'one') return windStepsOf(id);
+  const others = mmCmpIds().slice(1).map((x) => new Set(windStepsOf(x).map(tkey)));
+  return windStepsOf(id).filter((t) => others.every((o) => o.has(tkey(t))));
 }
 
 /** Tooltip with the full model name and run time of a model button. */
@@ -710,7 +718,7 @@ function mmNowIndex(frames) {
 
 /** The wind file of the chosen model must be loaded before its time steps are known. */
 async function mmEnsureWind() {
-  if (mmVar() === 'wind' && mmId()) await mmLoadWind(mmId());
+  if (mmVar() === 'wind') await Promise.all(mmCmpIds().filter(Boolean).map((id) => mmLoadWind(id)));
 }
 
 async function mmLoadWind(id) {
@@ -730,7 +738,7 @@ async function mmLoadWind(id) {
 }
 
 /** Wind arrows (downwind direction, Beaufort number) on a regular grid, thinned to about 46 px; uv(k, cell) -> [u, v] | null. */
-function windField(g, uv, k, tip) {
+function windField(g, uv, k, tip, pane = 'spots') {
   const col = colourFn(scaleFor('wind', S.settings.palette));
   const p0 = S.map.latLngToLayerPoint([g.lat0, g.lon0]);
   const p1 = S.map.latLngToLayerPoint([g.lat0 + g.res, g.lon0 + g.res]);
@@ -749,7 +757,7 @@ function windField(g, uv, k, tip) {
       const bf = beaufort(ws);
       const from = (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360;
       const rgb = col(bf);
-      L.marker([lat, lon], { icon: windArrow(from, bf, `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`), keyboard: false, pane: 'spots', interactive: true })
+      L.marker([lat, lon], { icon: windArrow(from, bf, `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`), keyboard: false, pane, interactive: true })
         .bindTooltip(`${tip}：${esc(compass(from))} ${ws.toFixed(1)} m/s（${bf}級）`).addTo(ov);
     }
   }
@@ -896,7 +904,60 @@ async function showMMCompare() {
   renderTimeControl();
 }
 
+/** Speed (m/s) of one wind step as a grid object (row 0 = north) so that the comparison code can sample it. */
+function windSpeedGrid(w, k) {
+  const g = w.grid;
+  const values = new Float32Array(g.nx * g.ny);
+  for (let r = 0; r < g.ny; r += 1) {
+    for (let c = 0; c < g.nx; c += 1) {
+      const uv = w.uv(k, r * g.nx + c);
+      values[(g.ny - 1 - r) * g.nx + c] = uv ? Math.hypot(uv[0], uv[1]) : NaN;
+    }
+  }
+  const h = g.res / 2;
+  return { meta: { kind: 'wind' }, w: g.nx, h: g.ny, values, bounds: [g.lon0 - h, g.lat0 - h, g.lon0 + (g.nx - 1) * g.res + h, g.lat0 + (g.ny - 1) * g.res + h], parts: [] };
+}
+
+/** Swipe (arrows of two models either side of the divider) and difference (speed B - A) of the 10 m wind. */
+async function showMMWindCompare(keepFrame) {
+  const view = mmView();
+  const ids = mmCmpIds();
+  const ws = await Promise.all(ids.map((id) => mmLoadWind(id)));
+  if (S.layer.id !== 'mm' || mmView() !== view) return;
+  const steps = mmWindSteps();
+  if (ws.some((w) => !w?.steps?.length) || !steps.length) { clearOverlay(); renderLegend(null, '這幾個模式沒有共同的風場時間'); renderTimeControl(); return; }
+  if (!keepFrame || S.layer.frame >= steps.length) S.layer.frame = mmNowIndex(steps.map((t) => ({ time: t })));
+  const t = steps[S.layer.frame];
+  const ks = ws.map((w) => w.steps.findIndex((x) => tkey(x) === tkey(t)));
+  const infos = ids.map((id) => MM_INFO[id]);
+  const name = (x) => x.short || x.label;
+  const meta = { time: t, license: 'mm', src: infos.map((x) => x.src).join('；'),
+    licenseText: [...new Set(ids.map((x) => (x === 'wrf3' ? '中央氣象署開放資料' : S.manifest.layers.mm?.models?.[x]?.license)).filter(Boolean))].join('、'),
+    issued: ids.map((x) => (x === 'wrf3' ? S.manifest.layers.wrf3?.time : S.manifest.layers.mm?.models?.[x]?.init)).filter(Boolean).sort()[0] };
+  const warn = MM_WARN.wind[Math.max(...infos.map((x) => x.res))];
+  if (view === 'swipe') {
+    const panes = [mmPane('mmA'), mmPane('mmB')];
+    const ov = L.layerGroup();
+    ws.forEach((w, i) => windField(w.grid, w.uv, ks[i], `${name(infos[i])} 10 m 風`, i ? 'mmB' : 'mmA').addTo(ov));
+    let off = null;
+    ov.on('add', () => { off = swipeHandle(panes, infos.map(name)); });
+    ov.on('remove', () => { if (off) off(); off = null; });
+    clearOverlay();
+    finishOverlay(ov);
+    renderLegend({ label: `${name(infos[0])}｜${name(infos[1])} 10 m 風場`, ...meta, kindOverride: 'wind', noteWarn: warn,
+      note: '箭頭指向風吹去的方向，數字為蒲福風級；分隔線左右各為一個模式。' });
+  } else {
+    const cg = compareGrid('diff', ws.map((w, i) => windSpeedGrid(w, ks[i])));
+    const { kind, colour, opts } = renderParams('mm');
+    const [w0, s0, e0, n0] = cg.bounds;
+    finishOverlay(L.layerGroup([L.imageOverlay(gridImage(cg, kind, colour, opts), [[s0, w0], [n0, e0]], { opacity: layerOpacity('mm'), interactive: false, className: 'wx-grid' })]));
+    renderLegend({ label: `${name(infos[1])} − ${name(infos[0])} 10 m 風速差`, ...meta, kindOverride: kind, unit: 'm/s', noteWarn: warn });
+  }
+  renderTimeControl();
+}
+
 async function showMMWind(keepFrame) {
+  if (mmView() !== 'one') { await showMMWindCompare(keepFrame); return; }
   const id = mmId();
   const m = mmCurrent();
   const w = id ? await mmLoadWind(id) : null;
@@ -918,11 +979,11 @@ function mmTimeControl() {
   const m = mmCurrent();
   const times = mmTimes();
   const view = mmView();
-  const cmp = v !== 'wind' && Boolean(S.layer.mmCompare);
+  const cmp = Boolean(S.layer.mmCompare);
   const sel = mmSel();
   let h = modeTabs('模式預報項目', Object.entries(MM_VARS).map(([k, x]) => [k, x.label]), 'mmvar', v, Object.fromEntries(Object.entries(MM_VARS).map(([k, x]) => [k, x.icon])));
   h += `<div class="seg mm-models" role="${cmp ? 'group' : 'radiogroup'}" aria-label="模式">` + models.map((x) => `<button class="seg-btn" role="${cmp ? 'checkbox' : 'radio'}" aria-checked="${sel.includes(x)}" data-mmmodel="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('')
-    + (v !== 'wind' && models.length > 1 ? `<button class="seg-btn mm-cmp" aria-pressed="${cmp}" data-mmcmp>比較</button>` : '') + '</div>';
+    + (models.length > 1 ? `<button class="seg-btn mm-cmp" aria-pressed="${cmp}" data-mmcmp>比較</button>` : '') + '</div>';
   if (sel.length >= 2) {
     h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['swipe', '捲簾'], ['diff', '差值'], ...(v === 'rain' ? [['cons', '一致度']] : [])]
       .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === view}" data-mmview="${k}">${l}</button>`).join('') + '</div>';
@@ -1321,6 +1382,7 @@ function legendUnit(kind, unit) {
   if (kind === 'msl') return ['單位', 'hPa'];
   if (kind === 'rdiff') return ['差值', 'mm'];
   if (kind === 'tdiff') return ['差值', '°C'];
+  if (kind === 'wdiff') return ['差值', 'm/s'];
   if (kind === 'pdiff') return ['差值', 'hPa'];
   if (kind === 'rcons') return ['≥10 mm', '模式數'];
   if (kind === 'visib') return ['單位', 'km'];
@@ -1346,7 +1408,7 @@ function colourStrip(scale, kind) {
   const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).reverse().join('');
   const lbls = scale.map((x, i) => {
     if ((n - 1 - i) % step) return ''; // count down from the top class so the highest value is always labelled
-    const text = ['rdiff', 'tdiff', 'pdiff'].includes(kind) ? (i ? String(x[0]).replace('-', '−') : '') : kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
+    const text = ['rdiff', 'tdiff', 'pdiff', 'wdiff'].includes(kind) ? (i ? String(x[0]).replace('-', '−') : '') : kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
     return `<span style="bottom:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
   }).join('');
   return `<span class="lg-strip" style="--n:${n};--ch:${n > 16 ? 8 : n > 13 ? 9.5 : 12.5}px"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
@@ -1559,26 +1621,28 @@ export function renderTimeControl(meta) {
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });
   }));
-  el.querySelectorAll('[data-mmview]').forEach((b) => b.addEventListener('click', () => {
+  el.querySelectorAll('[data-mmview]').forEach((b) => b.addEventListener('click', async () => {
     const t = mmCurrentTime();
     S.layer.mmView = b.dataset.mmview;
     S.layer.mmSel = (S.layer.mmSel || []).filter((x) => mmSel().includes(x)).slice(-mmMax());   // swipe and difference keep the two ticked last
+    await mmEnsureWind();
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });
   }));
-  el.querySelectorAll('[data-mmcmp]').forEach((b) => b.addEventListener('click', () => {
+  el.querySelectorAll('[data-mmcmp]').forEach((b) => b.addEventListener('click', async () => {
     const t = mmCurrentTime();
     const cur = mmSel();
     S.layer.mmCompare = !S.layer.mmCompare;
     if (S.layer.mmCompare) S.layer.mmSel = [...new Set([...cur, mmModels().find((x) => !cur.includes(x))])].filter(Boolean);
     else S.layer.mmModel = cur[0];
+    await mmEnsureWind();
     mmKeepTime(t);
     showLayer('mm', { keepFrame: true });
   }));
   el.querySelectorAll('[data-mmmodel]').forEach((b) => b.addEventListener('click', async () => {
     const t = mmCurrentTime();
     const id = b.dataset.mmmodel;
-    if (S.layer.mmCompare && mmVar() !== 'wind') {
+    if (S.layer.mmCompare) {
       const cur = (S.layer.mmSel || []).filter((x) => mmSel().includes(x));
       // A third model replaces the one ticked first, unless the agreement map (up to four models) is chosen.
       S.layer.mmSel = cur.includes(id) ? (cur.length > 1 ? cur.filter((x) => x !== id) : cur) : [...cur, id].slice(-mmMax());

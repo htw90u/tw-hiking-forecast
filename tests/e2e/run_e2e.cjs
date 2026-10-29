@@ -1545,6 +1545,26 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
   });
 
+  await check('multi-model wind compare: arrows of two models either side of the divider, speed difference map', async () => {
+    const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}).length; });
+    if (has < 2) { console.log('SKIP no multi-model data built locally'); return; }
+    await selectLayer('.chip[data-layer="mm"]');
+    await page.click('[data-mmvar="wind"]');
+    await page.waitForSelector('.wind-mk', { timeout: 15000 });
+    if (!(await page.$('[data-mmcmp][aria-pressed="true"]'))) await page.click('[data-mmcmp]');
+    await page.click('[data-mmview="swipe"]');
+    await page.waitForSelector('#mm-split', { timeout: 15000 });
+    assert((await page.$$('.wind-mk')).length > 5, 'wind arrows missing in the swipe');
+    assert(!(await page.$('[data-mmview="cons"]')), 'no agreement map for wind');
+    await page.click('[data-mmview="diff"]');
+    await page.waitForSelector('img.wx-grid', { timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector('#mm-split'));
+    assert((await page.textContent('#legend')).includes('m/s'), 'wind difference legend missing');
+    await page.click('[data-mmcmp]');
+    await page.click('[data-mmvar="rain"]');
+    await page.waitForSelector('img.wx-grid');
+  });
+
   await check('multi-model compare: swipe divider moves, difference and consensus draw on the common lattice, models stay different', async () => {
     const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}); });
     if (has.length < 2) { console.log('SKIP no multi-model data built locally'); return; }
