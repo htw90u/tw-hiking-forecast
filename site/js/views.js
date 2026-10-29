@@ -9,7 +9,7 @@ import { getGrid, framesFor, layerDef, showLayer, stopAnimation, PERIOD_LAYERS, 
 import { sample, classRange, renderGrid } from './grid.js';
 import { scaleFor, colourFn } from './palettes.js';
 import { chart, dataTable } from './chart.js';
-import { assess, LEVELS } from './safety.js';
+import { assess, LEVELS, STRONG_QUAKE_KM } from './safety.js';
 import { loadAloft, aloftCard, sunCard, levelAlt as levelAltOf, compass as compassName } from './aloft.js';
 import { sunTimes, twDate } from './sun.js';
 import { ensembleCard, bindEnsemble } from './ensemble.js';
@@ -705,6 +705,7 @@ function patchPanel(prev, next) {
 }
 
 export async function showPoint(lat, lon, opts = {}) {
+  S.lastPoint = { lat, lon, opts };   // lets the earthquake view say what the quake means for this point and come back to it
   stopAnimation();
   if (!S.focus) S.focus = L.layerGroup().addTo(S.map);
   S.focus.clearLayers();
@@ -1018,7 +1019,7 @@ function bindCommon(root) {
   }));
   root.querySelectorAll('[data-quake]').forEach((b) => b.addEventListener('click', () => {
     const q = S.quakes.find((x) => x.time === b.dataset.quake);
-    if (q) showQuake(q);
+    if (q) showQuake(q, { from: b.closest('#sheet-body') && S.lastPoint ? S.lastPoint : null });
   }));
   root.querySelectorAll('[data-open="typhoon"]').forEach((b) => b.addEventListener('click', () => showTyphoon()));
   root.querySelectorAll('[data-point]').forEach((b) => b.addEventListener('click', () => {
@@ -1056,7 +1057,7 @@ function intensityIcon(iv, label) {
   return L.divIcon({ className: 'int-mk', html: `<span style="background:${colour};color:${dark ? '#fff' : '#000'}">${esc(label)}</span>`, iconSize: [26, 22] });
 }
 
-export async function showQuake(q) {
+export async function showQuake(q, { from = null } = {}) {
   if (!S.focus) S.focus = L.layerGroup().addTo(S.map);
   S.focus.clearLayers();
   // Distance rings (labelled) and epicentre.
@@ -1087,25 +1088,33 @@ export async function showQuake(q) {
   const li = ({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${d.toFixed(1)} km</span></li>`;
   const strong = isStrongQuake(q);
   const hard = (q.areas || []).filter((a) => (a.iv ?? 0) >= 4);
-  const body = html`<p><strong>規模 ${q.mag}</strong>・深度 ${q.depth} km・${fmtTime(q.time)}・最大震度 ${intText(q.maxInt)}</p>
-<p>${q.loc}</p>
+  const dFrom = from ? haversineKm(from.lat, from.lon, q.lat, q.lon) : null;
+  const fromLv = dFrom === null || !strong ? 0 : dFrom <= STRONG_QUAKE_KM.danger ? 2 : dFrom <= STRONG_QUAKE_KM.caution ? 1 : 0;
+  const fromName = from?.opts?.label || '所選地點';
+  const body = html`<p class="qsub">${q.loc}・${fmtTime(q.time)}・深度 ${q.depth} km</p>
+<div class="pstrip qstat">
+<div class="pill ${strong ? 'lv1' : ''}"><b>${q.mag}</b>規模</div>
+<div class="pill ${strong ? 'lv1' : ''}"><b>${intText(q.maxInt)}</b>最大震度</div>
+<div class="pill ${fromLv === 2 ? 'lv2' : fromLv === 1 ? 'lv1' : ''}"><b>${dFrom === null ? '—' : `${dFrom.toFixed(0)} km`}</b>${dFrom === null ? '距所選點' : '距你選的點'}</div>
+<div class="pill"><b>${q.depth} km</b>深度</div></div>
+${from ? html`<section class="card ${fromLv === 2 ? 'warn' : ''}"><h3>對你所選的點（${fromName}）</h3>
+<p>${fromLv ? html`${lvBadge(fromLv)} 距震央 ${dFrom.toFixed(0)} km，登山安全評估已納入此強震。` : (strong ? `距震央 ${dFrom.toFixed(0)} km，超過 ${STRONG_QUAKE_KM.caution} km，不列入登山安全評估。` : `距震央 ${dFrom.toFixed(0)} km。`)} <button type="button" class="link" data-backpoint>回到評估 ›</button></p></section>` : ''}
 ${strong ? html`<section class="card warn"><h3>強震注意</h3>
-<p>最大震度 ${intText(q.maxInt)}${hard.length ? html`，震度 4 級以上：${hard.map((a) => `${a.area} ${a.int}`).join('、')}` : ''}。</p>
-<ul><li>山區可能有落石、坍方、步道或林道中斷，接下來數天仍可能有規模較大的餘震。</li>
-<li>出發前請向林業及自然保育署、國家公園管理處或當地公所確認步道與道路開放狀態。</li>
-<li>已在山上：遠離邊坡、溪谷與崩塌地，盡量不要在落石區停留，必要時考慮撤退。</li></ul></section>` : ''}
-<section class="card"><h3>地圖說明</h3>
+<ul class="risklist"><li>${lvBadge(1)} 山區可能有落石、坍方、步道或林道中斷，接下來數天仍可能有規模較大的餘震。</li>
+<li>${lvBadge(1)} 出發前請向林業及自然保育署、國家公園管理處或當地公所確認步道與道路開放狀態。</li>
+<li>${lvBadge(2)} 已在山上：遠離邊坡、溪谷與崩塌地，盡量不要在落石區停留，必要時考慮撤退。</li></ul></section>` : ''}
+<section class="card"><details class="qlist"><summary>地圖說明與震度色階</summary>
 <p>${q.shake ? '彩色區塊：氣象署等震度圖（自動對位疊合）。' : '此筆地震沒有等震度圖（氣象署僅提供最新一筆顯著有感地震）。'}方塊數字：各測站實測震度。紅色虛線：距震央 10／30／50 km。</p>
-${legend}<p class="note">按標題列的 ▾ 或往下滑可縮小面板，地圖上的距離圈與震度仍會保留；按 ✕ 才會清除。</p></section>
+${legend}<p class="note">按標題列的 ▾ 或往下滑可縮小面板，地圖上的距離圈與震度仍會保留；按 ✕ 才會清除。</p></details></section>
 <section class="card"><h3>震央 50 km 內的山（${mountains.length}）</h3>${mountains.length ? html`<ul class="cols">${mountains.map(li)}</ul>` : html`<p>無登山預報點位。</p>`}</section>
 ${others.length ? html`<section class="card"><h3>其他景點</h3><ul class="cols">${others.map(li)}</ul></section>` : ''}
 ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內）</h3><p>${towns.join('、')}</p></section>` : ''}
-<section class="card"><h3>各地震度</h3><table class="kv"><tbody>${q.areas.map((a) => html`<tr><th scope="row">${a.area}</th><td>${a.int}</td></tr>`)}</tbody></table></section>
+<section class="card"><details class="qlist"><summary>各地震度${hard.length ? `（震度 4 級以上：${hard.map((a) => `${a.area} ${a.int}`).join('、')}）` : ''}</summary><table class="kv"><tbody>${q.areas.map((a) => html`<tr><th scope="row">${a.area}</th><td>${a.int}</td></tr>`)}</tbody></table></details></section>
 <p class="muted">${q.text || ''}</p>
 ${strong && q.img ? html`<section class="card"><h3>氣象署地震報告圖</h3><img class="eq-report" src="${safeUrl(q.img)}" alt="地震報告圖（震央與各地震度）" loading="lazy"></section>` : ''}
 <p><a href="${safeUrl(q.web)}" target="_blank" rel="noopener">氣象署地震報告頁</a>${q.img ? html`・<a href="${safeUrl(q.img)}" target="_blank" rel="noopener">報告圖</a>` : ''}</p>
 <p class="note">震度 4 級以上的山區請留意落石、坍方與步道受損。</p>`;
-  openSheet(`地震 M${q.mag}${strong ? '（強震）' : ''}`, body, { onRender: bindCommon, peek: true, quake: true });
+  openSheet(`地震 M${q.mag}${strong ? '（強震）' : ''}`, body, { onRender: (root) => { bindCommon(root); root.querySelector('[data-backpoint]')?.addEventListener('click', () => showPoint(from.lat, from.lon, from.opts)); }, peek: true, quake: true });
   // Zoom to the felt area (stations with intensity >= 1, at least the 50 km ring) above the sheet.
   const pts = (q.stations || []).filter((s) => (s.iv ?? 0) >= 1).map((s) => [s.lat, s.lon]);
   const bounds = L.latLngBounds([[q.lat, q.lon], ...pts]).extend(L.latLng(q.lat, q.lon).toBounds(110000));

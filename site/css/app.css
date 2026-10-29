@@ -613,3 +613,8 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .qlist summary { min-height: 44px; }
 .more-st { margin: .2rem 0 0; }
 .more-st summary { min-height: 44px; }
+.qsub { margin: 0 0 .4rem; color: var(--muted); font-size: .85rem; }
+.qstat { margin-bottom: .5rem; }
+.risklist { list-style: none; padding: 0; margin: 0; }
+.risklist li { margin: .35rem 0; }
+.ty-banner.eq-banner.eq-strong { background: var(--eq); }

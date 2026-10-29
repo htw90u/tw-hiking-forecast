@@ -582,9 +582,9 @@ function updateStatus() {
   const tyBanner = ty ? `<button class="ty-banner" id="ty-banner" title="${esc(tyTitle)}" aria-label="${esc(`${tyNames ? `${tyNames}颱風` : '颱風'}，${tyTitle}，查看詳情`)}"><span aria-hidden="true">🌀</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Felt earthquakes in the last 24 hours get their own banner and tab (like a typhoon warning).
   const recentQ = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < QUAKE_RECENT_MS);
-  const q0 = recentQ[0];
+  const q0 = recentQ.find(isStrongQuake) || recentQ[0];   // a strong quake leads the status strip
   const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
-  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">〰</span><span>地震 ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
+  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">〰</span><span>${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Base-map notice: a short warning pill; the full sentence opens under the strip (and stays in the text for screen readers).
   const baseNote = S.baseNotice ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
   const upd = `<span class="sp sp-plain">資料更新 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
