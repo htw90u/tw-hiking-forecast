@@ -1,6 +1,7 @@
 // Collapsible, colour-themed cards for the point panel. Every card has an icon, a title and a one-line summary (so a
 // folded card still says something); the open / closed state of each card is remembered between visits.
 import { esc } from './util.js';
+import { ico } from './icons.js';
 
 /** Card groups: label (jump chips) and glyph; the colour comes from the CSS variable --g-<id>. */
 export const GROUPS = {
@@ -30,8 +31,8 @@ function save(state) {
 export function card({ id, grp, icon, title, summary = '', body = '', open = false, alert = false, extra = '', titleId = '' }) {
   const g = GROUPS[grp] || GROUPS.info;
   return `<details class="pcard g-${grp}${extra ? ` ${extra}` : ''}" data-card="${esc(id)}" data-grp="${grp}" data-open="${open ? 1 : 0}"${alert ? ' data-alert="1"' : ''}${open || alert ? ' open' : ''}>`
-    + `<summary><span class="pc-ic" aria-hidden="true">${icon || g.icon}</span><span class="pc-tx"><span class="pc-t"${titleId ? ` id="${esc(titleId)}"` : ''}>${esc(title)}</span>`
-    + `${summary ? `<span class="pc-s">${esc(summary)}</span>` : ''}</span><span class="pc-chev" aria-hidden="true">▾</span></summary><div class="pc-body">${body}</div></details>`;
+    + `<summary><span class="pc-ic" aria-hidden="true">${ico(icon || g.icon)}</span><span class="pc-tx"><span class="pc-t"${titleId ? ` id="${esc(titleId)}"` : ''}>${esc(title)}</span>`
+    + `${summary ? `<span class="pc-s">${esc(summary)}</span>` : ''}</span><span class="pc-chev" aria-hidden="true">${ico('chev-down')}</span></summary><div class="pc-body">${body}</div></details>`;
 }
 
 /**

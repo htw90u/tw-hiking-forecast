@@ -523,7 +523,15 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .sheet-menu > * { display: flex; align-items: center; min-height: 44px; padding: 0 .8rem; border: 0; border-radius: .5rem; background: none; color: var(--fg); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
 .sheet-menu > *:hover, .sheet-menu > *:focus-visible { background: var(--chip); }
 .pjump .g-ens { --c: var(--accent); }
-.sheet.pt #sheet-fav { display: none; }
+.sheet.pt #sheet-toggle { display: none; }   /* a point panel keeps full screen in the ⋯ menu */
+.ic { width: 1.15em; height: 1.15em; vertical-align: -.2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.icon-btn .ic { width: 1.35em; height: 1.35em; }
+.ty-icon .ic { width: 28px; height: 28px; stroke: #b3261e; stroke-width: 2.4; filter: drop-shadow(0 0 2px #fff); }
+.info-btn { min-height: 44px; min-width: 44px; vertical-align: middle; }
+.pc-ic .ic { width: 1.15rem; height: 1.15rem; }
+.pc-chev .ic { width: 1rem; height: 1rem; }
+#btn-play .ic { width: 1.3rem; height: 1.3rem; }
+.seg-btn i .ic { width: 1.1em; height: 1.1em; }
 .pcard > summary::before, details.sub > summary::before, details[open] > .pcard > summary::before { content: none !important; }
 #q-results li.hist .tag { background: var(--chip); color: var(--muted); }
 #q-results .hist-del { position: absolute; right: .2rem; top: 50%; transform: translateY(-50%); min-width: 2.75rem; min-height: 2.75rem; border: 0; background: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; }

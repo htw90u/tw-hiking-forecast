@@ -1,6 +1,7 @@
 // Entry point: map setup, data loading, overlays, controls and settings.
 import { S } from './state.js';
 import { loadSettings, saveSettings, applySettings, DEFAULTS } from './settings.js';
+import { ico, paintIcons } from './icons.js';
 import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $, intText, isStrongQuake, eleText } from './util.js';
 import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
@@ -230,7 +231,7 @@ function buildOverlays() {
         const now = c.fcst[0] || cur;
         if (now.r15) L.circle([cur.lat, cur.lon], { radius: now.r15 * 1000, color: '#e69f00', weight: 2, fillOpacity: 0.08, interactive: false }).addTo(o.typhoon);
         if (now.r25) L.circle([cur.lat, cur.lon], { radius: now.r25 * 1000, color: '#d55e00', weight: 2, fillOpacity: 0.12, interactive: false }).addTo(o.typhoon);
-        L.marker([cur.lat, cur.lon], { icon: L.divIcon({ className: 'ty-icon', html: '🌀', iconSize: [30, 30] }), title: `${c.cname}颱風` })
+        L.marker([cur.lat, cur.lon], { icon: L.divIcon({ className: 'ty-icon', html: ico('typhoon'), iconSize: [30, 30] }), title: `${c.cname}颱風` })
           .on('click', () => showTyphoon()).addTo(o.typhoon);
       }
       const labels = [];
@@ -579,12 +580,12 @@ function updateStatus() {
   const ty = S.typhoon?.active ? S.typhoon : null;
   const tyNames = ty ? ty.cyclones.map((c) => c.cname || c.name).filter(Boolean).join('、') : '';
   const tyTitle = ty ? (ty.warnings || []).map((w) => w.title).filter(Boolean)[0] || '颱風警報' : '';
-  const tyBanner = ty ? `<button class="ty-banner" id="ty-banner" title="${esc(tyTitle)}" aria-label="${esc(`${tyNames ? `${tyNames}颱風` : '颱風'}，${tyTitle}，查看詳情`)}"><span aria-hidden="true">🌀</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
+  const tyBanner = ty ? `<button class="ty-banner" id="ty-banner" title="${esc(tyTitle)}" aria-label="${esc(`${tyNames ? `${tyNames}颱風` : '颱風'}，${tyTitle}，查看詳情`)}"><span aria-hidden="true">${ico('typhoon')}</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Felt earthquakes in the last 24 hours get their own banner and tab (like a typhoon warning).
   const recentQ = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < QUAKE_RECENT_MS);
   const q0 = recentQ.find(isStrongQuake) || recentQ[0];   // a strong quake leads the status strip
   const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
-  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">〰</span><span>${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
+  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">${ico('wave')}</span><span>${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Base-map notice: a short warning pill; the full sentence opens under the strip (and stays in the text for screen readers).
   const baseNote = S.baseNotice ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
   const upd = `<span class="sp sp-plain">資料更新 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
@@ -650,7 +651,7 @@ function bindSearch() {
   input.addEventListener('input', () => {
     if (!input.value.trim()) { showHistory(); return; }
     results = search(input.value);
-    list.innerHTML = results.map((r, i) => `<li role="option" id="qr-${i}" tabindex="-1" data-i="${i}"><span class="tag">${esc(r.type)}</span>${esc(r.label)}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}<button type="button" class="fav-btn" data-fav="${i}" aria-pressed="false" aria-label="加入收藏：${esc(favTitle(r))}" title="加入收藏">☆</button></li>`).join('');
+    list.innerHTML = results.map((r, i) => `<li role="option" id="qr-${i}" tabindex="-1" data-i="${i}"><span class="tag">${esc(r.type)}</span>${esc(r.label)}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}<button type="button" class="fav-btn" data-fav="${i}" aria-pressed="false" aria-label="加入收藏：${esc(favTitle(r))}" title="加入收藏">${ico('star')}</button></li>`).join('');
     list.hidden = !results.length;
     input.setAttribute('aria-expanded', String(!list.hidden));
     paintFavs();
@@ -660,7 +661,7 @@ function bindSearch() {
   const favEntry = (r) => ({ id: pointId(r.lat, r.lon), lat: r.lat, lon: r.lon, title: favTitle(r), spotKey: r.spot, stationId: r.station, peakKey: r.peak?.k });
   const paintFavs = () => listFav().then((favs) => list.querySelectorAll('[data-fav]').forEach((b) => {
     const on = favs.some((f) => f.id === pointId(results[Number(b.dataset.fav)].lat, results[Number(b.dataset.fav)].lon));
-    b.textContent = on ? '★' : '☆';
+    b.innerHTML = ico(on ? 'star-fill' : 'star');
     b.setAttribute('aria-pressed', String(on));
     b.title = on ? '取消收藏' : '加入收藏';
   }));
@@ -949,6 +950,7 @@ async function loadData() {
 }
 
 async function main() {
+  paintIcons();
   S.settings = loadSettings();
   applySettings(S.settings);
   try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applySettings(S.settings)); } catch { /* old browsers */ }
@@ -1002,6 +1004,8 @@ async function main() {
     if (full) sh.classList.remove('peek');
     document.body.classList.toggle('sheet-full', full);
     $('#sheet-toggle').setAttribute('aria-expanded', String(full));
+    $('#sheet-toggle').firstElementChild.innerHTML = ico(full ? 'shrink' : 'expand');
+    $('#sheet-toggle').setAttribute('aria-label', full ? '還原面板大小' : '放大面板');
     setTimeout(() => S.map.invalidateSize(), 50);
   });
   bindSheetSwipe();

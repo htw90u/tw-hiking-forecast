@@ -902,13 +902,13 @@ function serve() {
     await page.waitForSelector('#sheet.open details.pcard');
     const info = await page.evaluate(() => ({
       cards: [...document.querySelectorAll('#sheet-body details.pcard')].map((d) => ({ id: d.dataset.card, grp: d.dataset.grp, open: d.open, sum: d.querySelector('.pc-s')?.textContent || '' })),
-      bar: (() => { const a = document.querySelector('.ptbar .acts').getBoundingClientRect(); const b = document.querySelector('.ptbar').getBoundingClientRect(); return { right: Math.round(b.right - a.right), n: document.querySelectorAll('.ptbar .acts .ab').length }; })(),
+      head: { fav: !document.getElementById('sheet-fav').hidden, more: !document.getElementById('sheet-more').hidden, full: getComputedStyle(document.getElementById('sheet-toggle')).display !== 'none' },
     }));
     const groups = new Set(info.cards.map((c) => c.grp));
     assert(info.cards.length >= 8 && ['safe', 'obs', 'fc', 'sun'].every((g) => groups.has(g)), `cards ${JSON.stringify(info.cards.map((c) => c.id))}`);
     const folded = info.cards.filter((c) => !c.open && ['now', 'rain', 'sun', 'ens'].includes(c.id));
     assert(folded.length >= 2 && folded.every((c) => c.sum.length > 3), `folded cards lack a summary: ${JSON.stringify(folded)}`);
-    assert(info.bar.n === 1 && info.bar.right <= 4, `favourite button not right-aligned: ${JSON.stringify(info.bar)}`);
+    assert(info.head.fav && info.head.more && !info.head.full, `point panel header should hold star and ⋯ (no full-screen button): ${JSON.stringify(info.head)}`);
     assert(info.cards.find((c) => c.id === 'stations')?.open && info.cards.find((c) => c.id === 'fc')?.open && !info.cards.find((c) => c.id === 'sun')?.open, 'default open / folded cards');
     // remembered: open the sun card, reopen the panel
     await page.click('[data-card="sun"] > summary');

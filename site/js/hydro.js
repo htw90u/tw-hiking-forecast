@@ -1,6 +1,7 @@
 // River water level, reservoir releases and debris-flow alerts (WRA / ARDSWC open data via the pipeline): data, status and point card.
 import { S } from './state.js';
 import { getJSON, fmtTime, esc, haversineKm, normCounty, html, raw } from './util.js';
+import { ico } from './icons.js';
 
 export async function loadHydro() {
   if (!S.hydro) S.hydro = await getJSON('hydro.json', { optional: true });
@@ -68,7 +69,7 @@ export function hydroCard(h, lat, lon, county, town) {
   if (!alerts.length && !rivers.length && !rsv.length) return '';
   const lv = (a) => (a.level === 'red' ? '紅色警戒' : '黃色警戒');
   return html`<section class="card ${alerts.some((a) => a.level === 'red') ? 'warn' : ''}" aria-labelledby="h-hydro"><h3 id="h-hydro">水情與土石流</h3>
-${alerts.length ? html`<p><strong>⚠ ${normCounty(county)}${town} 土石流警戒：</strong>${alerts.map((a) => `${lv(a)}${a.village ? `（${a.village}）` : ''}`).join('、')}。豪雨期間請避開溪谷、林道與崩塌地。</p>` : ''}
+${alerts.length ? html`<p><strong>${raw(ico('alert'))} ${normCounty(county)}${town} 土石流警戒：</strong>${alerts.map((a) => `${lv(a)}${a.village ? `（${a.village}）` : ''}`).join('、')}。豪雨期間請避開溪谷、林道與崩塌地。</p>` : ''}
 ${rivers.length ? html`<h4>鄰近河川水位站</h4><ul>${rivers.map(({ r, d }) => html`<li>${raw(riverTip(r))} <span class="meta">距此 ${d.toFixed(1)} km</span></li>`)}</ul>` : ''}
 ${rsv.length ? html`<h4>鄰近水庫</h4><ul>${rsv.map(({ r, d }) => html`<li>${raw(reservoirTip(r))} <span class="meta">距此 ${d.toFixed(1)} km</span></li>`)}</ul>` : ''}
 <p class="note">水位為經濟部水利署即時資料（未經品管，儀器故障時可能異常）；土石流警戒為農業部農村發展及水土保持署發布。溪流水位上漲很快，渡溪前請以現場狀況為準，上游下雨時下游也可能暴漲。</p></section>`;

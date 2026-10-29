@@ -15,6 +15,7 @@ import { sunTimes, twDate } from './sun.js';
 import { ensembleCard, bindEnsemble } from './ensemble.js';
 import { loadHydro, hydroCard, townAlerts } from './hydro.js';
 import { cardize, bindCards, jumpToGroup, GROUPS } from './cards.js';
+import { ico } from './icons.js';
 import { saveRecent, listRecent, getRecent, toggleFav, listFav, pointId, clearRecent, deleteRecent, deleteFav } from './store.js';
 
 // ------------------------------------------------------------------ sheet
@@ -94,11 +95,11 @@ function setSheetFav(fav) {
   b.onclick = null;
   if (!fav) return;
   const paint = (on) => {
-    b.firstElementChild.textContent = on ? '★' : '☆';
+    b.firstElementChild.innerHTML = ico(on ? 'star-fill' : 'star');
     b.setAttribute('aria-pressed', String(on));
     b.setAttribute('aria-label', on ? `取消收藏：${fav.title}` : `加入收藏：${fav.title}`);
     b.title = on ? '取消收藏' : '加入收藏';
-    document.querySelectorAll('#btn-fav').forEach((x) => { x.textContent = on ? '★ 已收藏' : '☆ 收藏'; x.setAttribute('aria-pressed', String(on)); });
+    document.querySelectorAll('#btn-fav').forEach((x) => { x.innerHTML = `${ico(on ? 'star-fill' : 'star')} ${on ? '已收藏' : '收藏'}`; x.setAttribute('aria-pressed', String(on)); });
   };
   paint(false);
   listFav().then((f) => paint(f.some((x) => x.id === fav.id)));
@@ -177,7 +178,7 @@ export function setSheetMini(on, { refit = true } = {}) {
   if (b) {
     b.setAttribute('aria-expanded', String(!on));
     b.setAttribute('aria-label', on ? '展開面板' : '縮小面板（保留地圖上的標示）');
-    b.firstElementChild.textContent = on ? '▴' : '▾';
+    b.firstElementChild.innerHTML = ico(on ? 'chev-up' : 'chev-down');
   }
   if (refit && S.focusBounds) setTimeout(() => { S.map.invalidateSize(); fitVisible(S.focusBounds); }, 60);
 }
@@ -760,7 +761,7 @@ export async function showPoint(lat, lon, opts = {}) {
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
   // Header hint: this place has no CWA forecast of its own (only a chosen forecast spot or a station has).
   const noForecast = opts.stationId ? '' : peak ? '無氣象署預報・顯示鄰近鄉鎮與鄰近山頭預報' : !spotPick ? '非預報點・顯示鄉鎮與鄰近山頭預報' : '';
-  const placeLine = [peak?.tags?.length ? peak.tags.map((t) => S.peakLists[t] || t).join('・') : null, peak?.ele ? `海拔 ${eleText(peak)}${peak.est ? '（地形模型估計）' : ''}` : null, town ? `${normCounty(town.COUNTYNAME)} ${town.TOWNNAME}` : null, `${lat.toFixed(5)}, ${lon.toFixed(5)}`].filter(Boolean).join('・');
+  const placeLine = [peak?.tags?.length ? peak.tags.map((t) => S.peakLists[t] || t).join('・') : null, peak?.ele ? `${eleText(peak)}${peak.est ? '（地形模型估計）' : ''}` : null, town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : null].filter(Boolean).join('・') || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
   // The list of nearby places leaves out the place itself: the chosen spot and its duplicates under other categories (same name, same spot).
   const isSelf = ({ it, d }) => it.k === spotPick?.k || (d < 0.3 && [spotPick?.n, peak?.n, opts.label].some((n) => n && (it.n === n || it.n.includes(n) || n.includes(it.n))));
   const near = spotsNear.filter((x) => !isSelf(x)).slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
@@ -910,21 +911,23 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
   const groupsPresent = Object.keys(GROUPS).filter((g) => present.some((k) => cardsOut[k].includes(`data-grp="${g}"`)));
   const bf = (n) => (n === null || n === undefined ? '—' : `${n} 級`);
   const sT = brief?.T ?? ws0?.T ?? null;
-  const briefSrc = brief ? `${spotFc ? '地點預報' : townFc ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}鄉鎮預報` : '鄰近山頭預報'}・${fmtTime(brief.t)}–${fmtTime(new Date(new Date(brief.t).getTime() + 3 * 3600e3).toISOString(), { date: false })}（降雨機率、溫度、風力為此 3 小時時段；完整預報見下方${spotFc ? '「地點預報」' : townFc ? '「鄉鎮預報」' : '「鄰近山頭預報」'}卡片）` : '';
+  const briefWhere = spotFc ? '地點預報' : townFc ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}鄉鎮預報` : '鄰近山頭預報';
+  const briefCard = spotFc ? '「地點預報」' : townFc ? '「鄉鎮預報」' : '「鄰近山頭預報」';
+  const briefSrc = brief ? `${briefWhere}・${fmtTime(brief.t)}–${fmtTime(new Date(new Date(brief.t).getTime() + 3 * 3600e3).toISOString(), { date: false })}` : '';
+  const briefInfo = `降雨機率、溫度、風力為此 3 小時時段；完整預報見下方${briefCard}卡片。`;
   const strip = html`<div class="pstrip">
 <div class="pill ${LEVELS[risk.level].cls === 'lv0' ? '' : LEVELS[risk.level].cls}"><b>${LEVELS[risk.level].label}</b>安全評估</div>
 <div class="pill"><b>${brief?.pop != null ? `${brief.pop}%` : '—'}</b>降雨機率</div>
 <div class="pill"><b>${sT !== null ? `${fmtNum(sT, 0)}°C` : '—'}</b>${brief?.AT != null ? `體感 ${brief.AT}°` : '氣溫'}</div>
 <div class="pill ${(brief?.bf ?? 0) >= 6 ? 'lv1' : ''}"><b>${bf(brief?.bf ?? (ws0?.WS !== undefined ? beaufort(ws0.WS) : null))}</b>${brief?.g != null ? `陣風 ${beaufort(brief.g)} 級` : '風力'}</div></div>
-${briefSrc ? html`<p class="pstrip-src">${briefSrc}</p>` : ''}`;
+${briefSrc ? html`<p class="pstrip-src">${briefSrc} <button type="button" class="link info-btn" id="btn-brief-info" aria-expanded="false" aria-controls="pstrip-info" aria-label="這三格的說明">${raw(ico('info'))}</button></p><p class="pstrip-src" id="pstrip-info" hidden>${briefInfo}</p>` : ''}`;
   const jumpChips = groupsPresent.map((g) => `<button type="button" class="g-${g}" data-jump="${g}">${GROUPS[g].label}</button>`).join('') + '<button type="button" id="btn-ens-jump" class="g-ens">系集預報</button>';
   const jump = html`<div class="pjump" role="group" aria-label="跳到區段">${raw(jumpChips)}</div>`;
   const windy = `https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${lat.toFixed(3)},${lon.toFixed(3)},11`;
   return { cardsOut, present, order, strip, jump, windy, chips: jumpChips };
   };
   const bodyOf = ({ cardsOut, present, strip, jump, windy }) => html`
-<div class="ptbar"><p class="place">${placeLine}</p>
-<div class="acts"><button type="button" class="ab fav" id="btn-fav" aria-pressed="false">☆ 收藏</button></div></div>
+<div class="ptbar"><p class="place">${placeLine}</p></div>
 ${strip}${jump}
 ${raw(present.map((k) => cardsOut[k]).join(''))}
 <p class="src">資料來源：中央氣象署開放資料。資料更新 ${fmtTime(S.manifest?.built)}</p>`;
@@ -954,10 +957,12 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
       bindHistory(root);
       bindCards(root);
       bindEnsemble(root, lat, lon, eleHere);
+      root.querySelector('#btn-brief-info')?.addEventListener('click', (ev) => { const d = root.querySelector('#pstrip-info'); d.hidden = !d.hidden; ev.currentTarget.setAttribute('aria-expanded', String(!d.hidden)); });
       root.querySelector('#btn-fav')?.addEventListener('click', () => document.getElementById('sheet-fav').click());
       setSheetMenu([
-        { label: '🌀 在 Windy 開啟', href: built.windy },
-        { label: '⌖ 複製座標', keepOpen: true, run: async (el) => { const t = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; try { await navigator.clipboard.writeText(t); el.textContent = '已複製'; } catch { el.textContent = t; } } },
+        { label: '在 Windy 開啟', href: built.windy },
+        { label: '複製座標', keepOpen: true, run: async (el) => { const t = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; try { await navigator.clipboard.writeText(t); el.textContent = '已複製'; } catch { el.textContent = t; } } },
+        { label: '全螢幕展開／還原', run: () => document.getElementById('sheet-toggle').click() },
         { label: '全部展開', cards: 'open' },
         { label: '全部收合', cards: 'close' },
       ]);
@@ -1185,7 +1190,7 @@ export function showAlerts() {
   const w = S.warnings || { counties: [], bulletins: [] };
   const withHz = w.counties.filter((c) => c.hazards.length);
   const body = html`
-${S.typhoon?.active ? html`<section class="card warn"><h3>🌀 颱風警報</h3><p>${S.typhoon.cyclones.map((c) => `${c.cname}（${c.name}）`).join('、')}</p><button class="btn" data-open="typhoon">颱風路徑與風雨預測</button></section>` : ''}
+${S.typhoon?.active ? html`<section class="card warn"><h3>${raw(ico('typhoon'))} 颱風警報</h3><p>${S.typhoon.cyclones.map((c) => `${c.cname}（${c.name}）`).join('、')}</p><button class="btn" data-open="typhoon">颱風路徑與風雨預測</button></section>` : ''}
 <section class="card"><h3>各縣市警特報</h3>${withHz.length ? html`<table class="kv"><tbody>${withHz.map((c) => html`<tr><th scope="row">${c.county}</th><td>${c.hazards.map((h) => `${h.ph}${h.sig}`).join('、')}</td></tr>`)}</tbody></table>` : html`<p>目前沒有生效中的警特報。</p>`}</section>
 ${w.bulletins.map((b) => html`<section class="card"><h3>${b.title}</h3><p class="muted">發布 ${fmtTime(b.issue)}・至 ${fmtTime(b.end)}</p><details><summary>全文</summary><pre class="text">${b.text || ''}</pre></details></section>`)}
 <p class="note">地震另有獨立的「地震」提示（24 小時內有地震時顯示）。<button class="link inline" id="btn-allq">查看所有地震報告</button></p>`;

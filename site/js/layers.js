@@ -1,5 +1,6 @@
 // Weather map layers: grid overlays, satellite, typhoon rain choropleth; legend and time control.
 import { S } from './state.js';
+import { ico } from './icons.js';
 import { getJSON, fmtTime, esc, normCounty, beaufort, haversineKm, apparentTemp } from './util.js';
 import { loadGrid, renderGrid } from './grid.js';
 import { scaleFor, colourFn, classLabel } from './palettes.js';
@@ -152,19 +153,19 @@ function clearOverlay() {
 export function stopAnimation() {
   if (S.layer.timer) { clearInterval(S.layer.timer); S.layer.timer = null; }
   const b = document.getElementById('btn-play');
-  if (b) { b.textContent = '▶'; b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', '播放'); b.title = '播放'; }
+  if (b) { b.innerHTML = ico('play'); b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', '播放'); b.title = '播放'; }
 }
 
 /** Play / pause button shared by every time-stepped layer (the radar has always had one). */
 function playButton() {
   const playing = Boolean(S.layer.timer);
-  return `<button id="btn-play" class="btn play" aria-pressed="${playing}" aria-label="${playing ? '暫停' : '播放'}" title="${playing ? '暫停' : '播放'}">${playing ? '❚❚' : '▶'}</button>`;
+  return `<button id="btn-play" class="btn play" aria-pressed="${playing}" aria-label="${playing ? '暫停' : '播放'}" title="${playing ? '暫停' : '播放'}">${ico(playing ? 'pause' : 'play')}</button>`;
 }
 
 /** Underline tabs for the modes of a layer: items [[key, label]]; `attr` is the data attribute that carries the key. */
 function modeTabs(aria, items, attr, cur, icons = {}) {
   const icon = S.settings.ui === 'icon';
-  return `<div class="seg tabs" role="radiogroup" aria-label="${aria}">` + items.map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === cur}" data-${attr}="${k}">${icon && icons[k] ? `<i aria-hidden="true">${icons[k]}</i>` : ''}${l}</button>`).join('') + '</div>';
+  return `<div class="seg tabs" role="radiogroup" aria-label="${aria}">` + items.map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === cur}" data-${attr}="${k}">${icon && icons[k] ? `<i aria-hidden="true">${ico(icons[k])}</i>` : ''}${l}</button>`).join('') + '</div>';
 }
 
 /** Mountain (as high as Yushan, 3,952 m) with a line at the altitude of a level: low levels cut the mountain, the high ones float above it.
@@ -1203,7 +1204,7 @@ function toggleAnimation() {
   // Preload the pictures before stepping so the animation does not stutter.
   Promise.resolve(info.pre ? info.pre() : null).then(() => {
     const b = document.getElementById('btn-play');
-    if (b) { b.textContent = '❚❚'; b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', '暫停'); b.title = '暫停'; }
+    if (b) { b.innerHTML = ico('pause'); b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', '暫停'); b.title = '暫停'; }
     S.layer.timer = setInterval(() => {
       const cur = playInfo();
       if (!cur || cur.n < 2) { stopAnimation(); return; }   // the mode or layer changed meanwhile
