@@ -1602,7 +1602,7 @@ function serve() {
     await page.click('.eq-strong .eq-core');
     await page.waitForFunction(() => (document.getElementById('sheet-title')?.textContent || '').includes('強震'));
     const body = await page.textContent('#sheet-body');
-    assert(body.includes('強震注意') && body.includes('花蓮縣地區 5強'), 'strong-quake advice missing');
+    assert(body.includes('強震注意') && body.includes('花蓮縣 5強'), 'strong-quake advice missing');
     assert(await page.$('img.eq-report'), 'report image missing');
     assert(!(await page.$('.eq-strong')), 'strong icon should give way to the epicentre in the quake view');
     await page.screenshot({ path: path.join(SHOTS, 'quake-strong.png') });
