@@ -734,7 +734,7 @@ function serve() {
     await page.click('#btn-ens-jump');       // shortcut at the top of the panel loads the same forecast
     await page.waitForSelector('#ens-out figure.chart');
     const ens = await page.evaluate(() => ({ charts: document.querySelectorAll('#ens-out figure.chart').length, text: document.querySelector('#ens-out').textContent }));
-    assert(ens.charts === 3 && ens.text.includes('ECMWF') && ens.text.includes('GFS') && ens.text.includes('6 個成員'), `ensemble charts ${JSON.stringify(ens)}`);
+    assert(ens.charts === 3 && ens.text.includes('ECMWF') && ens.text.includes('AIFS') && ens.text.includes('GFS') && ens.text.includes('6 個成員'), `ensemble charts ${JSON.stringify(ens)}`);
     await page.click('#sheet-close').catch(() => {});
   });
 

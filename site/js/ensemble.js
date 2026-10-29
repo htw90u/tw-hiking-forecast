@@ -1,10 +1,11 @@
-// Ensemble forecast at a point (Open-Meteo ensemble API: ECMWF IFS 0.25° 51 members, NCEP GEFS 0.25°), fetched by the browser on request.
+// Ensemble forecast at a point (Open-Meteo ensemble API: ECMWF IFS 0.25° 51 members, ECMWF AIFS (AI model) 0.25°, NCEP GEFS 0.25°), fetched by the browser on request.
 import { esc, html } from './util.js';
 import { chart, dataTable } from './chart.js';
 
 const API = 'https://ensemble-api.open-meteo.com/v1/ensemble';
 export const MODELS = [
   { id: 'ecmwf_ifs025', label: 'ECMWF', cls: 's1' },
+  { id: 'ecmwf_aifs025', label: 'AIFS（AI 模型）', cls: 's4' },
   { id: 'gfs025', label: 'GFS', cls: 's3' },
 ];
 const VARS = ['temperature_2m', 'precipitation', 'wind_speed_10m'];
@@ -61,7 +62,7 @@ export async function fetchModel(lat, lon, model, fetchFn = fetch) {
   return res.json();
 }
 
-/** Load both models; a model that fails is left out. ele: elevation of the place (m) for the temperature correction. */
+/** Load every model; one that fails (or is not offered for the place) is left out. ele: elevation of the place (m) for the temperature correction. */
 export async function loadEnsemble(lat, lon, ele = null, fetchFn = fetch) {
   const res = await Promise.allSettled(MODELS.map((m) => fetchModel(lat, lon, m.id, fetchFn)));
   const out = [];
@@ -103,7 +104,7 @@ export function ensembleCharts(models) {
 export function ensembleCard() {
   return html`<section class="card" aria-labelledby="h-ens"><h3 id="h-ens">系集預報（10 天）</h3>
 <p class="note">同一個預報模式用略有差異的起始條件跑出數十個結果，結果越分散代表不確定性越大。實線為中位數，虛線為 10–90% 範圍。
-資料來自 Open-Meteo 的 ECMWF IFS（51 成員）與 GFS（GEFS）系集，由您的瀏覽器直接連線取得（CC BY 4.0），非氣象署發布。</p>
+資料來自 Open-Meteo 的 ECMWF IFS（51 成員）、ECMWF AIFS（AI 模型）與 GFS（GEFS）系集，由您的瀏覽器直接連線取得（CC BY 4.0），非氣象署發布。</p>
 <p class="note note-red">模式解析度約 25 km，山區僅供趨勢參考。</p>
 <button class="btn" id="btn-ens">載入系集預報</button><div id="ens-out" aria-live="polite"></div></section>`;
 }
