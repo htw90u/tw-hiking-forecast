@@ -908,17 +908,19 @@ function serve() {
     assert(info.cards.length >= 8 && ['safe', 'obs', 'fc', 'sun'].every((g) => groups.has(g)), `cards ${JSON.stringify(info.cards.map((c) => c.id))}`);
     const folded = info.cards.filter((c) => !c.open && ['now', 'rain', 'sun', 'ens'].includes(c.id));
     assert(folded.length >= 2 && folded.every((c) => c.sum.length > 3), `folded cards lack a summary: ${JSON.stringify(folded)}`);
-    assert(info.bar.n === 3 && info.bar.right <= 4, `Windy / coordinates / favourite buttons not right-aligned: ${JSON.stringify(info.bar)}`);
+    assert(info.bar.n === 1 && info.bar.right <= 4, `favourite button not right-aligned: ${JSON.stringify(info.bar)}`);
     assert(info.cards.find((c) => c.id === 'stations')?.open && info.cards.find((c) => c.id === 'fc')?.open && !info.cards.find((c) => c.id === 'sun')?.open, 'default open / folded cards');
     // remembered: open the sun card, reopen the panel
     await page.click('[data-card="sun"] > summary');
     await show();
     await page.waitForSelector('#sheet.open details.pcard');
     assert(await page.$eval('[data-card="sun"]', (d) => d.open), 'the open state of a card was not remembered');
+    await page.click('#sheet-more');
     await page.click('[data-cards="close"]');
     assert((await page.$$eval('details.pcard[open]:not([data-alert])', (e) => e.length)) === 0, 'collapse all');
     await page.click('[data-jump="fc"]');
     assert(await page.$eval('details.pcard[data-grp="fc"]', (d) => d.open), 'jump chip should open the first card of the group');
+    await page.click('#sheet-more');
     await page.click('[data-cards="open"]');
     assert((await page.$$eval('details.pcard:not([open])', (e) => e.length)) === 0, 'expand all');
     await page.screenshot({ path: path.join(SHOTS, 'point-cards.png') });

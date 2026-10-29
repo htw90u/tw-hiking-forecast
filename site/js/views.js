@@ -49,9 +49,41 @@ function renderTop() {
   body.innerHTML = typeof e.body === 'string' ? e.body : e.body.html;
   body.scrollTop = 0;
   document.getElementById('sheet-back').hidden = stack.length < 2;
+  setSheetMenu(null);                                                     // a panel that has actions fills it again in onRender
   document.getElementById('sheet').classList.toggle('pt', Boolean(e.fav));   // a point panel carries its own favourite button
   setSheetFav(e.fav);
   if (e.onRender) e.onRender(body);
+}
+
+// ------------------------------------------------------------------ the "⋯" menu in the sheet header
+/** items: [{ label, href } | { label, run, keepOpen? } | { label, cards: 'open'|'close' }]; null hides the button. */
+function setSheetMenu(items) {
+  const btn = document.getElementById('sheet-more');
+  const menu = document.getElementById('sheet-menu');
+  menu.hidden = true;
+  btn.setAttribute('aria-expanded', 'false');
+  btn.hidden = !items;
+  menu.innerHTML = '';
+  if (!items) return;
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  items.forEach((it) => {
+    const el = document.createElement(it.href ? 'a' : 'button');
+    el.setAttribute('role', 'menuitem');
+    el.textContent = it.label;
+    if (it.href) { el.href = it.href; el.target = '_blank'; el.rel = 'noopener'; el.addEventListener('click', close); }
+    else {
+      el.type = 'button';
+      if (it.cards) el.dataset.cards = it.cards;
+      el.addEventListener('click', async () => {
+        if (it.cards) document.querySelectorAll('#sheet-body details.pcard, #sheet-body details.sub[data-card]').forEach((d) => { if (!d.dataset.alert || it.cards === 'open') d.open = it.cards === 'open'; });
+        if (it.run) await it.run(el);
+        if (!it.keepOpen) close();
+      });
+    }
+    menu.append(el);
+  });
+  btn.onclick = () => { menu.hidden = !menu.hidden; btn.setAttribute('aria-expanded', String(!menu.hidden)); if (!menu.hidden) menu.querySelector('[role=menuitem]')?.focus(); };
+  menu.onkeydown = (e) => { if (e.key === 'Escape') { close(); btn.focus(); } };
 }
 
 // ------------------------------------------------------------------ favourite star + selected-point highlight
@@ -890,15 +922,14 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
 <div class="pill"><b>${sT !== null ? `${fmtNum(sT, 0)}°C` : '—'}</b>${brief?.AT != null ? `體感 ${brief.AT}°` : '氣溫'}</div>
 <div class="pill ${(brief?.bf ?? 0) >= 6 ? 'lv1' : ''}"><b>${bf(brief?.bf ?? (ws0?.WS !== undefined ? beaufort(ws0.WS) : null))}</b>${brief?.g != null ? `陣風 ${beaufort(brief.g)} 級` : '風力'}</div></div>
 ${briefSrc ? html`<p class="pstrip-src">${briefSrc}</p>` : ''}`;
-  const jumpChips = groupsPresent.map((g) => `<button type="button" class="g-${g}" data-jump="${g}">${GROUPS[g].label}</button>`).join('');
-  const jump = html`<div class="pjump" role="group" aria-label="跳到區段">${raw(jumpChips)}</div>
-<div class="ptools"><button type="button" id="btn-ens-jump">系集預報</button><button type="button" data-cards="open">全部展開</button><button type="button" data-cards="close">全部收合</button></div>`;
+  const jumpChips = groupsPresent.map((g) => `<button type="button" class="g-${g}" data-jump="${g}">${GROUPS[g].label}</button>`).join('') + '<button type="button" id="btn-ens-jump" class="g-ens">系集預報</button>';
+  const jump = html`<div class="pjump" role="group" aria-label="跳到區段">${raw(jumpChips)}</div>`;
   const windy = `https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${lat.toFixed(3)},${lon.toFixed(3)},11`;
   return { cardsOut, present, order, strip, jump, windy, chips: jumpChips };
   };
   const bodyOf = ({ cardsOut, present, strip, jump, windy }) => html`
 <div class="ptbar"><p class="place">${placeLine}</p>
-<div class="acts"><a class="ab" target="_blank" rel="noopener" href="${windy}">🌀 Windy</a><button type="button" class="ab" id="btn-copy">⌖ 座標</button><button type="button" class="ab fav" id="btn-fav" aria-pressed="false">☆ 收藏</button></div></div>
+<div class="acts"><button type="button" class="ab fav" id="btn-fav" aria-pressed="false">☆ 收藏</button></div></div>
 ${strip}${jump}
 ${raw(present.map((k) => cardsOut[k]).join(''))}
 <p class="src">資料來源：中央氣象署開放資料。資料更新 ${fmtTime(S.manifest?.built)}</p>`;
@@ -929,9 +960,12 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
       bindCards(root);
       bindEnsemble(root, lat, lon, eleHere);
       root.querySelector('#btn-fav')?.addEventListener('click', () => document.getElementById('sheet-fav').click());
-      root.querySelector('#btn-copy')?.addEventListener('click', async (ev) => {
-        try { await navigator.clipboard.writeText(`${lat.toFixed(5)}, ${lon.toFixed(5)}`); ev.target.textContent = '已複製'; } catch { ev.target.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; }
-      });
+      setSheetMenu([
+        { label: '🌀 在 Windy 開啟', href: built.windy },
+        { label: '⌖ 複製座標', keepOpen: true, run: async (el) => { const t = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; try { await navigator.clipboard.writeText(t); el.textContent = '已複製'; } catch { el.textContent = t; } } },
+        { label: '全部展開', cards: 'open' },
+        { label: '全部收合', cards: 'close' },
+      ]);
     },
   });
   showPick(lat, lon);

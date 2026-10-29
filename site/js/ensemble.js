@@ -112,7 +112,9 @@ export function bindEnsemble(root, lat, lon, ele = null) {
   const b = root.querySelector('#btn-ens');
   if (!b) return;
   // Shortcut at the top of the panel: scroll to the card and load the forecast.
-  root.querySelector('#btn-ens-jump')?.addEventListener('click', () => {
+  // (delegated: the chip row is rebuilt when the slower data arrives, which would drop a listener on the button itself)
+  root.addEventListener('click', (ev) => {
+    if (!ev.target.closest('#btn-ens-jump')) return;
     const c = root.querySelector('#h-ens')?.closest('details.pcard');
     if (c) c.open = true;
     root.querySelector('#h-ens')?.scrollIntoView({ block: 'start' });

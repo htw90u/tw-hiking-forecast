@@ -579,15 +579,19 @@ function updateStatus() {
   const ty = S.typhoon?.active ? S.typhoon : null;
   const tyNames = ty ? ty.cyclones.map((c) => c.cname || c.name).filter(Boolean).join('、') : '';
   const tyTitle = ty ? (ty.warnings || []).map((w) => w.title).filter(Boolean)[0] || '颱風警報' : '';
-  const tyBanner = ty ? `<button class="ty-banner" id="ty-banner"><span aria-hidden="true">🌀</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}｜${esc(tyTitle)}</span><span class="ty-more">詳情 ›</span></button>` : '';
+  const tyBanner = ty ? `<button class="ty-banner" id="ty-banner" title="${esc(tyTitle)}" aria-label="${esc(`${tyNames ? `${tyNames}颱風` : '颱風'}，${tyTitle}，查看詳情`)}"><span aria-hidden="true">🌀</span><span>${esc(tyNames ? `${tyNames}颱風` : '颱風')}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Felt earthquakes in the last 24 hours get their own banner and tab (like a typhoon warning).
   const recentQ = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < QUAKE_RECENT_MS);
   const q0 = recentQ[0];
   const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
-  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner"><span aria-hidden="true">〰</span><span>地震｜${esc(fmtTime(q0.time))} ${esc(qPlace)} 規模${esc(Number(q0.mag).toFixed(1))}・最大震度${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（24 小時內 ${recentQ.length} 起）` : ''}</span><span class="ty-more">詳情 ›</span></button>` : '';
-  const baseNote = S.baseNotice ? `<span class="base-note">${esc(S.baseNotice)}</span> ` : '';
-  el.innerHTML = `${tyBanner}${eqBanner}${baseNote}${off ? '<span class="offline">離線模式・顯示已快取資料</span> ' : ''}資料更新：${esc(fmtTime(built))}（${esc(ageText(built))}）${failed.length ? `・<span class="warn-txt">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}・<button class="link inline" id="btn-sources">資料來源：中央氣象署</button>`;
+  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">〰</span><span>地震 ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
+  // Base-map notice: a short warning pill; the full sentence opens under the strip (and stays in the text for screen readers).
+  const baseNote = S.baseNotice ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
+  const upd = `<span class="sp sp-plain">資料更新 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
+  el.innerHTML = `<div class="strip-row">${tyBanner}${eqBanner}${baseNote}${off ? '<span class="sp sp-off">離線・顯示快取資料</span>' : ''}${upd}${failed.length ? `<span class="sp sp-warn">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}<button type="button" class="sp sp-link" id="btn-sources">資料來源：中央氣象署</button></div>${S.baseNotice ? `<p class="strip-detail" id="base-detail" hidden>${esc(S.baseNotice)}</p>` : ''}`;
   el.querySelector('#btn-sources').addEventListener('click', showSources);
+  const bn = el.querySelector('.base-note');
+  if (bn) bn.addEventListener('click', () => { const d = el.querySelector('#base-detail'); d.hidden = !d.hidden; bn.setAttribute('aria-expanded', String(!d.hidden)); });
   el.querySelector('#ty-banner')?.addEventListener('click', showTyphoon);
   placeLegend();
   const openQuakes = () => (recentQ.length === 1 ? showQuake(q0) : showQuakes({ recentMs: QUAKE_RECENT_MS }));
