@@ -91,7 +91,8 @@ export function sunCard(lat, lon, ele = null) {
   const hiRow = hi ? `<tr><th scope="row">今天<br><small>海拔 ${Math.round(ele).toLocaleString('en-US')} m 視野開闊</small></th><td>${hi.dawn}</td><td>${hi.rise}</td><td>${hi.set}</td><td>${hi.dusk}</td></tr>` : '';
   return html`<section class="card" aria-labelledby="h-sun"><h3 id="h-sun">日出日沒</h3>
 <table class="kv sun"><thead><tr><th scope="col"></th><th scope="col">天亮</th><th scope="col">日出</th><th scope="col">日沒</th><th scope="col">天黑</th></tr></thead><tbody>${raw(rows + hiRow)}</tbody></table>
-<p class="note">日照 ${dayLength(t.dayMin)}。天亮／天黑為民用曙暮光（太陽在地平線下 6°，不用頭燈大致可行走）；上表為海平面高度；山頂視野開闊時地平線下沉，日出較早、日沒較晚（海拔列，依高度計算）。山谷與山坡被山稜遮住時實際日照會更短，請預留下撤時間。依經緯度與海拔天文計算（誤差約 1–2 分鐘），不含地形遮蔽。</p></section>`;
+<p class="note">日照 ${dayLength(t.dayMin)}。天亮／天黑為民用曙暮光（太陽在地平線下 6°，不用頭燈大致可行走）；上表為海平面高度；山頂視野開闊時地平線下沉，日出較早、日沒較晚（海拔列，依高度計算）。依經緯度與海拔天文計算，誤差約 1–2 分鐘。</p>
+<p class="note note-red">不含地形遮蔽：山谷與山坡被山稜遮住時，實際日照會更短，請預留下撤時間。</p></section>`;
 }
 
 export { haversineKm };
