@@ -631,3 +631,5 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .mm-models { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0 .2rem; }
 .mm-note { margin: .1rem 0; font-size: .8rem; color: var(--muted); }
 .mm-note.note-red { color: var(--lv2); font-weight: 600; }
+.mm-models { flex-wrap: nowrap; gap: .3rem; }
+.mm-models .seg-btn { padding: .25rem .5rem; font-size: .9rem; white-space: nowrap; flex: 0 1 auto; }

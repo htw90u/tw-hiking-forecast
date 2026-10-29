@@ -559,7 +559,7 @@ async function showWrf(keepFrame) {
 // ---------------------------------------------------------------- multi-model forecast layer (rain, wind): WRF 3 km, ECMWF IFS, ECMWF AIFS, NOAA GFS
 const MM_ORDER = ['wrf3', 'ecmwf', 'aifs', 'gfs'];
 const MM_INFO = {
-  wrf3: { label: '氣象署 WRF 3 km', res: 3, src: '中央氣象署 區域數值模式 WRF 3 km（M-A0064）', licenseKey: 'ogdl' },
+  wrf3: { label: '氣象署 WRF 3 km', short: 'WRF 3 km', res: 3, src: '中央氣象署 區域數值模式 WRF 3 km（M-A0064）', licenseKey: 'ogdl' },
   ecmwf: { label: 'ECMWF', res: 25, src: 'ECMWF IFS 開放資料（0.25°）', ai: false, licenseKey: 'mm' },
   aifs: { label: 'AIFS（AI）', res: 25, src: 'ECMWF AIFS 開放資料（0.25°，機器學習模式）', ai: true, licenseKey: 'mm' },
   gfs: { label: 'GFS', res: 25, src: 'NOAA GFS（0.25°）', ai: false, licenseKey: 'mm' },
@@ -703,7 +703,7 @@ function mmTimeControl() {
   const m = mmCurrent();
   const times = mmTimes();
   let h = modeTabs('模式預報項目', [['rain', '降雨'], ['wind', '風']], 'mmvar', v, { rain: 'umbrella', wind: 'wind' });
-  h += '<div class="seg mm-models" role="radiogroup" aria-label="模式">' + models.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === id}" data-mmmodel="${x}">${esc(MM_INFO[x].label)}</button>`).join('') + '</div>';
+  h += '<div class="seg mm-models" role="radiogroup" aria-label="模式">' + models.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === id}" data-mmmodel="${x}">${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('') + '</div>';
   h += `<p class="mm-note">${esc(m.label)}・${m.init ? `起報 ${esc(fmtTime(m.init))}` : ''}${m.stale ? '（最新一輪暫時無法更新）' : ''}</p><p class="mm-note note-red">${esc(v === 'rain' ? m.warnRain : m.warnWind)}</p>`;
   if (times.length) {
     const i = Math.min(S.layer.frame, times.length - 1);
