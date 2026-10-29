@@ -1523,6 +1523,28 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
   });
 
+  await check('multi-model layer: temperature and pressure tabs, WRF 3 km has no pressure, compare works on them', async () => {
+    const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.values(S.manifest.layers.mm?.models || {}).filter((m) => m.temp?.length && m.msl?.length).length; });
+    if (has < 2) { console.log('SKIP temperature and pressure not built locally'); return; }
+    await selectLayer('.chip[data-layer="mm"]');
+    await page.click('[data-mmvar="temp"]');
+    await page.waitForSelector('img.wx-grid');
+    assert((await page.$$eval('[data-mmmodel]', (b) => b.map((x) => x.dataset.mmmodel))).includes('wrf3'), 'WRF 3 km has a temperature grid');
+    await page.click('[data-mmvar="msl"]');
+    await page.waitForSelector('img.wx-grid');
+    const models = await page.$$eval('[data-mmmodel]', (b) => b.map((x) => x.dataset.mmmodel));
+    assert(!models.includes('wrf3') && models.length >= 2, `pressure models ${models}`);
+    if (!(await page.$('[data-mmcmp][aria-pressed="true"]'))) await page.click('[data-mmcmp]');
+    await page.waitForSelector('[data-mmview]');
+    assert(!(await page.$('[data-mmview="cons"]')), 'consensus is rain only');
+    await page.click('[data-mmview="diff"]');
+    await page.waitForSelector('img.wx-grid');
+    assert((await page.textContent('#legend')).includes('hPa'), 'pressure difference legend missing');
+    await page.click('[data-mmcmp]');
+    await page.click('[data-mmvar="rain"]');
+    await page.waitForSelector('img.wx-grid');
+  });
+
   await check('multi-model compare: swipe divider moves, difference and consensus draw on the common lattice, models stay different', async () => {
     const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}); });
     if (has.length < 2) { console.log('SKIP no multi-model data built locally'); return; }

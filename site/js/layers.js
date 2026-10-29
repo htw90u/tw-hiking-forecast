@@ -88,7 +88,13 @@ export function layerKind(id) {
   if (id === 'qpf' && S.layer.qpfMode === 'acc') return 'rainacc';
   if (id === 'wrf3') return S.layer.wrf3Mode === 'temp' ? 'temp' : 'rain';
   if (id === 'wrfg') return { msl: 'msl', temp: 'temp' }[S.layer.wrfgMode] || 'rain';
-  if (id === 'mm') return mmVar() === 'rain' ? { diff: 'rdiff', cons: 'rcons' }[mmView()] || 'rain' : 'rain';
+  if (id === 'mm') {
+    const v = mmVar();
+    const view = mmView();
+    if (v === 'temp') return view === 'diff' ? 'tdiff' : 'temp';
+    if (v === 'msl') return view === 'diff' ? 'pdiff' : 'msl';
+    return mmVar() === 'rain' ? { diff: 'rdiff', cons: 'rcons' }[view] || 'rain' : 'rain';
+  }
   if (id === 'sat' && satGrids().ir) return SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].kind;
   return layerDef(id).kind;
 }
@@ -135,7 +141,7 @@ export function framesFor(id) {
   }
   if (id === 'wrf3') return wrf3Frames().map((f) => f.meta);
   if (id === 'wrfg') return wrfgFrames().map((f) => f.meta);
-  if (id === 'mm') return mmVar() === 'rain' ? mmFrames().map((f) => f.meta) : [];
+  if (id === 'mm') return mmVar() !== 'wind' ? mmFrames().map((f) => f.meta) : [];
   if (id === 'rainacc') return (L_.rainacc?.periods || [{ meta: 'grids/rainday.json' }]).map((p) => p.meta);
   if (['qpe1h', 'rainday', 'qpf1h', 'temp'].includes(id)) return [`grids/${id}.json`];
   return [];
@@ -188,7 +194,7 @@ function playInfo() {
   if (id === 'radar') return grids(framesFor('radar'));
   if (id === 'wrf3') return grids(framesFor('wrf3'));
   if (id === 'wrfg') return grids(framesFor('wrfg'));
-  if (id === 'mm') return mmVar() === 'rain' ? { n: mmFrames().length, pre: mmPreload } : { n: mmWindSteps().length };
+  if (id === 'mm') return mmVar() !== 'wind' ? { n: mmFrames().length, pre: mmPreload } : { n: mmWindSteps().length };
   if (id === 'sat' && satGrids().ir) return grids(satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key).map((f) => f.meta));
   if (id === 'heat') return { n: S.heat?.times?.length || 0 };
   if (id === 'pop' || (id === 'wind' && (S.layer.windMode || 'fc') === 'fc') || (id === 'visib' && S.layer.visMode === 'fc')) return { n: S.wind?.times?.length || 0 };
@@ -205,7 +211,7 @@ function renderParams(id) {
   // so that rain areas fade out at their edges instead of ending in square steps.
   const opts = { smooth: S.settings.smooth !== false, fill: FILL[kind] ?? NaN };
   // The temperature analysis covers land only, in 3 km cells: cut it to the real coastline (no gaps, no sea spill-over).
-  if (kind === 'temp' && id !== 'wrf3' && id !== 'wrfg') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
+  if (kind === 'temp' && id !== 'wrf3' && id !== 'wrfg' && id !== 'mm') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
   return { kind, colour, opts };
 }
 
@@ -286,7 +292,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'mm') {
       const m = mmCurrent();
       renderLegend({ ...grid.meta, kindOverride: kind, src: m.src, issued: m.init, start: grid.meta.start, end: grid.meta.time, time: undefined, license: m.licenseKey, licenseText: m.license,
-        note: `${m.label}：6 小時累積降水（${m.res} km 網格）。${m.ai ? '這是機器學習（AI）模式。' : ''}`, noteWarn: m.warnRain });
+        ...(mmVar() === 'rain' ? {} : { start: undefined, end: undefined, time: grid.meta.time }),
+        note: `${m.label}：${MM_VARS[mmVar()].note}（${m.res} km 網格）。${m.ai ? '這是機器學習（AI）模式。' : ''}`, noteWarn: MM_WARN[mmVar()][m.res] });
     }
     if (id === 'wrfg') {
       const mode = S.layer.wrfgMode || 'rain';
@@ -565,20 +572,28 @@ const MM_INFO = {
   aifs: { label: 'AIFS（AI）', res: 25, src: 'ECMWF AIFS 開放資料（0.25°，機器學習模式）', ai: true, licenseKey: 'mm' },
   gfs: { label: 'GFS', res: 25, src: 'NOAA GFS（0.25°）', ai: false, licenseKey: 'mm' },
 };
+const MM_VARS = {
+  rain: { label: '降雨', icon: 'umbrella', unit: 'mm', name: '6 小時雨量', note: '6 小時累積降水' },
+  wind: { label: '風', icon: 'wind', unit: 'm/s', name: '10 m 風', note: '10 m 風' },
+  temp: { label: '氣溫', icon: 'thermo', unit: '°C', name: '2 m 氣溫', note: '2 m 氣溫' },
+  msl: { label: '氣壓', icon: 'gauge', unit: 'hPa', name: '海平面氣壓', note: '海平面氣壓' },
+};
 const MM_WARN = {
+  temp: { 3: '模式地形高度與實際海拔不同，山區氣溫請與測站、氣象署山區預報對照。', 25: '25 km 網格的地形比實際平滑，山區氣溫偏高，請以地點預報為準。' },
+  msl: { 25: '山區的海平面氣壓是換算值，只適合看高低壓、颱風與鋒面的移動。' },
   rain: { 3: '位置與強度都可能有偏差，不是機率，也不等於氣象署的定量降水預報。', 25: '25 km 網格，山區降雨位置與強度偏差大，只適合看趨勢。' },
   wind: { 3: '3 km 模式的 10 m 風；稜線與山口的實際風速仍可能更強，請與測站對照。', 25: '25 km 網格的地形比實際平滑，山區風速偏弱，只適合看趨勢。' },
 };
 
-function mmVar() { return S.layer.mmVar === 'wind' ? 'wind' : 'rain'; }
+function mmVar() { return ['wind', 'temp', 'msl'].includes(S.layer.mmVar) ? S.layer.mmVar : 'rain'; }
 
 /** Models shown: the chosen one, or (compare switched on, rain only) the ticked ones. */
 function mmSel() {
   const list = mmModels();
   const one = list.includes(S.layer.mmModel) ? S.layer.mmModel : list[0];
-  if (mmVar() !== 'rain' || !S.layer.mmCompare) return [one];
+  if (mmVar() === 'wind' || !S.layer.mmCompare) return [one];
   const s = list.filter((x) => (S.layer.mmSel || []).includes(x));
-  return s.length ? s : [one];
+  return (s.length ? s : [one]).slice(0, mmVar() === 'rain' ? 4 : 2);   // only the rain has a consensus of many models
 }
 
 /** Rain view: one model; with two ticked a swipe (curtain), difference or consensus; with three or more the consensus. */
@@ -586,14 +601,18 @@ function mmView() {
   const n = mmSel().length;
   if (n < 2) return 'one';
   if (n > 2) return 'cons';
-  return ['swipe', 'diff', 'cons'].includes(S.layer.mmView) ? S.layer.mmView : 'swipe';
+  return ['swipe', 'diff', ...(mmVar() === 'rain' ? ['cons'] : [])].includes(S.layer.mmView) ? S.layer.mmView : 'swipe';
 }
 
 /** Models that have data for the chosen variable (WRF 3 km comes from its own files, the others from the multi-model build). */
 function mmModels() {
   const L_ = S.manifest?.layers || {};
   const mm = L_.mm?.models || {};
-  return MM_ORDER.filter((id) => (id === 'wrf3' ? Boolean(L_.wrf3 && (mmVar() === 'rain' ? L_.wrf3.rain?.length : L_.wrf3.steps?.length)) : Boolean(mm[id]?.rain?.length)));
+  const v = mmVar();
+  return MM_ORDER.filter((id) => {
+    if (id === 'wrf3') return Boolean(L_.wrf3 && (v === 'wind' ? L_.wrf3.steps?.length : L_.wrf3[v]?.length));
+    return Boolean(mm[id]?.[v === 'wind' ? 'rain' : v]?.length);
+  });
 }
 
 function mmId() { return mmSel()[0]; }
@@ -615,8 +634,9 @@ function mmCurrent() {
 /** Rain frames of the chosen model: [{meta, time}] (the 6 hours ending at `time`). */
 function mmRawFrames(id) {
   const L_ = S.manifest?.layers || {};
-  if (id === 'wrf3') return (L_.wrf3?.rain || []).map((x) => ({ meta: x.meta, time: L_.wrf3.steps[x.fh / 6] }));
-  return (L_.mm?.models?.[id]?.rain || []).map((x) => ({ meta: x.meta, time: x.time }));
+  const v = mmVar() === 'wind' ? 'rain' : mmVar();
+  if (id === 'wrf3') return (L_.wrf3?.[v] || []).map((x) => ({ meta: x.meta, time: L_.wrf3.steps[x.fh / 6] }));
+  return (L_.mm?.models?.[id]?.[v] || []).map((x) => ({ meta: x.meta, time: x.time }));
 }
 
 /** Rain steps of the view: the chosen model's own, or in a comparison only the times the compared models share
@@ -645,7 +665,7 @@ async function mmPreload() {
 
 /** Valid times of the chosen model for the chosen variable. */
 function mmTimes() {
-  if (mmVar() === 'rain') return mmFrames().map((f) => f.time);
+  if (mmVar() !== 'wind') return mmFrames().map((f) => f.time);
   return mmWindSteps();
 }
 
@@ -736,10 +756,10 @@ const CMP_RES = 0.05;
 const CONS_MM = 10;
 
 /** Value of a grid at a point: NaN outside its area, 0 where it holds no rain. */
-function cellValue(g, lat, lon) {
+function cellValue(g, lat, lon, zero) {
   const [w, s, e, n] = g.bounds;
   if (lon < w || lon >= e || lat <= s || lat > n) return NaN;
-  return sample(g, lat, lon) ?? 0;
+  return sample(g, lat, lon) ?? (zero ? 0 : NaN);
 }
 
 /** Grid of B - A (difference) or of the number of models at or above CONS_MM (consensus) on the common lattice. */
@@ -752,9 +772,9 @@ function compareGrid(view, grids) {
     const lat = n - (j + 0.5) * CMP_RES;
     for (let i = 0; i < nx; i += 1) {
       const lon = w + (i + 0.5) * CMP_RES;
-      const v = grids.map((g) => cellValue(g, lat, lon));
+      const v = grids.map((g) => cellValue(g, lat, lon, mmVar() === 'rain'));
       if (view === 'diff') {
-        if (!Number.isNaN(v[0]) && !Number.isNaN(v[1]) && (v[0] >= 0.5 || v[1] >= 0.5)) values[j * nx + i] = v[1] - v[0];
+        if (!Number.isNaN(v[0]) && !Number.isNaN(v[1]) && (mmVar() !== 'rain' || v[0] >= 0.5 || v[1] >= 0.5)) values[j * nx + i] = v[1] - v[0];
       } else {
         const have = v.filter((x) => !Number.isNaN(x));
         const hits = have.filter((x) => x >= CONS_MM).length;
@@ -836,7 +856,8 @@ async function showMMCompare() {
   const have = ids.map((id, i) => ({ id, g: grids[i] })).filter((x) => x.g);
   const infos = have.map((x) => ({ ...MM_INFO[x.id], init: x.id === 'wrf3' ? S.manifest.layers.wrf3?.time : S.manifest.layers.mm?.models?.[x.id]?.init }));
   const name = (x) => x.short || x.label;
-  const meta = { start: new Date(tkey(f.time) - 6 * 3600e3).toISOString(), end: f.time, license: 'mm', src: infos.map((x) => x.src).join('；'),
+  const vv = mmVar();
+  const meta = { ...(vv === 'rain' ? { start: new Date(tkey(f.time) - 6 * 3600e3).toISOString(), end: f.time } : { time: f.time }), license: 'mm', src: infos.map((x) => x.src).join('；'),
     licenseText: [...new Set(have.map((x) => (x.id === 'wrf3' ? '中央氣象署開放資料' : S.manifest.layers.mm?.models?.[x.id]?.license)).filter(Boolean))].join('、'),
     issued: infos.map((x) => x.init).filter(Boolean).sort()[0] };
   if (view === 'swipe') {
@@ -855,7 +876,7 @@ async function showMMCompare() {
     ov.on('remove', () => { if (off) off(); off = null; });
     clearOverlay(); // the old handle must go before the new one is added
     finishOverlay(ov);
-    renderLegend({ label: `${name(infos[0])}｜${name(infos[1])} 6 小時雨量`, ...meta, kindOverride: kind, unit: 'mm', time: undefined });
+    renderLegend({ label: `${name(infos[0])}｜${name(infos[1])} ${MM_VARS[vv].name}`, ...meta, kindOverride: kind, unit: MM_VARS[vv].unit });
   } else {
     if (have.length < 2) { clearOverlay(); renderLegend(null, '此時間缺少其中一個模式的資料'); renderTimeControl(); return; }
     const cg = compareGrid(view, have.map((x) => x.g));
@@ -863,8 +884,8 @@ async function showMMCompare() {
     const [w, s, e, n] = cg.bounds;
     const ov = L.imageOverlay(gridImage(cg, kind, colour, opts), [[s, w], [n, e]], { opacity: layerOpacity('mm'), interactive: false, className: 'wx-grid' });
     finishOverlay(L.layerGroup([ov]));
-    renderLegend({ label: view === 'diff' ? `${name(infos[1])} − ${name(infos[0])} 6 小時雨量差` : `各模式 6 小時雨量 ≥ ${CONS_MM} mm（共 ${have.length} 個模式）`,
-      ...meta, kindOverride: kind, time: undefined, unit: view === 'diff' ? 'mm' : '' });
+    renderLegend({ label: view === 'diff' ? `${name(infos[1])} − ${name(infos[0])} ${MM_VARS[vv].name}差` : `各模式 6 小時雨量 ≥ ${CONS_MM} mm（共 ${have.length} 個模式）`,
+      ...meta, kindOverride: kind, unit: view === 'diff' ? MM_VARS[vv].unit : '' });
   }
   renderTimeControl();
 }
@@ -891,17 +912,17 @@ function mmTimeControl() {
   const m = mmCurrent();
   const times = mmTimes();
   const view = mmView();
-  const cmp = v === 'rain' && Boolean(S.layer.mmCompare);
+  const cmp = v !== 'wind' && Boolean(S.layer.mmCompare);
   const sel = mmSel();
-  let h = modeTabs('模式預報項目', [['rain', '降雨'], ['wind', '風']], 'mmvar', v, { rain: 'umbrella', wind: 'wind' });
+  let h = modeTabs('模式預報項目', Object.entries(MM_VARS).map(([k, x]) => [k, x.label]), 'mmvar', v, Object.fromEntries(Object.entries(MM_VARS).map(([k, x]) => [k, x.icon])));
   h += `<div class="seg mm-models" role="${cmp ? 'group' : 'radiogroup'}" aria-label="模式">` + models.map((x) => `<button class="seg-btn" role="${cmp ? 'checkbox' : 'radio'}" aria-checked="${sel.includes(x)}" data-mmmodel="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('')
-    + (v === 'rain' && models.length > 1 ? `<button class="seg-btn mm-cmp" aria-pressed="${cmp}" data-mmcmp>比較</button>` : '') + '</div>';
+    + (v !== 'wind' && models.length > 1 ? `<button class="seg-btn mm-cmp" aria-pressed="${cmp}" data-mmcmp>比較</button>` : '') + '</div>';
   if (sel.length === 2) {
-    h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['swipe', '捲簾'], ['diff', '差值'], ['cons', '共識']]
+    h += '<div class="seg mm-view" role="radiogroup" aria-label="檢視方式">' + [['swipe', '捲簾'], ['diff', '差值'], ...(v === 'rain' ? [['cons', '共識']] : [])]
       .map(([k, l]) => `<button class="seg-btn" role="radio" aria-checked="${k === view}" data-mmview="${k}">${l}</button>`).join('') + '</div>';
   }
   const res = Math.max(...mmCmpIds().map((x) => MM_INFO[x].res));
-  h += `${m.stale ? '<p class="mm-note">最新一輪暫時無法更新</p>' : ''}<p class="mm-note note-red">${esc(v === 'rain' ? MM_WARN.rain[res] : m.warnWind)}</p>`;
+  h += `${m.stale ? '<p class="mm-note">最新一輪暫時無法更新</p>' : ''}<p class="mm-note note-red">${esc(MM_WARN[v][res] || '')}</p>`;
   if (times.length) {
     const i = Math.min(S.layer.frame, times.length - 1);
     h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="mm-frame" type="range" min="0" max="${times.length - 1}" value="${i}" aria-valuetext="${esc(fmtTime(times[i]))}"></label>
@@ -1293,6 +1314,8 @@ function legendUnit(kind, unit) {
   if (kind === 'heat') return ['單位', '指數'];
   if (kind === 'msl') return ['單位', 'hPa'];
   if (kind === 'rdiff') return ['差值', 'mm'];
+  if (kind === 'tdiff') return ['差值', '°C'];
+  if (kind === 'pdiff') return ['差值', 'hPa'];
   if (kind === 'rcons') return ['≥10 mm', '模式數'];
   if (kind === 'visib') return ['單位', 'km'];
   if (kind === 'intensity') return ['單位', '震度'];
@@ -1317,7 +1340,7 @@ function colourStrip(scale, kind) {
   const cells = scale.map((x) => `<span style="background:${x[1]}"></span>`).reverse().join('');
   const lbls = scale.map((x, i) => {
     if ((n - 1 - i) % step) return ''; // count down from the top class so the highest value is always labelled
-    const text = kind === 'rdiff' ? (i ? String(x[0]).replace('-', '−') : '') : kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
+    const text = ['rdiff', 'tdiff', 'pdiff'].includes(kind) ? (i ? String(x[0]).replace('-', '−') : '') : kind === 'ltage' ? String(x[0]) : (x[2] || (kind === 'temp' ? `${x[0]}°` : String(x[0])));
     return `<span style="bottom:${(i / n * 100).toFixed(2)}%">${esc(text)}</span>`;
   }).join('');
   return `<span class="lg-strip" style="--n:${n};--ch:${n > 16 ? 8 : n > 13 ? 9.5 : 12.5}px"><span class="cells">${cells}</span><span class="ticks">${lbls}</span></span>`;
@@ -1548,9 +1571,10 @@ export function renderTimeControl(meta) {
   el.querySelectorAll('[data-mmmodel]').forEach((b) => b.addEventListener('click', async () => {
     const t = mmCurrentTime();
     const id = b.dataset.mmmodel;
-    if (S.layer.mmCompare && mmVar() === 'rain') {
+    if (S.layer.mmCompare && mmVar() !== 'wind') {
       const cur = mmSel();
-      S.layer.mmSel = cur.includes(id) ? (cur.length > 1 ? cur.filter((x) => x !== id) : cur) : [...cur, id];
+      const max = mmVar() === 'rain' ? 4 : 2;
+      S.layer.mmSel = cur.includes(id) ? (cur.length > 1 ? cur.filter((x) => x !== id) : cur) : [...(cur.length >= max ? cur.slice(0, max - 1) : cur), id];
     } else S.layer.mmModel = id;
     await mmEnsureWind();
     mmKeepTime(t);

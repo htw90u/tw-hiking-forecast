@@ -153,11 +153,17 @@ const VIS_GRAY = ramp(VIS_STOPS.map(([v, g]) => [v, [g, g, g]]), 0, 1, 0.02);
 const DIFF_BOUNDS = [-1000, -50, -20, -10, -5, -2, 2, 5, 10, 20, 50];
 const DIFF_COLOURS = ['#7f3b08', '#b35806', '#e08214', '#fdb863', '#fee0b6', '#e6e6e6', '#d1e5f0', '#92c5de', '#4393c3', '#2166ac', '#053061'];
 const DIFF_LABELS = ['< −50', '−50 ～ −20', '−20 ～ −10', '−10 ～ −5', '−5 ～ −2', '±2 內', '2 ～ 5', '5 ～ 10', '10 ～ 20', '20 ～ 50', '≥ 50'];
+// Temperature and pressure differences (second model minus first): blue = lower, red = higher.
+const DIFF2_BOUNDS = [-1000, -8, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 8];
+const DIFF2_COLOURS = ['#053061', '#2166ac', '#4393c3', '#92c5de', '#d1e5f0', '#e6e6e6', '#fddbc7', '#f4a582', '#d6604d', '#b2182b', '#67001f'];
+const DIFF2_LABELS = ['< −8', '−8 ～ −4', '−4 ～ −2', '−2 ～ −1', '−1 ～ −0.5', '±0.5 內', '0.5 ～ 1', '1 ～ 2', '2 ～ 4', '4 ～ 8', '≥ 8'];
 const CONS_COLOURS = ['#fee391', '#fe9929', '#d95f0e', '#8c2d04'];
 const CONS_LABELS = ['1 個', '2 個', '3 個', '4 個'];
 
 export const SCALES = {
   rdiff: { cwa: zip(DIFF_BOUNDS, DIFF_COLOURS, DIFF_LABELS), cvd: zip(DIFF_BOUNDS, DIFF_COLOURS, DIFF_LABELS), contrast: zip(DIFF_BOUNDS, DIFF_COLOURS, DIFF_LABELS) },
+  tdiff: { cwa: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), cvd: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), contrast: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS) },
+  pdiff: { cwa: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), cvd: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS), contrast: zip(DIFF2_BOUNDS, DIFF2_COLOURS, DIFF2_LABELS) },
   rcons: { cwa: zip([1, 2, 3, 4], CONS_COLOURS, CONS_LABELS), cvd: zip([1, 2, 3, 4], CONS_COLOURS, CONS_LABELS), contrast: zip([1, 2, 3, 4], CONS_COLOURS, CONS_LABELS) },
   rain: { cwa: zip(RAIN_BOUNDS, CWA_RAIN), cvd: zip(RAIN_BOUNDS, VIRIDIS17), contrast: zip(RAIN_BOUNDS, CONTRAST_RAIN) },
   radar: { cwa: zip(RADAR_BOUNDS, CWA_RADAR), cvd: zip(RADAR_BOUNDS, VIRIDIS13), contrast: zip(RADAR_BOUNDS, CONTRAST_RADAR) },

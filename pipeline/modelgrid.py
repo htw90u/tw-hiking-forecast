@@ -24,11 +24,13 @@ import numpy as np
 from . import grids
 
 TZ = ZoneInfo("Asia/Taipei")
-VERSION = 1                                   # bump when the output changes: the same run is then processed again
+VERSION = 2                                   # bump when the output changes: the same run is then processed again
 STEPS = list(range(6, 241, 6))                # 6-hour rain windows ending at +6 ... +240 h
 RAIN_REGION = {"lon": (112.0, 130.0), "lat": (16.0, 34.0)}
 WIND_REGION = {"lon": (116.0, 126.0), "lat": (20.0, 28.0)}
 RAIN_SCALE = 0.1
+TEMP_SCALE, TEMP_OFFSET = 0.1, -60.0               # 2 m temperature, deg C
+MSL_SCALE, MSL_OFFSET = 0.1, 900.0                # mean sea level pressure, hPa
 UA = "tw-hiking-forecast/1.0 (+https://github.com/htw90u/tw-hiking-forecast)"
 
 MODELS = {
@@ -62,7 +64,7 @@ def parse_ecmwf_index(text: str) -> dict:
         if not line.strip():
             continue
         e = json.loads(line)
-        if e.get("levtype") == "sfc" and e.get("param") in ("tp", "10u", "10v"):
+        if e.get("levtype") == "sfc" and e.get("param") in ("tp", "10u", "10v", "2t", "msl"):
             out[e["param"]] = (int(e["_offset"]), int(e["_length"]))
     return out
 
@@ -82,6 +84,10 @@ def parse_gfs_index(text: str, step: int) -> dict:
             out["10u"] = (off, length)
         elif name == "VGRD" and level == "10 m above ground":
             out["10v"] = (off, length)
+        elif name == "TMP" and level == "2 m above ground":
+            out["2t"] = (off, length)
+        elif name == "PRMSL" and level == "mean sea level":
+            out["msl"] = (off, length)
         elif name == "APCP" and level == "surface" and "acc" in what:
             try:
                 a, b = what.split()[0].split("-")
@@ -113,7 +119,7 @@ def latest_init(model: str, now: datetime, exists) -> datetime | None:
     return None
 
 
-def http_get(url: str, rng: tuple | None = None, retries: int = 3, timeout: int = 90) -> bytes:
+def http_get(url: str, rng: tuple | None = None, retries: int = 6, timeout: int = 90) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     if rng:
         off, length = rng
@@ -125,7 +131,7 @@ def http_get(url: str, rng: tuple | None = None, retries: int = 3, timeout: int 
                 return r.read()
         except Exception as e:  # noqa: BLE001
             err = e
-            time.sleep(2 * (k + 1))
+            time.sleep(2 ** (k + 1))   # 2, 4, 8, 16, 32 s: the open-data buckets answer 503 when asked too fast
     raise RuntimeError(f"{url}: {err}")
 
 
@@ -156,6 +162,10 @@ def read_fields(blobs: dict, open_grib=None):
             units = str(getattr(m, "units", "")).strip()
             if param == "tp" and units in ("m", "m of water equivalent"):
                 vals = vals * 1000.0
+            elif param == "2t" and units in ("K", "k"):
+                vals = vals - 273.15
+            elif param == "msl" and units in ("Pa", "pa"):
+                vals = vals / 100.0
             out[param] = (vals, lat[:, 0], lon[0, :])
             g.close()
         finally:
@@ -215,9 +225,9 @@ def build_model(model: str, out_dir: Path, log, now: datetime, steps=None, fetch
             blobs[p] = fetch(file_url(model, init, hh), want[p])
         return read_fields(blobs, open_grib)
 
-    wu, wv, winfo, times, rain = [], [], None, [], []
+    wu, wv, winfo, times, rain, temp, msl = [], [], None, [], [], [], []
     for h in steps:
-        cur = field_set(h, ("tp", "10u", "10v"))
+        cur = field_set(h, ("tp", "10u", "10v", "2t", "msl"))
         tp, lats, lons = cur["tp"]
         if model == "gfs":
             r6 = window_rain(model, tp, None)
@@ -231,6 +241,11 @@ def build_model(model: str, out_dir: Path, log, now: datetime, steps=None, fetch
         start = (init + timedelta(hours=h - 6)).astimezone(TZ).isoformat()
         grids.write_layer(gdir, f"mm_{model}_rain_{h:03d}", crop_grid(r6, lats, lons, RAIN_REGION), RAIN_SCALE, 0.0,
                           {"src": MODELS[model]["label"], "time": valid, "start": start, "label": f"{MODELS[model]['label']} 6 小時降水預報", "unit": "mm"})
+        for key, scale, offset, label, unit, store in (("temp", TEMP_SCALE, TEMP_OFFSET, "2 m 氣溫預報", "°C", temp), ("msl", MSL_SCALE, MSL_OFFSET, "海平面氣壓預報", "hPa", msl)):
+            src = cur["2t" if key == "temp" else "msl"][0]
+            grids.write_layer(gdir, f"mm_{model}_{key}_{h:03d}", crop_grid(src, lats, lons, RAIN_REGION), scale, offset,
+                              {"src": MODELS[model]["label"], "time": valid, "label": f"{MODELS[model]['label']} {label}", "unit": unit})
+            store.append({"h": h, "time": valid, "meta": f"grids/mm_{model}_{key}_{h:03d}.json"})
         ui, vi, winfo = pack_wind(cur["10u"][0], cur["10v"][0], lats, lons, WIND_REGION)
         wu.append(ui)
         wv.append(vi)
@@ -240,7 +255,7 @@ def build_model(model: str, out_dir: Path, log, now: datetime, steps=None, fetch
     wobj = {"init": init.astimezone(TZ).isoformat(), "grid": winfo, "steps": times, "u": wu, "v": wv, "scale": 0.1}
     (out_dir / f"mm_{model}_wind.json").write_text(json.dumps(wobj, separators=(",", ":")), encoding="utf-8")
     entry = {"model": model, "label": MODELS[model]["label"], "license": MODELS[model]["license"], "init": init.astimezone(TZ).isoformat(),
-             "initUTC": init.isoformat(), "ver": VERSION, "steps": steps, "rain": rain, "wind": f"mm_{model}_wind.json", "built": now.isoformat()}
+             "initUTC": init.isoformat(), "ver": VERSION, "steps": steps, "rain": rain, "temp": temp, "msl": msl, "wind": f"mm_{model}_wind.json", "built": now.isoformat()}
     meta_path.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
     return {**entry, "fresh": True}
 

@@ -936,16 +936,19 @@ def test_modelgrid_indexes_and_windows():
         '{"levtype": "sfc", "param": "tp", "step": "24", "_offset": 100, "_length": 50}',
         '{"levtype": "pl", "param": "tp", "step": "24", "_offset": 1, "_length": 1}',
         '{"levtype": "sfc", "param": "10u", "_offset": 150, "_length": 60}',
-        '{"levtype": "sfc", "param": "10v", "_offset": 210, "_length": 70}', ''])
-    assert mg.parse_ecmwf_index(ecm) == {"tp": (100, 50), "10u": (150, 60), "10v": (210, 70)}
+        '{"levtype": "sfc", "param": "10v", "_offset": 210, "_length": 70}',
+        '{"levtype": "sfc", "param": "2t", "_offset": 280, "_length": 20}',
+        '{"levtype": "sfc", "param": "msl", "_offset": 300, "_length": 30}', ''])
+    assert mg.parse_ecmwf_index(ecm) == {"tp": (100, 50), "10u": (150, 60), "10v": (210, 70), "2t": (280, 20), "msl": (300, 30)}
     gfs = '\n'.join([
         '1:0:d=2026102900:UGRD:10 m above ground:12 hour fcst:',
         '2:100:d=2026102900:VGRD:10 m above ground:12 hour fcst:',
         '3:250:d=2026102900:APCP:surface:6-12 hour acc fcst:',
         '4:400:d=2026102900:APCP:surface:0-12 hour acc fcst:',
-        '5:600:d=2026102900:TMP:2 m above ground:12 hour fcst:'])
+        '5:600:d=2026102900:TMP:2 m above ground:12 hour fcst:',
+        '6:700:d=2026102900:PRMSL:mean sea level:12 hour fcst:'])
     w = mg.parse_gfs_index(gfs, 12)
-    assert w == {"10u": (0, 100), "10v": (100, 150), "tp": (250, 150)}, w          # the 6-hour window ending at +12 h, not the 12-hour total
+    assert w == {"10u": (0, 100), "10v": (100, 150), "tp": (250, 150), "2t": (600, 100)} | {"msl": (700, None)}, w          # the 6-hour window ending at +12 h, not the 12-hour total
     assert mg.parse_gfs_index(gfs, 18).get("tp") is None
     a, b = np.array([[5.0, 2.0]]), np.array([[3.0, 4.0]])
     assert np.allclose(mg.window_rain("aifs", a, b), [[2.0, 0.0]])                  # running total: difference, never negative
@@ -969,6 +972,29 @@ def test_modelgrid_urls_and_latest_run():
     assert mg.latest_init("ecmwf", now, exists) == datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
     assert all(("00z" in u or "12z" in u) for u in seen), "IFS open data only runs at 00 and 12 UTC"
     assert mg.latest_init("gfs", now, lambda u: False) is None
+
+
+def test_modelgrid_unit_conversion():
+    from pipeline import modelgrid as mg
+
+    class Msg:
+        def __init__(self, units, v): self.units, self.values = units, np.full((2, 2), v)
+        def latlons(self): return np.array([[1.0, 1.0], [0.0, 0.0]]), np.array([[0.0, 1.0], [0.0, 1.0]])
+
+    class G:
+        def __init__(self, path):
+            self.m = {"K": Msg("K", 300.15), "Pa": Msg("Pa", 101325.0)}[path.split("|")[0]] if "|" in path else None
+        def read(self, n): return [self.m]
+        def close(self): pass
+
+    seen = iter([Msg("K", 300.15), Msg("Pa", 101325.0)])
+
+    class Fake:
+        def __init__(self, path): self.cur = next(seen)
+        def read(self, n): return [self.cur]
+        def close(self): pass
+    out = mg.read_fields({"2t": b"x", "msl": b"x"}, open_grib=Fake)
+    assert abs(out["2t"][0][0, 0] - 27.0) < 1e-6 and abs(out["msl"][0][0, 0] - 1013.25) < 1e-6
 
 
 def test_modelgrid_crop_and_wind_pack():
@@ -1005,7 +1031,7 @@ def test_modelgrid_build_model_with_fakes(tmp_path):
         def read(self, n): return [Msg()]
         def close(self): pass
 
-    ecm_idx = '\n'.join(_json.dumps({"levtype": "sfc", "param": p, "_offset": i * 10, "_length": 10}) for i, p in enumerate(("tp", "10u", "10v")))
+    ecm_idx = '\n'.join(_json.dumps({"levtype": "sfc", "param": p, "_offset": i * 10, "_length": 10}) for i, p in enumerate(("tp", "10u", "10v", "2t", "msl")))
 
     def fetch(url, rng=None, **kw):
         return ecm_idx.encode() if url.endswith(".index") else b"x"
@@ -1018,6 +1044,9 @@ def test_modelgrid_build_model_with_fakes(tmp_path):
     r = mg.build_model("ecmwf", tmp_path, Log(), now, steps=[6, 12], fetch=fetch, exists=lambda u: True, open_grib=FakeGrib)
     assert r["fresh"] and [x["h"] for x in r["rain"]] == [6, 12] and r["init"].startswith("2026-10-29T08:00")   # 00z run: +6 h = 14:00 Taipei
     assert (tmp_path / "grids" / "mm_ecmwf_rain_006.png").exists() and (tmp_path / "mm_ecmwf_wind.json").exists()
+    assert [x["h"] for x in r["temp"]] == [6, 12] and [x["h"] for x in r["msl"]] == [6, 12]
+    assert (tmp_path / "grids" / "mm_ecmwf_temp_006.png").exists() and (tmp_path / "grids" / "mm_ecmwf_msl_012.png").exists()
+    assert _json.loads((tmp_path / "grids" / "mm_ecmwf_msl_006.json").read_text())["unit"] == "hPa"
     rain = _json.loads((tmp_path / "grids" / "mm_ecmwf_rain_012.json").read_text())
     assert rain["unit"] == "mm" and rain["start"][:16] == "2026-10-29T14:00" and rain["time"][:16] == "2026-10-29T20:00"
     assert abs(rain["max"] - 0.0) < 0.11, "both steps are 2 mm running totals: the 6-hour window is 0 mm"

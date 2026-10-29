@@ -488,7 +488,7 @@ class Builder:
             self.log.warn(f"mm: {e}")
         if not r["models"]:
             raise RuntimeError("; ".join(r["errors"]) or "no model available")
-        self.manifest["layers"]["mm"] = {"models": {k: {x: v[x] for x in ("label", "license", "init", "rain", "wind") if x in v} | ({"stale": True} if v.get("stale") else {})
+        self.manifest["layers"]["mm"] = {"models": {k: {x: v[x] for x in ("label", "license", "init", "rain", "temp", "msl", "wind") if x in v} | ({"stale": True} if v.get("stale") else {})
                                                     for k, v in r["models"].items()}}
         return ", ".join(f"{k} {v['init'][5:16]}{'' if v.get('fresh') else ' (unchanged)'}" for k, v in r["models"].items())
 
