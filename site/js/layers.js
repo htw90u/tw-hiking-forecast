@@ -181,7 +181,7 @@ function levelIcon(m) {
 /** Number of steps (and a preloader) of the current layer when it can be played, else null. */
 function playInfo() {
   const id = S.layer.id;
-  const grids = (list) => ({ n: list.length, pre: () => Promise.all(list.map((p) => getGrid(p))) });
+  const grids = (list) => ({ n: list.length, pre: () => prerender(id, list) });
   if (id === 'radar') return grids(framesFor('radar'));
   if (id === 'wrf3') return grids(framesFor('wrf3'));
   if (id === 'wrfg') return grids(framesFor('wrfg'));
@@ -190,6 +190,39 @@ function playInfo() {
   if (id === 'pop' || (id === 'wind' && (S.layer.windMode || 'fc') === 'fc') || (id === 'visib' && S.layer.visMode === 'fc')) return { n: S.wind?.times?.length || 0 };
   if (id === 'wind' && S.layer.windMode === 'aloft') return { n: wrfDs()?.steps?.length || 0 };
   return null;
+}
+
+/** Colour scale and drawing options of a grid layer's current mode. */
+function renderParams(id) {
+  let kind = layerKind(id);
+  if (kind === 'rainacc' && useBigSpacing()) kind = 'rainbig';
+  const colour = colourFn(scaleFor(kind, S.settings.palette));
+  // Smooth rendering interpolates between cells; "no echo / no rain" counts as a low value
+  // so that rain areas fade out at their edges instead of ending in square steps.
+  const opts = { smooth: S.settings.smooth !== false, fill: FILL[kind] ?? NaN };
+  // The temperature analysis covers land only, in 3 km cells: cut it to the real coastline (no gaps, no sea spill-over).
+  if (kind === 'temp' && id !== 'wrf3' && id !== 'wrfg') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
+  return { kind, colour, opts };
+}
+
+// Drawn pictures of grids, kept per grid and drawing mode: a loop of frames draws each frame once, not on every pass.
+const imageCache = new WeakMap();
+function gridImage(g, kind, colour, opts) {
+  const key = `${kind}|${S.settings.palette}|${opts.smooth}|${opts.fill}|${opts.landClip ? 1 : 0}`;
+  let m = imageCache.get(g);
+  if (!m) { m = new Map(); imageCache.set(g, m); }
+  if (!m.has(key)) m.set(key, renderGrid(g, colour, opts).toDataURL('image/png'));
+  return m.get(key);
+}
+
+/** Draw every frame of a loop ahead of the animation (yielding to the browser between frames). */
+async function prerender(id, paths) {
+  const { kind, colour, opts } = renderParams(id);
+  for (const path of paths) {
+    const g = await getGrid(path);
+    [g, ...(g.parts || [])].forEach((x) => gridImage(x, kind, colour, opts));
+    await new Promise((r) => setTimeout(r, 0));
+  }
 }
 
 export async function showLayer(id, { keepFrame = false } = {}) {
@@ -228,17 +261,10 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (!path) { clearOverlay(); renderLegend(null, '此圖層目前沒有資料'); return; }
     const grid = await getGrid(path);
     if (S.layer.id !== id) return; // user switched meanwhile
-    let kind = layerKind(id);
-    if (kind === 'rainacc' && useBigSpacing()) kind = 'rainbig';
-    const colour = colourFn(scaleFor(kind, S.settings.palette));
-    // Smooth rendering interpolates between cells; "no echo / no rain" counts as a low value
-    // so that rain areas fade out at their edges instead of ending in square steps.
-    const opts = { smooth: S.settings.smooth !== false, fill: FILL[kind] ?? NaN };
-    // The temperature analysis covers land only, in 3 km cells: cut it to the real coastline (no gaps, no sea spill-over).
-    if (kind === 'temp' && id !== 'wrf3' && id !== 'wrfg') Object.assign(opts, { landClip: S.counties, extend: 2, maxK: 8 });
+    const { kind, colour, opts } = renderParams(id);
     const ov = L.layerGroup([grid, ...(grid.parts || [])].map((g) => {
       const [w, s, e, n] = g.bounds;
-      return L.imageOverlay(renderGrid(g, colour, opts).toDataURL('image/png'), [[s, w], [n, e]],
+      return L.imageOverlay(gridImage(g, kind, colour, opts), [[s, w], [n, e]],
         { opacity: layerOpacity(id), interactive: false, className: 'wx-grid' });
     }));
     if (id === 'sat') outlines().forEach((o) => ov.addLayer(o));
@@ -1201,9 +1227,12 @@ function toggleAnimation() {
   if (S.layer.timer) { stopAnimation(); return; }
   const info = playInfo();
   if (!info || info.n < 2) return;
-  // Preload the pictures before stepping so the animation does not stutter.
-  Promise.resolve(info.pre ? info.pre() : null).then(() => {
+  // Preload and draw the pictures before stepping so the animation does not stutter (the button shows a clock meanwhile).
+  const busyBtn = document.getElementById('btn-play');
+  if (busyBtn) { busyBtn.innerHTML = ico('clock'); busyBtn.setAttribute('aria-busy', 'true'); busyBtn.disabled = true; }
+  Promise.resolve(info.pre ? info.pre() : null).catch(() => null).then(() => {
     const b = document.getElementById('btn-play');
+    if (b) { b.removeAttribute('aria-busy'); b.disabled = false; }
     if (b) { b.innerHTML = ico('pause'); b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', '暫停'); b.title = '暫停'; }
     scheduleStep(playDelay());
   });
