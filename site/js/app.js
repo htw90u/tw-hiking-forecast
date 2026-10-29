@@ -735,35 +735,30 @@ ${card(CARDS[0], `
 ${grp('主題與色盤')}
 <label class="field">主題 <select id="set-theme">${opt({ auto: '跟隨系統', light: '淺色', dark: '深色', contrast: '高對比（黑底黃字）' }, s.theme)}</select></label>
 <label class="field">色盤 <select id="set-pal">${opt(PALETTE_NAMES, s.palette)}</select></label>
-<p class="note">「色弱友善」使用明度遞增的色階，紅綠色弱或藍黃色弱皆可分辨；「高對比」適合強光下或低視力。</p>
 ${grp('文字')}
 <label class="field">字體大小 <input type="range" id="set-fs" min="0.9" max="2" step="0.05" value="${s.fontScale}" aria-valuetext="${pct(s.fontScale)}"> <output id="set-fs-out">${pct(s.fontScale)}</output></label>
 <label class="tog"><input type="checkbox" id="set-bold"${s.boldText ? ' checked' : ''}> 粗體文字</label>
 ${grp('動畫與版面')}
 <label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
-<p class="note">也可在地圖右上角「顯示」直接切換文字版／圖示版。</p>
 <label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>
 <label class="range">播放速度 <input id="set-speed" type="range" min="0.2" max="3" step="0.1" value="${s.playSpeed}" aria-describedby="set-speed-out"> <output id="set-speed-out">${Number(s.playSpeed).toFixed(1)} 秒／張</output></label>
-<p class="note">雷達、預報、衛星雲圖等按 ▶ 播放時，每一張停留的秒數（預設 0.8 秒）。</p>`)}
+`)}
 ${card(CARDS[1], `
 ${grp('底圖')}
 <label class="field">底圖 <select id="set-base">${opt(BASEMAPS, s.basemap)}</select></label>
-<p class="note" id="set-tf-note">戶外、地景、自行車地圖由 Thunderforest 提供；額度用完或沒有 key 時自動改用臺灣通用電子地圖。「歷史：」底圖來自中央研究院人社中心（CC BY-NC，需標示出處，不可商業使用）。</p>
+<p class="note" id="set-tf-note">「歷史：」底圖來自中央研究院人社中心（CC BY-NC，需標示出處，不可商業使用）。</p>
 ${grp('歷史地圖疊加')}
-<p class="note">疊在底圖上方（可多選）；沒有資料的區域是透明的，會露出下方底圖，JPEG 類圖磚有資料處為不透明，請用透明度調整。</p>
 ${HIST_OVER.map((h) => `<div class="hov"><label class="tog"><input type="checkbox" data-hov="${h.id}"${(s.histOverlays || {})[h.id] !== undefined ? ' checked' : ''}> ${esc(h.label)}</label>
 <label class="field">透明度 <input type="range" min="0.2" max="1" step="0.1" data-hova="${h.id}" value="${(s.histOverlays || {})[h.id] ?? 0.8}" aria-label="${esc(h.label)} 不透明度"></label></div>`).join('')}
 <details class="sub"><summary>進階：自訂圖磚網址、Thunderforest API key</summary><div class="in">
 <label class="field">自訂圖磚網址 <input type="url" id="set-custom" value="${esc(s.customTile)}" placeholder="https://.../{z}/{x}/{y}.png"></label>
-<p class="note">可填入魯地圖等提供 XYZ 圖磚的網址（請遵守該服務的使用條款）。</p>
 <label class="field">Thunderforest API key <input type="text" id="set-tfkey" value="${esc(s.tfKey)}" autocomplete="off" spellcheck="false" placeholder="${S.manifest?.config?.thunderforestKey ? '已使用本站提供的 key' : '選填'}"></label>
-<p class="note">至 thunderforest.com 註冊免費 Hobby 方案即可取得；填入後優先於本站的 key。</p></div></details>
+</div></details>
 <button class="btn" id="set-dl">下載目前範圍底圖供離線使用</button> <output id="set-dl-out"></output>`)}
 ${card(CARDS[2], `
 <label class="tog"><input type="checkbox" id="set-bar"${s.layerBar !== false ? ' checked' : ''}> 顯示底部圖層列</label>
 <label class="tog"><input type="checkbox" id="set-smooth"${s.smooth !== false ? ' checked' : ''}> 圖層平滑顯示（關閉則顯示原始格點）</label>`)}
 ${card(CARDS[3], `
-<p class="note">任一項達到門檻就會在登山安全評估列出；「注意」為黃色提示，「危險」為紅色警示。</p>
 <div class="thr thh"><span></span><span>注意</span><span>危險</span><span></span></div>
 ${thRow('時雨量', 'rain1h', 'rain1hRed', 'mm ≥')}
 ${thRow('24 小時雨量', 'rain24', 'rain24Red', 'mm ≥')}

@@ -276,7 +276,7 @@ function mountainsCard(lat, lon, maxKm = 20, excludeKey = null) {
     : html`<button class="seg-btn mtn osm" data-peak="${it.k}"><span class="pin-peak tog-ic" aria-hidden="true"><svg viewBox="0 0 14 14"><path d="M7 2.2 12.6 12H1.4z"/></svg></span>${it.n} <small>${it.ele ? `${eleText(it)}・` : ''}${it.area ? `${it.area}・` : ''}${d.toFixed(1)} km</small></button>`);
   return html`<section class="card" aria-labelledby="h-mtn"><h3 id="h-mtn">鄰近山域（${maxKm} km 內）</h3>
 ${list.length ? html`<div class="mtns">${list.map(btn)}</div>
-<p class="note">點山名可查看預報與安全評估。標示「有登山預報」的是氣象署登山預報點，其他山頭顯示鄰近鄉鎮預報。山頭資料 © OpenStreetMap contributors。</p>` : html`<p>${maxKm} km 內沒有已知山頭。</p>`}</section>`;
+<p class="note">山頭資料 © OpenStreetMap contributors。</p>` : html`<p>${maxKm} km 內沒有已知山頭。</p>`}</section>`;
 }
 
 // ------------------------------------------------------------------ forecast tables
@@ -414,7 +414,7 @@ function wrfgOf(pts, key) {
 function wrfgCard(w, label) {
   if (!w) return html``;
   return html`<section class="card" aria-labelledby="h-wrfg"><h3 id="h-wrfg">全球模式 16 天趨勢</h3>
-<p class="note">氣象署全球模式（0.25°、約 25 km 網格；${esc(fmtTime(w.init))} 起報，前 10 天每 6 小時、之後每 12 小時），取「${esc(label)}」所在格點。</p>
+<p class="note">氣象署全球模式 0.25°・${esc(fmtTime(w.init))} 起報</p>
 <p class="note note-red">這是模式輸出，遠期（一週以上）只適合看趨勢，不要當作逐日預報。</p>
 ${raw(chart({ title: '2 m 氣溫（全球模式）', unit: '°C', times: w.times, series: [{ label: '氣溫', values: w.t2, kind: 'line', cls: 's1' }] }))}
 ${raw(chart({ title: '24 小時降水（全球模式）', unit: 'mm', times: w.dayTimes, zeroBase: true, series: [{ label: '24 小時降水', values: w.rain, kind: 'bar', cls: 's2' }] }))}
@@ -439,7 +439,7 @@ function wrf3Of(pts, key) {
 function wrf3Card(w, label) {
   if (!w) return html``;
   return html`<section class="card" aria-labelledby="h-wrf3"><h3 id="h-wrf3">WRF 3 km 模式預報</h3>
-<p class="note">氣象署區域數值模式 WRF 3 km（${esc(fmtTime(w.init))} 起報，每 6 小時、最長 84 小時），取「${esc(label)}」所在格點。這是模式輸出，不是人工預報。</p>
+<p class="note">氣象署 WRF 3 km・${esc(fmtTime(w.init))} 起報</p>
 ${raw(chart({ title: '2 m 氣溫（模式）', unit: '°C', times: w.steps, series: [{ label: '氣溫', values: w.t2, kind: 'line', cls: 's1' }] }))}
 ${raw(chart({ title: '6 小時降水（模式）', unit: 'mm', times: w.steps, zeroBase: true, series: [{ label: '6 小時降水', values: w.rain, kind: 'bar', cls: 's2' }] }))}
 ${raw(chart({ title: '10 m 風速（模式）', unit: 'm/s', times: w.steps, zeroBase: true, series: [{ label: '風速', values: w.ws, kind: 'line', cls: 's3' }] }))}
@@ -605,7 +605,7 @@ function historyBlock(stations, selected) {
   const opts = stations.map(({ it, d }) => `<option value="${esc(it.id)}"${it.id === selected ? ' selected' : ''}>${esc(it.n)}${it.k === 'rain' ? '（雨量站）' : ''}（${d.toFixed(1)} km・${it.alt !== undefined ? `海拔 ${Math.round(it.alt)} m` : '海拔不明'}${it.k !== 'rain' && it.WS === undefined ? '・風力儀器故障' : ''}）</option>`).join('');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' });
-  return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料 <small>逐時數值、圖表與數據表</small></summary><div class="in">
+  return raw(`<details class="sub" data-sub="hist" data-card="hist" open><summary><span aria-hidden="true">▤</span> 觀測資料</summary><div class="in">
 <label class="field">測站（距離・海拔） <select id="hist-sid">${opts}</select></label>
 <div class="seg" role="radiogroup" aria-label="期間">
 <button class="seg-btn" role="radio" aria-checked="true" data-range="24">24 小時</button>
@@ -817,7 +817,7 @@ export async function showPoint(lat, lon, opts = {}) {
     return `<tr><th scope="row">未來 ${p.hours} 小時</th><td colspan="2">${x.v === null ? '無資料' : `約 ${fmtNum(x.v, 0, 'mm')}${range}`}</td></tr>`;
   }).join('');
   const fcHtml = spotPick && spotFc
-    ? `<p class="muted">${esc(spotFc.n)}（${esc(S.spotCats.find((c) => c.id === spotFc.c)?.label || '')}）・發布 ${esc(fmtTime(spotFc.issue))}</p>
+    ? `<p class="muted">發布 ${esc(fmtTime(spotFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="d3">未來3天(逐3小時)</button><button role="tab" class="tab" aria-selected="false" data-tab="week">一週(逐12小時)</button></div>
 <div data-panel="d3">${forecastD3(spotFc.d3, gustSeries(spotFc.k))}${gustSeries(spotFc.k) ? GUST_NOTE : ''}</div><div data-panel="week" hidden>${forecastWeek(spotFc.week)}</div>`
     : '';
@@ -830,7 +830,7 @@ export async function showPoint(lat, lon, opts = {}) {
 ${b ? html`<br><small>${b}</small>` : html`<br><small class="muted">暫無預報資料</small>`}</li>`;
   })}</ul></section>` : '';
   const townHtml = townFc
-    ? `<p class="muted">${esc(normCounty(town.COUNTYNAME))}${esc(townFc.n)} 鄉鎮預報・發布 ${esc(fmtTime(townFc.issue3d || townFc.issue))}</p>
+    ? `<p class="muted">發布 ${esc(fmtTime(townFc.issue3d || townFc.issue))}</p>
 <div class="tabs" role="tablist"><button role="tab" class="tab" aria-selected="true" data-tab="td3">未來3天</button><button role="tab" class="tab" aria-selected="false" data-tab="tweek">一週</button></div>
 <div data-panel="td3">${forecastD3(townFc.d3, gustSeries(town.TOWNCODE))}${gustSeries(town.TOWNCODE) ? GUST_NOTE : ''}</div><div data-panel="tweek" hidden>${forecastWeek(townFc.week)}</div>`
     : '';
@@ -1049,7 +1049,6 @@ export function showQuakes({ recentMs = 0 } = {}) {
 <span class="meta">${fmtTime(q.time)}・深度 ${q.depth} km・最大震度 ${intText(q.maxInt)}${isStrongQuake(q) ? '・強震' : ''}${q.kind === 'local' ? '・小區域' : ''}</span></li>`;
   const recent = list.filter(isRecent);
   const body = html`${recent.length ? html`<section class="card warn"><h3>24 小時內地震（${recent.length} 起）</h3><ul class="list">${recent.map(item)}</ul></section>` : ''}
-<p class="muted">最近的有感地震報告（顯著與小區域）。點選查看震度分布與震央附近的山區。</p>
 <ul class="list">${list.filter((q) => !isRecent(q)).map(item)}</ul>`;
   openSheet('地震報告', body, { onRender: bindCommon });
 }
@@ -1115,7 +1114,7 @@ ${strong ? html`<section class="card warn"><h3>強震注意</h3>
 <li>${lvBadge(2)} 已在山上：遠離邊坡、溪谷與崩塌地，盡量不要在落石區停留，必要時考慮撤退。</li></ul></section>` : ''}
 <section class="card"><details class="qlist"><summary>地圖說明與震度色階</summary>
 <p>${q.shake ? '彩色區塊：氣象署等震度圖（自動對位疊合）。' : '此筆地震沒有等震度圖（氣象署僅提供最新一筆顯著有感地震）。'}方塊數字：各測站實測震度。紅色虛線：距震央 10／30／50 km。</p>
-${legend}<p class="note">按標題列的 ▾ 或往下滑可縮小面板，地圖上的距離圈與震度仍會保留；按 ✕ 才會清除。</p></details></section>
+${legend}</details></section>
 <section class="card"><h3>震央 50 km 內的山（${mountains.length}）</h3>${mountains.length ? html`<ul class="cols">${mountains.map(li)}</ul>` : html`<p>無登山預報點位。</p>`}</section>
 ${others.length ? html`<section class="card"><h3>其他景點</h3><ul class="cols">${others.map(li)}</ul></section>` : ''}
 ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內）</h3><p>${towns.join('、')}</p></section>` : ''}
@@ -1197,7 +1196,7 @@ export function showAlerts() {
 ${S.typhoon?.active ? html`<section class="card warn"><h3>${raw(ico('typhoon'))} 颱風警報</h3><p>${S.typhoon.cyclones.map((c) => `${c.cname}（${c.name}）`).join('、')}</p><button class="btn" data-open="typhoon">颱風路徑與風雨預測</button></section>` : ''}
 <section class="card"><h3>各縣市警特報</h3>${withHz.length ? html`<table class="kv"><tbody>${withHz.map((c) => html`<tr><th scope="row">${c.county}</th><td>${c.hazards.map((h) => `${h.ph}${h.sig}`).join('、')}</td></tr>`)}</tbody></table>` : html`<p>目前沒有生效中的警特報。</p>`}</section>
 ${w.bulletins.map((b) => html`<section class="card"><h3>${b.title}</h3><p class="muted">發布 ${fmtTime(b.issue)}・至 ${fmtTime(b.end)}</p><details><summary>全文</summary><pre class="text">${b.text || ''}</pre></details></section>`)}
-<p class="note">地震另有獨立的「地震」提示（24 小時內有地震時顯示）。<button class="link inline" id="btn-allq">查看所有地震報告</button></p>`;
+<p class="note"><button class="link inline" id="btn-allq">查看所有地震報告</button></p>`;
   openSheet('警特報與災害', body, {
     onRender: (root) => { bindCommon(root); root.querySelector('#btn-allq').addEventListener('click', () => showQuakes()); },
   });
@@ -1212,7 +1211,7 @@ export async function showRecent({ replace = false } = {}) {
   const body = html`<section class="card"><h3>收藏地點</h3>${fav.length ? html`<ul class="list">${fav.map((x) => item(x, 'fav'))}</ul>` : html`<p>尚無收藏。查詢地點後按面板右上角的 ☆，或在搜尋結果旁按 ☆。</p>`}</section>
 <section class="card"><h3>最近查詢（可離線瀏覽）</h3>${rec.length ? html`<ul class="list">${rec.map((x) => item(x, 'recent'))}</ul>
 <button class="btn" id="btn-clear-recent">清空最近查詢（${rec.length} 筆）</button>` : html`<p>尚無紀錄。</p>`}</section>
-<p class="note">最近 40 筆查詢會保存在此裝置，沒有網路時仍可開啟當時的資料快照。清空最近查詢不會影響收藏。</p>`;
+<p class="note">最近 40 筆查詢保存在此裝置，離線時仍可開啟。</p>`;
   openSheet('收藏與最近查詢', body, {
     replace,
     onRender: (root) => {

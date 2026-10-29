@@ -613,6 +613,13 @@ function mmWindSteps() {
   return S.mmWind?.[id]?.steps || [];
 }
 
+/** Tooltip with the full model name and run time of a model button. */
+function mmTitle(id) {
+  const L_ = S.manifest?.layers || {};
+  const init = id === 'wrf3' ? L_.wrf3?.time : L_.mm?.models?.[id]?.init;
+  return ` title="${esc(`${MM_INFO[id].label}${init ? `・起報 ${fmtTime(init)}` : ''}`)}"`;
+}
+
 function mmCurrentTime() { return mmTimes()[S.layer.frame] || null; }
 
 /** After a model or variable change: the step nearest to the time that was on screen. */
@@ -703,8 +710,8 @@ function mmTimeControl() {
   const m = mmCurrent();
   const times = mmTimes();
   let h = modeTabs('模式預報項目', [['rain', '降雨'], ['wind', '風']], 'mmvar', v, { rain: 'umbrella', wind: 'wind' });
-  h += '<div class="seg mm-models" role="radiogroup" aria-label="模式">' + models.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === id}" data-mmmodel="${x}">${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('') + '</div>';
-  h += `<p class="mm-note">${esc(m.label)}・${m.init ? `起報 ${esc(fmtTime(m.init))}` : ''}${m.stale ? '（最新一輪暫時無法更新）' : ''}</p><p class="mm-note note-red">${esc(v === 'rain' ? m.warnRain : m.warnWind)}</p>`;
+  h += '<div class="seg mm-models" role="radiogroup" aria-label="模式">' + models.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === id}" data-mmmodel="${x}"${mmTitle(x)}>${esc(MM_INFO[x].short || MM_INFO[x].label)}</button>`).join('') + '</div>';
+  h += `${m.stale ? '<p class="mm-note">最新一輪暫時無法更新</p>' : ''}<p class="mm-note note-red">${esc(v === 'rain' ? m.warnRain : m.warnWind)}</p>`;
   if (times.length) {
     const i = Math.min(S.layer.frame, times.length - 1);
     h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="mm-frame" type="range" min="0" max="${times.length - 1}" value="${i}" aria-valuetext="${esc(fmtTime(times[i]))}"></label>
@@ -1051,7 +1058,7 @@ export function renderLegend(meta, message) {
       const lo = scale[0][0]; const hi = scale[scale.length - 1][0];
       const fmt = (v) => (kind === 'vis' ? `${Math.round(v * 100)}%` : `${v}${unit}`);
       strip = `<span class="lg-strip grad-v"><span class="grad" style="background:linear-gradient(0deg,${stops})"></span><span class="ticks"><span style="bottom:0">${esc(fmt(lo))}</span><span style="bottom:50%">${esc(fmt((lo + hi) / 2))}</span><span style="bottom:100%">${esc(fmt(hi))}</span></span></span>`;
-      body = (kind === 'vis' ? '<p class="note">可見光僅白天可用（夜間為黑色）。</p>' : '<p class="note">越白（或越鮮豔）代表雲頂越高、越冷，常伴隨強對流。</p>');
+      body = '';
     } else {
       body = '<ol class="swatches">' + scale.map((x, i) => `<li><span class="sw" style="background:${x[1]}"></span>${esc(classLabel(scale, i, unit))}</li>`).reverse().join('') + '</ol>';
       strip = colourStrip(scale, kind);
@@ -1061,7 +1068,6 @@ export function renderLegend(meta, message) {
       const over = kind !== 'rainbig' && Number(meta.max ?? meta.tyMax) > 300;
       body = `<div class="seg lg-spacing" role="radiogroup" aria-label="色階間距">${[['small', '小間距'], ['big', '大間距']]
         .map(([k, l]) => `<button type="button" class="seg-btn" role="radio" data-spacing="${k}" aria-checked="${k === cur}">${l}</button>`).join('')}</div>
-<p class="note">${kind === 'rainbig' ? '目前為大間距色階（1、10、20、60、100…2000 mm，色系依雨量換色）。' : '目前為小間距色階（氣象署原色，1、2、6、10…300 mm 以上）。'}</p>
 ${over ? `<p class="warn-txt">最大值 ${Math.round(meta.max ?? meta.tyMax)} mm 超過小間距最高級距（300 mm），可改選大間距看出差異。</p>` : ''}${body}`;
     }
   }
