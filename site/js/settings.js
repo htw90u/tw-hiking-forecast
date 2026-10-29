@@ -15,6 +15,7 @@ export const DEFAULTS = {
   tfKey: '',             // personal Thunderforest API key (OpenCycleMap); overrides the site key
   showRainGauges: false,  // rain-only stations in the nearby-station list
   reduceMotion: false,
+  playSpeed: 0.8,        // seconds per frame while a time-stepped layer plays (0.2 - 3)
   smooth: true,          // interpolate grid layers (false = raw cells)
   boldText: false,
   ui: 'text',            // text (readable labels) | icon (icon tiles and tab bar)

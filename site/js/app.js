@@ -3,7 +3,7 @@ import { S } from './state.js';
 import { loadSettings, saveSettings, applySettings, DEFAULTS } from './settings.js';
 import { ico, paintIcons } from './icons.js';
 import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $, intText, isStrongQuake, eleText } from './util.js';
-import { LAYERS, showLayer, setOpacity, stopAnimation, setWeatherVisible } from './layers.js';
+import { LAYERS, showLayer, setOpacity, stopAnimation, restartAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
 import {
   showPoint, closeSheet, sheetBack, setSheetMini, showSources, showAlerts, showRecent, showAffected, showQuake, showQuakes, showTyphoon, search, flyTo,
@@ -742,7 +742,9 @@ ${grp('文字')}
 ${grp('動畫與版面')}
 <label class="field">介面樣式 <select id="set-ui">${opt({ text: '文字版（文字標示，好讀）', icon: '圖示版（圖示選單，簡潔）' }, s.ui)}</select></label>
 <p class="note">也可在地圖右上角「顯示」直接切換文字版／圖示版。</p>
-<label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>`)}
+<label class="tog"><input type="checkbox" id="set-motion"${s.reduceMotion ? ' checked' : ''}> 減少動畫</label>
+<label class="range">播放速度 <input id="set-speed" type="range" min="0.2" max="3" step="0.1" value="${s.playSpeed}" aria-describedby="set-speed-out"> <output id="set-speed-out">${Number(s.playSpeed).toFixed(1)} 秒／張</output></label>
+<p class="note">雷達、預報、衛星雲圖等按 ▶ 播放時，每一張停留的秒數（預設 0.8 秒）。</p>`)}
 ${card(CARDS[1], `
 ${grp('底圖')}
 <label class="field">底圖 <select id="set-base">${opt(BASEMAPS, s.basemap)}</select></label>
@@ -832,6 +834,7 @@ ${card(CARDS[4], `
   body.querySelector('#set-bar').addEventListener('change', (e) => { setLayerBar(e.target.checked); summaries(); });
   body.querySelector('#set-smooth').addEventListener('change', (e) => { s.smooth = e.target.checked; save(); showLayer(S.layer.id, { keepFrame: true }); });
   body.querySelector('#set-bold').addEventListener('change', (e) => { s.boldText = e.target.checked; save(); });
+  body.querySelector('#set-speed').addEventListener('input', (e) => { s.playSpeed = Number(e.target.value); body.querySelector('#set-speed-out').textContent = `${s.playSpeed.toFixed(1)} 秒／張`; save(); restartAnimation(); });
   body.querySelector('#set-motion').addEventListener('change', (e) => { s.reduceMotion = e.target.checked; save(); if (s.reduceMotion) stopAnimation(); });
   body.querySelector('#set-base').addEventListener('change', (e) => { s.basemap = e.target.value; try { localStorage.removeItem(TF_OVER_KEY); } catch { /* ignore */ } save(); setBasemap(); });
   const histChange = () => {

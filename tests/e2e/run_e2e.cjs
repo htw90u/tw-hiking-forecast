@@ -1453,6 +1453,32 @@ function serve() {
     assert(r.small.length === 1 && r.small[0].lv === 1 && /2 起/.test(r.small[0].text), `small quakes grouped ${JSON.stringify(r.small)}`);
   });
 
+  await check('play speed: default 0.8 s per frame, adjustable in the settings, and the animation follows it', async () => {
+    assert((await page.evaluate(async () => (await import('./js/state.js')).S.settings.playSpeed)) === 0.8, 'default play speed should be 0.8 s');
+    await openSettings();
+    await page.waitForSelector('#set-speed');
+    await page.$eval('#set-speed', (e) => { e.value = '0.3'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    assert((await page.textContent('#set-speed-out')).includes('0.3'), 'speed label not updated');
+    assert((await page.evaluate(async () => (await import('./js/state.js')).S.settings.playSpeed)) === 0.3, 'speed not saved');
+    await page.keyboard.press('Escape');
+    await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      const g = S.manifest.layers.satellite.grids;
+      const t0 = new Date(g.ir.time).getTime();
+      g.ir.history = [90, 60, 30].map((m) => ({ time: new Date(t0 - m * 60000).toISOString(), meta: g.ir.meta }));
+    });
+    await selectLayer('.chip[data-layer="sat"]');
+    await page.waitForSelector('#sat-frame');
+    await page.$eval('#sat-frame', (e) => { e.value = '0'; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); });
+    await page.waitForFunction(() => document.querySelector('#sat-frame')?.value === '0');
+    const t0 = Date.now();
+    await page.click('#btn-play');
+    await page.waitForFunction(() => document.querySelector('#sat-frame')?.value === '3', null, { timeout: 5000 });   // three steps at 0.3 s
+    assert(Date.now() - t0 < 2500, `three steps took ${Date.now() - t0} ms at 0.3 s per frame`);
+    await page.click('#btn-play');
+    await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.settings.playSpeed = 0.8; });
+  });
+
   await check('earthquake view: per-county intensity table without the report\'s "最大震度N級地區" summary rows', async () => {
     const txt = await page.evaluate(async () => {
       const { S } = await import('./js/state.js'); const v = await import('./js/views.js');

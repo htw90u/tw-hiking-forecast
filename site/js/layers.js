@@ -151,7 +151,7 @@ function clearOverlay() {
 }
 
 export function stopAnimation() {
-  if (S.layer.timer) { clearInterval(S.layer.timer); S.layer.timer = null; }
+  if (S.layer.timer) { clearTimeout(S.layer.timer); S.layer.timer = null; }
   const b = document.getElementById('btn-play');
   if (b) { b.innerHTML = ico('play'); b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', '播放'); b.title = '播放'; }
 }
@@ -1205,12 +1205,32 @@ function toggleAnimation() {
   Promise.resolve(info.pre ? info.pre() : null).then(() => {
     const b = document.getElementById('btn-play');
     if (b) { b.innerHTML = ico('pause'); b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', '暫停'); b.title = '暫停'; }
-    S.layer.timer = setInterval(() => {
-      const cur = playInfo();
-      if (!cur || cur.n < 2) { stopAnimation(); return; }   // the mode or layer changed meanwhile
-      if (S.layer.id === 'sat') S.layer.satIdx = ((S.layer.satIdx == null ? cur.n - 1 : S.layer.satIdx) + 1) % cur.n;
-      else S.layer.frame = (S.layer.frame + 1) % cur.n;
-      showLayer(S.layer.id, { keepFrame: true });
-    }, S.settings.reduceMotion ? 2500 : 800);
+    scheduleStep(playDelay());
   });
+}
+
+/** Seconds per frame chosen in the settings (the same speed with "reduce motion": the person pressed play). */
+function playDelay() {
+  const v = Number(S.settings.playSpeed);
+  return (Number.isFinite(v) ? Math.min(3, Math.max(0.2, v)) : 0.8) * 1000;
+}
+
+/** One animation step after `delay` ms; the next one is timed from the start of this one, so slow drawing does not stretch the pace. */
+function scheduleStep(delay) {
+  S.layer.timer = setTimeout(async () => {
+    const t0 = performance.now();
+    const cur = playInfo();
+    if (!cur || cur.n < 2) { stopAnimation(); return; }   // the mode or layer changed meanwhile
+    if (S.layer.id === 'sat') S.layer.satIdx = ((S.layer.satIdx == null ? cur.n - 1 : S.layer.satIdx) + 1) % cur.n;
+    else S.layer.frame = (S.layer.frame + 1) % cur.n;
+    await showLayer(S.layer.id, { keepFrame: true });
+    if (S.layer.timer) scheduleStep(Math.max(0, playDelay() - (performance.now() - t0)));
+  }, delay);
+}
+
+/** Speed changed in the settings while playing: continue with the new pace. */
+export function restartAnimation() {
+  if (!S.layer.timer) return;
+  clearTimeout(S.layer.timer);
+  scheduleStep(playDelay());
 }
