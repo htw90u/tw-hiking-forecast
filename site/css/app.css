@@ -654,19 +654,19 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .controls .layer-groups { margin-right: 46px; }
 @media (min-width: 700px) { .layer-groups .seg-btn { flex: 0 0 7rem; } }
 
-/* Text interface: compact layer bar with group tabs (only the chips of the chosen group). Icon interface: the original single row of all layers. */
+/* Compact layer bar of the text interface; both interfaces show the group tabs and only the chips of the chosen group. */
 :root[data-ui="text"] .controls { padding-top: .1rem; padding-bottom: .25rem; }
 :root[data-ui="text"] .layer-groups { margin-bottom: .15rem; }
 :root[data-ui="text"] .layer-groups .seg-btn { min-height: 34px; }
 :root[data-ui="text"] .chips { padding-bottom: .1rem; }
 :root[data-ui="text"] .chip { min-height: 36px; padding: 0 .75rem; border-width: 1.5px; }
 :root[data-ui="text"] .controls .tools { margin-top: .1rem; padding: 0 .6rem .15rem; }
-:root[data-ui="icon"] .layer-groups { display: none; }
-:root[data-ui="text"] #chips .chip.grp-off { display: none; }
+#chips .chip.grp-off { display: none; }
 /* Short screens (phones in landscape): no group tabs, every layer in the one row. */
 @media (max-height: 500px) {
   .layer-groups { display: none; }
   :root[data-ui="text"] #chips .chip.grp-off { display: inline-block; }
+  :root[data-ui="icon"] #chips .chip.grp-off { display: flex; }
 }
 
 /* Sub-menu of the model layer (view buttons): a joined track with an outlined active item, unlike the filled model buttons. */
