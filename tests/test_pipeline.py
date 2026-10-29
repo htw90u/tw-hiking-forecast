@@ -927,3 +927,99 @@ def test_satellite_history_keeps_a_rolling_window(tmp_path):
     assert not (tmp_path / "sat_ir_202610280800.png").exists() and (tmp_path / "sat_ir_202610280830.png").exists()
     assert [f["time"] for f in frames] == sorted(f["time"] for f in frames)
     assert len(written) == len(set(written))
+
+
+# ------------------------------------------------------------------ multi-model grids (ECMWF IFS / AIFS, NOAA GFS)
+def test_modelgrid_indexes_and_windows():
+    from pipeline import modelgrid as mg
+    ecm = '\n'.join([
+        '{"levtype": "sfc", "param": "tp", "step": "24", "_offset": 100, "_length": 50}',
+        '{"levtype": "pl", "param": "tp", "step": "24", "_offset": 1, "_length": 1}',
+        '{"levtype": "sfc", "param": "10u", "_offset": 150, "_length": 60}',
+        '{"levtype": "sfc", "param": "10v", "_offset": 210, "_length": 70}', ''])
+    assert mg.parse_ecmwf_index(ecm) == {"tp": (100, 50), "10u": (150, 60), "10v": (210, 70)}
+    gfs = '\n'.join([
+        '1:0:d=2026102900:UGRD:10 m above ground:12 hour fcst:',
+        '2:100:d=2026102900:VGRD:10 m above ground:12 hour fcst:',
+        '3:250:d=2026102900:APCP:surface:6-12 hour acc fcst:',
+        '4:400:d=2026102900:APCP:surface:0-12 hour acc fcst:',
+        '5:600:d=2026102900:TMP:2 m above ground:12 hour fcst:'])
+    w = mg.parse_gfs_index(gfs, 12)
+    assert w == {"10u": (0, 100), "10v": (100, 150), "tp": (250, 150)}, w          # the 6-hour window ending at +12 h, not the 12-hour total
+    assert mg.parse_gfs_index(gfs, 18).get("tp") is None
+    a, b = np.array([[5.0, 2.0]]), np.array([[3.0, 4.0]])
+    assert np.allclose(mg.window_rain("aifs", a, b), [[2.0, 0.0]])                  # running total: difference, never negative
+    assert np.allclose(mg.window_rain("gfs", a, None), a)                           # GFS already is the 6-hour window
+
+
+def test_modelgrid_urls_and_latest_run():
+    from datetime import datetime, timezone
+    from pipeline import modelgrid as mg
+    t = datetime(2026, 10, 29, 0, tzinfo=timezone.utc)
+    assert mg.file_url("aifs", t, 6).endswith("20261029/00z/aifs-single/0p25/oper/20261029000000-6h-oper-fc.grib2")
+    assert mg.index_url("ecmwf", t, 12).endswith("20261029/00z/ifs/0p25/oper/20261029000000-12h-oper-fc.index")
+    assert mg.file_url("gfs", t, 6).endswith("gfs.20261029/00/atmos/gfs.t00z.pgrb2.0p25.f006")
+    assert mg.index_url("gfs", t, 6).endswith("f006.idx")
+    now = datetime(2026, 10, 29, 5, 30, tzinfo=timezone.utc)
+    seen = []
+
+    def exists(url):
+        seen.append(url)
+        return "/20261028/12z/" in url                                              # only yesterday's 12z run is complete
+    assert mg.latest_init("ecmwf", now, exists) == datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
+    assert all(("00z" in u or "12z" in u) for u in seen), "IFS open data only runs at 00 and 12 UTC"
+    assert mg.latest_init("gfs", now, lambda u: False) is None
+
+
+def test_modelgrid_crop_and_wind_pack():
+    from pipeline import modelgrid as mg
+    lats = np.arange(34.0, 15.99, -0.25)          # north to south, like the ECMWF files
+    lons = np.arange(100.0, 140.01, 0.25)
+    vals = np.add.outer(lats, lons * 0)           # value = latitude
+    g = mg.crop_grid(vals, lats, lons, mg.RAIN_REGION)
+    assert g["lat0"] == 16.0 and g["lon0"] == 112.0 and abs(g["res"] - 0.25) < 1e-9
+    assert g["data"][0, 0] == 16.0 and g["data"][-1, 0] == 34.0, "row 0 must be the south edge"
+    u = np.full(vals.shape, 3.0)
+    v = vals * 0 + np.nan
+    ui, vi, info = mg.pack_wind(u, v, lats, lons, mg.WIND_REGION)
+    assert info["lat0"] == 20.0 and info["lon0"] == 116.0 and len(ui) == info["nx"] * info["ny"]
+    assert set(ui) == {30} and set(vi) == {None}
+
+
+def test_modelgrid_build_model_with_fakes(tmp_path):
+    import json as _json
+    from datetime import datetime, timezone
+    from pipeline import modelgrid as mg
+
+    class Msg:
+        units = "m"
+
+        def latlons(self):
+            la, lo = np.meshgrid(np.arange(34.0, 15.99, -0.25), np.arange(100.0, 140.01, 0.25), indexing="ij")
+            return la, lo
+
+        values = np.full((73, 161), 0.002)
+
+    class FakeGrib:
+        def __init__(self, path): pass
+        def read(self, n): return [Msg()]
+        def close(self): pass
+
+    ecm_idx = '\n'.join(_json.dumps({"levtype": "sfc", "param": p, "_offset": i * 10, "_length": 10}) for i, p in enumerate(("tp", "10u", "10v")))
+
+    def fetch(url, rng=None, **kw):
+        return ecm_idx.encode() if url.endswith(".index") else b"x"
+
+    class Log:
+        def info(self, m): pass
+
+    now = datetime(2026, 10, 29, 5, 30, tzinfo=timezone.utc)
+    (tmp_path / "grids").mkdir()
+    r = mg.build_model("ecmwf", tmp_path, Log(), now, steps=[6, 12], fetch=fetch, exists=lambda u: True, open_grib=FakeGrib)
+    assert r["fresh"] and [x["h"] for x in r["rain"]] == [6, 12] and r["init"].startswith("2026-10-29T08:00")   # 00z run: +6 h = 14:00 Taipei
+    assert (tmp_path / "grids" / "mm_ecmwf_rain_006.png").exists() and (tmp_path / "mm_ecmwf_wind.json").exists()
+    rain = _json.loads((tmp_path / "grids" / "mm_ecmwf_rain_012.json").read_text())
+    assert rain["unit"] == "mm" and rain["start"][:16] == "2026-10-29T14:00" and rain["time"][:16] == "2026-10-29T20:00"
+    assert abs(rain["max"] - 0.0) < 0.11, "both steps are 2 mm running totals: the 6-hour window is 0 mm"
+    again = mg.build_model("ecmwf", tmp_path, Log(), now, steps=[6, 12], fetch=fetch, exists=lambda u: True, open_grib=FakeGrib)
+    assert again["fresh"] is False, "the same run must not be processed twice"

@@ -21,6 +21,7 @@ export const LAYERS = [
   { id: 'heat', label: '熱傷害', kind: 'heat', unit: '' },
   { id: 'wrf3', label: 'WRF 3km', kind: 'rain', unit: 'mm' },
   { id: 'wrfg', label: '全球模式', kind: 'rain', unit: 'mm' },
+  { id: 'mm', label: '模式預報', kind: 'rain', unit: 'mm' },
   { id: 'visib', label: '能見度', kind: 'visib', unit: 'km' },
   { id: 'water', label: '水位', kind: 'water', unit: 'm' },
   { id: 'debris', label: '土石流', kind: 'debris', unit: '' },
@@ -87,6 +88,7 @@ export function layerKind(id) {
   if (id === 'qpf' && S.layer.qpfMode === 'acc') return 'rainacc';
   if (id === 'wrf3') return S.layer.wrf3Mode === 'temp' ? 'temp' : 'rain';
   if (id === 'wrfg') return { msl: 'msl', temp: 'temp' }[S.layer.wrfgMode] || 'rain';
+  if (id === 'mm') return 'rain';
   if (id === 'sat' && satGrids().ir) return SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].kind;
   return layerDef(id).kind;
 }
@@ -133,6 +135,7 @@ export function framesFor(id) {
   }
   if (id === 'wrf3') return wrf3Frames().map((f) => f.meta);
   if (id === 'wrfg') return wrfgFrames().map((f) => f.meta);
+  if (id === 'mm') return mmVar() === 'rain' ? mmFrames().map((f) => f.meta) : [];
   if (id === 'rainacc') return (L_.rainacc?.periods || [{ meta: 'grids/rainday.json' }]).map((p) => p.meta);
   if (['qpe1h', 'rainday', 'qpf1h', 'temp'].includes(id)) return [`grids/${id}.json`];
   return [];
@@ -185,6 +188,7 @@ function playInfo() {
   if (id === 'radar') return grids(framesFor('radar'));
   if (id === 'wrf3') return grids(framesFor('wrf3'));
   if (id === 'wrfg') return grids(framesFor('wrfg'));
+  if (id === 'mm') return mmVar() === 'rain' ? grids(framesFor('mm')) : { n: mmWindSteps().length };
   if (id === 'sat' && satGrids().ir) return grids(satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key).map((f) => f.meta));
   if (id === 'heat') return { n: S.heat?.times?.length || 0 };
   if (id === 'pop' || (id === 'wind' && (S.layer.windMode || 'fc') === 'fc') || (id === 'visib' && S.layer.visMode === 'fc')) return { n: S.wind?.times?.length || 0 };
@@ -255,6 +259,8 @@ export async function showLayer(id, { keepFrame = false } = {}) {
     if (id === 'lightning') { await showLightning(); return; }
     if (id === 'wrf3' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = wrf3NowIndex(wrf3Frames());
     if (id === 'wrfg' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = 0;
+    if (id === 'mm' && mmVar() === 'wind') { await showMMWind(keepFrame); return; }
+    if (id === 'mm' && (!keepFrame || S.layer.frame >= framesFor(id).length)) S.layer.frame = mmNowIndex(mmFrames());
     const frames = framesFor(id);
     const sf = id === 'sat' ? satFrames(SAT_MODES[Math.min(S.layer.frame, SAT_MODES.length - 1)].key) : null;
     const path = sf ? sf[satIndex(sf)]?.meta : PERIOD_LAYERS.includes(id) ? frames[Math.min(S.layer.period, frames.length - 1)] : frames[S.layer.frame];
@@ -276,6 +282,11 @@ export async function showLayer(id, { keepFrame = false } = {}) {
       ...(S.layer.wrf3Mode === 'temp' ? {} : { start: grid.meta.start, end: grid.meta.time, time: undefined }),
       note: `模式輸出的格點預報（3 km 網格、每 6 小時一步、最長 84 小時），${S.layer.wrf3Mode === 'temp' ? '為 2 m 高度氣溫；模式地形高度與實際海拔不同，山區氣溫請與測站、氣象署山區預報對照。' : '為每 6 小時累積降水，由模式累積雨量相減而得。'}`,
       ...(S.layer.wrf3Mode === 'temp' ? {} : { noteWarn: '位置與強度都可能有偏差，不是機率，也不等於氣象署的定量降水預報。' }) } : {}) });
+    if (id === 'mm') {
+      const m = mmCurrent();
+      renderLegend({ ...grid.meta, kindOverride: kind, src: m.src, issued: m.init, start: grid.meta.start, end: grid.meta.time, time: undefined, license: m.licenseKey, licenseText: m.license,
+        note: `${m.label}：6 小時累積降水（${m.res} km 網格）。${m.ai ? '這是機器學習（AI）模式。' : ''}`, noteWarn: m.warnRain });
+    }
     if (id === 'wrfg') {
       const mode = S.layer.wrfgMode || 'rain';
       renderLegend({ ...grid.meta, kindOverride: kind, src: '中央氣象署 全球模式（M-A0060）', issued: S.manifest.layers.wrfg.time,
@@ -545,6 +556,163 @@ async function showWrf(keepFrame) {
 }
 
 // ---------------------------------------------------------------- WRF 3 km rain and temperature grids
+// ---------------------------------------------------------------- multi-model forecast layer (rain, wind): WRF 3 km, ECMWF IFS, ECMWF AIFS, NOAA GFS
+const MM_ORDER = ['wrf3', 'ecmwf', 'aifs', 'gfs'];
+const MM_INFO = {
+  wrf3: { label: '氣象署 WRF 3 km', res: 3, src: '中央氣象署 區域數值模式 WRF 3 km（M-A0064）', licenseKey: 'ogdl' },
+  ecmwf: { label: 'ECMWF', res: 25, src: 'ECMWF IFS 開放資料（0.25°）', ai: false, licenseKey: 'mm' },
+  aifs: { label: 'AIFS（AI）', res: 25, src: 'ECMWF AIFS 開放資料（0.25°，機器學習模式）', ai: true, licenseKey: 'mm' },
+  gfs: { label: 'GFS', res: 25, src: 'NOAA GFS（0.25°）', ai: false, licenseKey: 'mm' },
+};
+const MM_WARN = {
+  rain: { 3: '位置與強度都可能有偏差，不是機率，也不等於氣象署的定量降水預報。', 25: '25 km 網格，山區降雨位置與強度偏差大，只適合看趨勢。' },
+  wind: { 3: '3 km 模式的 10 m 風；稜線與山口的實際風速仍可能更強，請與測站對照。', 25: '25 km 網格的地形比實際平滑，山區風速偏弱，只適合看趨勢。' },
+};
+
+function mmVar() { return S.layer.mmVar === 'wind' ? 'wind' : 'rain'; }
+
+/** Models that have data for the chosen variable (WRF 3 km comes from its own files, the others from the multi-model build). */
+function mmModels() {
+  const L_ = S.manifest?.layers || {};
+  const mm = L_.mm?.models || {};
+  return MM_ORDER.filter((id) => (id === 'wrf3' ? Boolean(L_.wrf3 && (mmVar() === 'rain' ? L_.wrf3.rain?.length : L_.wrf3.steps?.length)) : Boolean(mm[id]?.rain?.length)));
+}
+
+function mmId() {
+  const list = mmModels();
+  return list.includes(S.layer.mmModel) ? S.layer.mmModel : list[0];
+}
+
+function mmCurrent() {
+  const id = mmId();
+  const L_ = S.manifest?.layers || {};
+  const info = MM_INFO[id] || { label: '', res: 25 };
+  const init = id === 'wrf3' ? L_.wrf3?.time : L_.mm?.models?.[id]?.init;
+  return { id, ...info, init, warnRain: MM_WARN.rain[info.res], warnWind: MM_WARN.wind[info.res],
+    license: id === 'wrf3' ? '中央氣象署開放資料' : L_.mm?.models?.[id]?.license, stale: Boolean(L_.mm?.models?.[id]?.stale) };
+}
+
+/** Rain frames of the chosen model: [{meta, time}] (the 6 hours ending at `time`). */
+function mmFrames() {
+  const id = mmId();
+  const L_ = S.manifest?.layers || {};
+  if (id === 'wrf3') return (L_.wrf3?.rain || []).map((x) => ({ meta: x.meta, time: L_.wrf3.steps[x.fh / 6] }));
+  return (L_.mm?.models?.[id]?.rain || []).map((x) => ({ meta: x.meta, time: x.time }));
+}
+
+/** Valid times of the chosen model for the chosen variable. */
+function mmTimes() {
+  if (mmVar() === 'rain') return mmFrames().map((f) => f.time);
+  return mmWindSteps();
+}
+
+function mmWindSteps() {
+  const id = mmId();
+  if (!id) return [];
+  if (id === 'wrf3') return S.wrf3?.steps || S.manifest?.layers?.wrf3?.steps || [];
+  return S.mmWind?.[id]?.steps || [];
+}
+
+function mmCurrentTime() { return mmTimes()[S.layer.frame] || null; }
+
+/** After a model or variable change: the step nearest to the time that was on screen. */
+function mmKeepTime(t) {
+  const times = mmTimes();
+  if (!times.length) { S.layer.frame = 0; return; }
+  if (!t) { S.layer.frame = mmNowIndex(times.map((x) => ({ time: x }))); return; }
+  const want = new Date(t).getTime();
+  let best = 0;
+  times.forEach((x, i) => { if (Math.abs(new Date(x).getTime() - want) < Math.abs(new Date(times[best]).getTime() - want)) best = i; });
+  S.layer.frame = best;
+}
+
+/** The step nearest to now (the last when all are past): where the loop starts. */
+function mmNowIndex(frames) {
+  const i = frames.findIndex((f) => new Date(f.time).getTime() >= Date.now() - 3 * 3600e3);
+  return i < 0 ? Math.max(0, frames.length - 1) : i;
+}
+
+/** The wind file of the chosen model must be loaded before its time steps are known. */
+async function mmEnsureWind() {
+  if (mmVar() === 'wind' && mmId()) await mmLoadWind(mmId());
+}
+
+async function mmLoadWind(id) {
+  if (id === 'wrf3') {
+    const w = await loadWrf3();
+    if (!w) return null;
+    const n = w.grid.nx * w.grid.ny;
+    return { grid: w.grid, steps: w.steps, init: w.init, uv: (k, c) => [w.dec.u10[k * n + c] / 10, w.dec.v10[k * n + c] / 10] };
+  }
+  S.mmWind = S.mmWind || {};
+  if (!S.mmWind[id]) {
+    const file = S.manifest?.layers?.mm?.models?.[id]?.wind;
+    const d = file ? await getJSON(file, { optional: true }) : null;
+    if (d) S.mmWind[id] = { grid: d.grid, steps: d.steps, init: d.init, uv: (k, c) => { const u = d.u[k][c]; const v = d.v[k][c]; return u === null || v === null ? null : [u / 10, v / 10]; } };
+  }
+  return S.mmWind[id] || null;
+}
+
+/** Wind arrows (downwind direction, Beaufort number) on a regular grid, thinned to about 46 px; uv(k, cell) -> [u, v] | null. */
+function windField(g, uv, k, tip) {
+  const col = colourFn(scaleFor('wind', S.settings.palette));
+  const p0 = S.map.latLngToLayerPoint([g.lat0, g.lon0]);
+  const p1 = S.map.latLngToLayerPoint([g.lat0 + g.res, g.lon0 + g.res]);
+  const px = Math.max(1, Math.hypot(p1.x - p0.x, p1.y - p0.y) / Math.SQRT2);
+  const stride = Math.max(1, Math.ceil(46 / px));   // the arrow and its number need room
+  const bounds = S.map.getBounds().pad(0.1);
+  const ov = L.layerGroup();
+  for (let r = 0; r < g.ny; r += stride) {
+    for (let c = 0; c < g.nx; c += stride) {
+      const lat = g.lat0 + r * g.res; const lon = g.lon0 + c * g.res;
+      if (!bounds.contains([lat, lon])) continue;
+      const w = uv(k, r * g.nx + c);
+      if (!w) continue;
+      const [u, v] = w;
+      const ws = Math.hypot(u, v);
+      const bf = beaufort(ws);
+      const from = (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360;
+      const rgb = col(bf);
+      L.marker([lat, lon], { icon: windArrow(from, bf, `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`), keyboard: false, pane: 'spots', interactive: true })
+        .bindTooltip(`${tip}：${esc(compass(from))} ${ws.toFixed(1)} m/s（${bf}級）`).addTo(ov);
+    }
+  }
+  return ov;
+}
+
+async function showMMWind(keepFrame) {
+  const id = mmId();
+  const m = mmCurrent();
+  const w = id ? await mmLoadWind(id) : null;
+  if (S.layer.id !== 'mm') return;
+  if (!w?.steps?.length) { clearOverlay(); renderLegend(null, '目前沒有這個模式的風場資料'); renderTimeControl(); return; }
+  if (!keepFrame || S.layer.frame >= w.steps.length) S.layer.frame = mmNowIndex(w.steps.map((t) => ({ time: t })));
+  const k = S.layer.frame;
+  finishOverlay(windField(w.grid, w.uv, k, `${m.label} 10 m 風`));
+  renderLegend({ label: `${m.label} 10 m 風場`, time: w.steps[k], issued: w.init, kindOverride: 'wind', src: m.src, license: m.licenseKey, licenseText: m.license,
+    note: `箭頭指向風吹去的方向，數字為蒲福風級。${m.ai ? '這是機器學習（AI）模式。' : ''}`, noteWarn: m.warnWind });
+  renderTimeControl();
+}
+
+/** Panel under the layer bar: variable tabs, model buttons, the model's run time and its warning, the time slider. */
+function mmTimeControl() {
+  const v = mmVar();
+  const models = mmModels();
+  if (!models.length) return '<span class="muted">目前沒有模式預報資料</span>';
+  const id = mmId();
+  const m = mmCurrent();
+  const times = mmTimes();
+  let h = modeTabs('模式預報項目', [['rain', '降雨'], ['wind', '風']], 'mmvar', v, { rain: 'umbrella', wind: 'wind' });
+  h += '<div class="seg mm-models" role="radiogroup" aria-label="模式">' + models.map((x) => `<button class="seg-btn" role="radio" aria-checked="${x === id}" data-mmmodel="${x}">${esc(MM_INFO[x].label)}</button>`).join('') + '</div>';
+  h += `<p class="mm-note">${esc(m.label)}・${m.init ? `起報 ${esc(fmtTime(m.init))}` : ''}${m.stale ? '（最新一輪暫時無法更新）' : ''}</p><p class="mm-note note-red">${esc(v === 'rain' ? m.warnRain : m.warnWind)}</p>`;
+  if (times.length) {
+    const i = Math.min(S.layer.frame, times.length - 1);
+    h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="mm-frame" type="range" min="0" max="${times.length - 1}" value="${i}" aria-valuetext="${esc(fmtTime(times[i]))}"></label>
+<output id="mm-time">${esc(fmtTime(times[i]))}</output></div>`;
+  }
+  return h;
+}
+
 /** Frames of the WRF 3 km layer: [{meta, time}] for the chosen mode (6-hour rain or 2 m temperature). */
 function wrf3Frames() {
   const m = S.manifest?.layers?.wrf3;
@@ -974,6 +1142,9 @@ export function attribution(meta) {
   if (meta.license === 'open-meteo') {
     return `<p class="src">資料來源：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 數值模式預報${version ? `（${esc(fmtTime(version))} 取得）` : ''}・CC BY 4.0；非氣象署發布</p>`;
   }
+  if (meta.license === 'mm') {
+    return `<p class="src">資料來源：${esc(meta.src || '')}${version ? `（起報 ${esc(fmtTime(version))}）` : ''}・${esc(meta.licenseText || '')}・非氣象署發布，由本站建置程式處理後顯示</p>`;
+  }
   if (meta.license === 'gibs') {
     return `<p class="src">影像日期 ${esc(meta.date || '')}・${esc(meta.src || '')}・Imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS)・<a href="https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api" target="_blank" rel="noopener">GIBS</a>；非中央氣象署資料</p>`;
   }
@@ -1003,6 +1174,8 @@ export function renderTimeControl(meta) {
       h += `<div class="tc-play">${playButton()}<label class="range"><span class="sr-only">預報時間</span><input id="wrf3-frame" type="range" min="0" max="${fr.length - 1}" value="${S.layer.frame}" aria-valuetext="${esc(fmtTime(t))}"></label>
 <output id="wrf3-time">${esc(fmtTime(t))}</output></div>`;
     }
+  } else if (id === 'mm') {
+    h = mmTimeControl();
   } else if (id === 'wrfg') {
     const mode = S.layer.wrfgMode || 'rain';
     const fr = wrfgFrames();
@@ -1152,6 +1325,26 @@ export function renderTimeControl(meta) {
     S.layer.wrfRes = b.dataset.wrfres;
     showLayer('wind', { keepFrame: false });
   }));
+  el.querySelectorAll('[data-mmvar]').forEach((b) => b.addEventListener('click', async () => {
+    const t = mmCurrentTime();
+    S.layer.mmVar = b.dataset.mmvar;
+    await mmEnsureWind();
+    mmKeepTime(t);
+    showLayer('mm', { keepFrame: true });
+  }));
+  el.querySelectorAll('[data-mmmodel]').forEach((b) => b.addEventListener('click', async () => {
+    const t = mmCurrentTime();
+    S.layer.mmModel = b.dataset.mmmodel;
+    await mmEnsureWind();
+    mmKeepTime(t);
+    showLayer('mm', { keepFrame: true });
+  }));
+  const mmf = el.querySelector('#mm-frame');
+  if (mmf) {
+    const times = mmTimes();
+    mmf.addEventListener('input', () => { stopAnimation(); el.querySelector('#mm-time').textContent = fmtTime(times[Number(mmf.value)]); });
+    mmf.addEventListener('change', () => { S.layer.frame = Number(mmf.value); showLayer('mm', { keepFrame: true }); });
+  }
   el.querySelectorAll('[data-wrf3mode]').forEach((b) => b.addEventListener('click', () => {
     S.layer.wrf3Mode = b.dataset.wrf3mode;
     showLayer('wrf3', { keepFrame: false });

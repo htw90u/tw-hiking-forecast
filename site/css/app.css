@@ -626,3 +626,8 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .risklist { list-style: none; padding: 0; margin: 0; }
 .risklist li { margin: .35rem 0; }
 .ty-banner.eq-banner.eq-strong { background: var(--eq); }
+
+/* multi-model forecast layer */
+.mm-models { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0 .2rem; }
+.mm-note { margin: .1rem 0; font-size: .8rem; color: var(--muted); }
+.mm-note.note-red { color: var(--lv2); font-weight: 600; }

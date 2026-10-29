@@ -1490,6 +1490,32 @@ function serve() {
     await page.click('#sheet-close').catch(() => {});
   });
 
+  await check('multi-model layer: rain and wind, model buttons keep the time, red resolution warning, time slider with step buttons', async () => {
+    const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}); });
+    if (has.length < 2) { console.log('SKIP no multi-model data built locally'); return; }
+    await selectLayer('.chip[data-layer="mm"]');
+    await page.waitForSelector('[data-mmmodel]');
+    await page.waitForSelector('img.wx-grid');
+    const models = await page.$$eval('[data-mmmodel]', (b) => b.map((x) => x.dataset.mmmodel));
+    assert(models.length >= 2 && models.includes('ecmwf'), `model buttons ${models}`);
+    assert((await page.textContent('.mm-note.note-red')).length > 5, 'resolution warning missing');
+    assert((await page.$('#mm-frame')) && (await page.$('[aria-label="下一個時段"]')), 'time slider with step buttons missing');
+    const t0 = await page.textContent('#mm-time');
+    await page.click('[data-mmmodel="aifs"]');
+    await page.waitForFunction(() => document.querySelector('[data-mmmodel="aifs"]')?.getAttribute('aria-checked') === 'true');
+    await page.waitForSelector('img.wx-grid');
+    const t1 = await page.textContent('#mm-time');
+    assert(t1 === t0, `switching the model must keep the time (${t0} -> ${t1})`);
+    assert((await page.textContent('#legend')).includes('AIFS'), 'legend should name the model');
+    await page.click('[data-mmvar="wind"]');
+    await page.waitForSelector('.wind-mk', { timeout: 15000 });
+    assert((await page.$$('.wind-mk')).length > 5, 'wind arrows missing');
+    await page.click('[aria-label="下一個時段"]');
+    await page.waitForFunction((t) => document.querySelector('#mm-time')?.textContent !== t, t1);
+    await page.click('[data-mmvar="rain"]');
+    await page.waitForSelector('img.wx-grid');
+  });
+
   await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
     await page.evaluate(() => localStorage.setItem('hikingwx.searchHistory.v1', JSON.stringify(['玉山'])));
     await page.click('#q', { clickCount: 3 });

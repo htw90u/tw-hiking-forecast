@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import aloft, forecast, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, wrfglobal, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
+from . import aloft, forecast, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, wrfglobal, modelgrid, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "wrfg", "heat", "hydro", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "wrfg", "mm", "heat", "hydro", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -480,6 +480,17 @@ class Builder:
                  **{k: f"grids/wrfg_{k}_{h:03d}.json" for k in ("rain", "msl", "temp")}} for h in r["days"]]
         self.manifest["layers"]["wrfg"] = {"time": r["init"], "days": days}
         return f"model run {r['init']}, {len(days)} days ({'downloaded' if r['fresh'] else 'unchanged'})"
+
+    def task_mm(self):
+        """ECMWF IFS, ECMWF AIFS and NOAA GFS: 6-hour rain grids and 10 m wind for the multi-model layer."""
+        r = modelgrid.build(self.out, self.log, now())
+        for e in r["errors"]:
+            self.log.warn(f"mm: {e}")
+        if not r["models"]:
+            raise RuntimeError("; ".join(r["errors"]) or "no model available")
+        self.manifest["layers"]["mm"] = {"models": {k: {x: v[x] for x in ("label", "license", "init", "rain", "wind") if x in v} | ({"stale": True} if v.get("stale") else {})
+                                                    for k, v in r["models"].items()}}
+        return ", ".join(f"{k} {v['init'][5:16]}{'' if v.get('fresh') else ' (unchanged)'}" for k, v in r["models"].items())
 
     def task_heat(self):
         r = heat.build(self.out, self.f.get_json)
