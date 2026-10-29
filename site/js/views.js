@@ -178,7 +178,7 @@ export function setSheetMini(on, { refit = true } = {}) {
   if (b) {
     b.setAttribute('aria-expanded', String(!on));
     b.setAttribute('aria-label', on ? '展開面板' : '縮小面板（保留地圖上的標示）');
-    b.firstElementChild.innerHTML = ico(on ? 'chev-up' : 'chev-down');
+    b.firstElementChild.innerHTML = ico(on ? 'chev-down' : 'chev-up');
   }
   if (refit && S.focusBounds) setTimeout(() => { S.map.invalidateSize(); fitVisible(S.focusBounds); }, 60);
 }
@@ -964,7 +964,6 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
       setSheetMenu([
         { label: '在 Windy 開啟', href: built.windy },
         { label: '複製座標', keepOpen: true, run: async (el) => { const t = `${lat.toFixed(5)}, ${lon.toFixed(5)}`; try { await navigator.clipboard.writeText(t); el.textContent = '已複製'; } catch { el.textContent = t; } } },
-        { label: '全螢幕展開／還原', run: () => document.getElementById('sheet-toggle').click() },
         { label: '全部展開', cards: 'open' },
         { label: '全部收合', cards: 'close' },
       ]);

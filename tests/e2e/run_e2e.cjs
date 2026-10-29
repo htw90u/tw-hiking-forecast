@@ -908,7 +908,7 @@ function serve() {
     assert(info.cards.length >= 8 && ['safe', 'obs', 'fc', 'sun'].every((g) => groups.has(g)), `cards ${JSON.stringify(info.cards.map((c) => c.id))}`);
     const folded = info.cards.filter((c) => !c.open && ['now', 'rain', 'sun', 'ens'].includes(c.id));
     assert(folded.length >= 2 && folded.every((c) => c.sum.length > 3), `folded cards lack a summary: ${JSON.stringify(folded)}`);
-    assert(info.head.fav && info.head.more && !info.head.full, `point panel header should hold star and ⋯ (no full-screen button): ${JSON.stringify(info.head)}`);
+    assert(info.head.fav && info.head.more && info.head.full, `point panel header should hold star, ⋯ and full-screen: ${JSON.stringify(info.head)}`);
     assert(info.cards.find((c) => c.id === 'stations')?.open && info.cards.find((c) => c.id === 'fc')?.open && !info.cards.find((c) => c.id === 'sun')?.open, 'default open / folded cards');
     // remembered: open the sun card, reopen the panel
     await page.click('[data-card="sun"] > summary');
