@@ -1160,8 +1160,8 @@ function serve() {
     assert((await page.evaluate(async () => (await import('./js/store.js')).listFav().then((f) => f.length))) === 1, 'favourite not saved from the search list');
     // choosing the result: highlight + header star already filled
     await page.click('#q-results li[data-i="0"] >> text=鹿林');
-    await page.waitForSelector('#sheet.open #btn-fav');
-    await page.waitForFunction(() => document.getElementById('btn-fav')?.getAttribute('aria-pressed') === 'true');
+    await page.waitForSelector('#sheet.open #sheet-fav:not([hidden])');
+    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'true');
     assert((await page.$$('.pick-mk')).length === 1, 'selected point is not highlighted on the map');
     await page.waitForTimeout(1500);
     const vis = await page.evaluate(() => {
@@ -1172,11 +1172,11 @@ function serve() {
     // With 200 % text and two banners the map above the panel can be too short to show anything: only check when there is room.
     assert(vis.room < 160 || vis.ok, 'the highlighted point is hidden behind the panel');
     await page.screenshot({ path: path.join(SHOTS, 'pick-highlight.png') });
-    await page.click('#btn-fav');
-    await page.waitForFunction(() => document.getElementById('btn-fav')?.getAttribute('aria-pressed') === 'false');
+    await page.click('#sheet-fav');
+    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'false');
     assert((await page.evaluate(async () => (await import('./js/store.js')).listFav().then((f) => f.length))) === 0, 'header star did not remove the favourite');
-    await page.click('#btn-fav');
-    await page.waitForFunction(() => document.getElementById('btn-fav')?.getAttribute('aria-pressed') === 'true');
+    await page.click('#sheet-fav');
+    await page.waitForFunction(() => document.getElementById('sheet-fav')?.getAttribute('aria-pressed') === 'true');
     await page.click('#sheet-close');
     assert((await page.$$('.pick-mk')).length === 0, 'highlight should be removed when the panel closes');
     assert(!(await page.isVisible('#sheet-fav')), 'header star should be hidden without a panel');
@@ -1601,9 +1601,9 @@ function serve() {
     await page.waitForSelector('body.ready');
     // make one favourite from a fresh point query (the start-up view may frame a typhoon)
     await page.evaluate(async () => { const v = await import('./js/views.js'); await v.showPoint(23.62, 120.93); });
-    await page.waitForSelector('#sheet.open #btn-fav');
-    await page.click('#btn-fav');
-    await page.waitForFunction(() => document.querySelector('#btn-fav').textContent.includes('已收藏'));
+    await page.waitForSelector('#sheet.open #sheet-fav:not([hidden])');
+    await page.click('#sheet-fav');
+    await page.waitForFunction(() => document.querySelector('#sheet-fav').getAttribute('aria-pressed') === 'true');
     await page.click('#sheet-close');
     await page.click('#btn-recent');
     await page.waitForSelector('[data-kind="recent"][data-del]');
