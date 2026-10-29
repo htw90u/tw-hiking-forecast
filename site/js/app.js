@@ -939,7 +939,11 @@ async function loadData() {
   // A peak that is a forecast mountain is shown only once, as the forecast mountain.
   const normName = (n) => n.replace(/(主峰|主山)$/, '');
   const mtns = S.spots.filter((p) => p.c === 'mountain');
-  S.peaks = S.peaks.filter((pk) => !mtns.some((m) => normName(m.n) === normName(pk.n) && Math.abs(m.lat - pk.lat) < 0.05 && Math.abs(m.lon - pk.lon) < 0.05));
+  S.peaks = S.peaks.filter((pk) => {
+    const m = mtns.find((x) => normName(x.n) === normName(pk.n) && Math.abs(x.lat - pk.lat) < 0.05 && Math.abs(x.lon - pk.lon) < 0.05);
+    if (m && m.ele == null && pk.ele) { m.ele = pk.ele; m.est = pk.est; }   // the forecast mountain takes the elevation of the OSM peak it replaces
+    return !m;
+  });
   S.spotCats = spots?.categories || [];
   S.quakes = quakes?.quakes || [];
   S.typhoon = typhoon;

@@ -22,10 +22,10 @@ export const LEVELS = [
 export function assess(ctx, th) {
   const reasons = [];
   const add = (lv, text, link = {}) => reasons.push({ lv, text, ...link });
-  const r1 = Math.max(ctx.rain1h ?? 0, ...ctx.stations.slice(0, 3).map((s) => s.R1h ?? 0));
+  const r1 = +Math.max(ctx.rain1h ?? 0, ...ctx.stations.slice(0, 3).map((s) => s.R1h ?? 0)).toFixed(1);
   if (r1 >= th.rain1hRed) add(2, `近1小時雨量 ${r1} mm（≥ ${th.rain1hRed}）`);
   else if (r1 >= th.rain1h) add(1, `近1小時雨量 ${r1} mm（≥ ${th.rain1h}）`);
-  const r24 = Math.max(ctx.rainToday ?? 0, ...ctx.stations.slice(0, 3).map((s) => s.R24h ?? 0));
+  const r24 = +Math.max(ctx.rainToday ?? 0, ...ctx.stations.slice(0, 3).map((s) => s.R24h ?? 0)).toFixed(1);
   if (r24 >= th.rain24Red) add(2, `24小時累積雨量 ${r24} mm（≥ ${th.rain24Red}，豪雨等級）`);
   else if (r24 >= th.rain24) add(1, `24小時累積雨量 ${r24} mm（≥ ${th.rain24}）`);
   if (ctx.qpfMax) {

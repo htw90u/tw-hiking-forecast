@@ -761,13 +761,15 @@ export async function showPoint(lat, lon, opts = {}) {
   const title = opts.label || peak?.n || spotPick?.n || (town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
   // Header hint: this place has no CWA forecast of its own (only a chosen forecast spot or a station has).
   const noForecast = opts.stationId ? '' : peak ? '無氣象署預報・顯示鄰近鄉鎮與鄰近山頭預報' : !spotPick ? '非預報點・顯示鄉鎮與鄰近山頭預報' : '';
-  const placeLine = [peak?.tags?.length ? peak.tags.map((t) => S.peakLists[t] || t).join('・') : null, peak?.ele ? `${eleText(peak)}${peak.est ? '（地形模型估計）' : ''}` : null, town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : null].filter(Boolean).join('・') || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
   // The list of nearby places leaves out the place itself: the chosen spot and its duplicates under other categories (same name, same spot).
   const isSelf = ({ it, d }) => it.k === spotPick?.k || (d < 0.3 && [spotPick?.n, peak?.n, opts.label].some((n) => n && (it.n === n || it.n.includes(n) || n.includes(it.n))));
   const near = spotsNear.filter((x) => !isSelf(x)).slice(0, 5).map(({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${S.spotCats.find((c) => c.id === it.c)?.label || ''}・${d.toFixed(1)} km</span></li>`);
 
   const station = opts.stationId ? S.stations.find((x) => x.id === opts.stationId) : null;
   const eleHere = spotPick?.ele ?? peak?.ele ?? station?.alt ?? null;
+  const fmtEle = (m) => `${Math.round(Number(m)).toLocaleString('en-US')} m`;
+  const eleLabel = (peak || spotPick)?.ele ? `${(peak || spotPick).est ? '約 ' : ''}${fmtEle((peak || spotPick).ele)}${(peak || spotPick).est ? '（地形模型估計）' : ''}` : station?.alt != null ? fmtEle(station.alt) : null;
+  const placeLine = [peak?.tags?.length ? peak.tags.map((t) => S.peakLists[t] || t).join('・') : null, town ? `${normCounty(town.COUNTYNAME)}${town.TOWNNAME}` : null, eleLabel].filter(Boolean).join('・') || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
   // Everything that depends on the late data (grid samples, winds aloft, water) is built here: once with what the panel waited for, again when the rest has arrived.
   const build = (vals) => {
     const showRain = S.settings.showRainGauges === true;
