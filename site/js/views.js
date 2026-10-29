@@ -1058,6 +1058,7 @@ function intensityIcon(iv, label) {
 }
 
 export async function showQuake(q, { from = null } = {}) {
+  if (!from && S.pick && S.lastPoint) from = S.lastPoint;   // a point panel is open (e.g. the quake marker was tapped on the map): relate the quake to that point
   if (!S.focus) S.focus = L.layerGroup().addTo(S.map);
   S.focus.clearLayers();
   // Distance rings (labelled) and epicentre.
