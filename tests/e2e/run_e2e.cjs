@@ -1453,6 +1453,17 @@ function serve() {
     assert(r.small.length === 1 && r.small[0].lv === 1 && /2 起/.test(r.small[0].text), `small quakes grouped ${JSON.stringify(r.small)}`);
   });
 
+  await check('earthquake view: per-county intensity table without the report\'s "最大震度N級地區" summary rows', async () => {
+    const txt = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js'); const v = await import('./js/views.js');
+      const q = { ...S.quakes[0], areas: [{ area: '高雄市地區', county: '高雄市', int: '4級', iv: 4 }, { area: '嘉義縣地區', county: '嘉義縣', int: '2級', iv: 2 }, { area: '最大震度4級地區', county: '高雄市', int: '4級', iv: 4 }, { area: '最大震度2級地區', county: '嘉義縣、臺南市', int: '2級', iv: 2 }] };
+      await v.showQuake(q);
+      return document.querySelector('#sheet-body details.qlist table.kv')?.textContent || '';
+    });
+    assert(/高雄市4級/.test(txt) && /嘉義縣2級/.test(txt) && !/最大震度/.test(txt), `intensity table: ${txt}`);
+    await page.click('#sheet-close').catch(() => {});
+  });
+
   await check('search: a history entry and the keyboard search key (form submit) both open the first match', async () => {
     await page.evaluate(() => localStorage.setItem('hikingwx.searchHistory.v1', JSON.stringify(['玉山'])));
     await page.click('#q', { clickCount: 3 });

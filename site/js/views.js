@@ -1095,7 +1095,9 @@ export async function showQuake(q, { from = null } = {}) {
   const legend = html`<ol class="swatches inline">${scale.map((x) => html`<li><span class="sw" style="background:${x[1]}"></span>${x[2]}</li>`)}</ol>`;
   const li = ({ it, d }) => html`<li><button class="link" data-spot="${it.k}">${it.n}</button> <span class="meta">${d.toFixed(1)} km</span></li>`;
   const strong = isStrongQuake(q);
-  const hard = (q.areas || []).filter((a) => (a.iv ?? 0) >= 4);
+  // The report also carries summary rows named "最大震度N級地區" (the same counties grouped by intensity): only the per-county rows are shown.
+  const areas = (q.areas || []).filter((a) => !/^最大震度/.test(a.area || '')).sort((x, y) => (y.iv ?? 0) - (x.iv ?? 0));
+  const hard = areas.filter((a) => (a.iv ?? 0) >= 4);
   const dFrom = from ? haversineKm(from.lat, from.lon, q.lat, q.lon) : null;
   const fromLv = dFrom === null || !strong ? 0 : dFrom <= STRONG_QUAKE_KM.danger ? 2 : dFrom <= STRONG_QUAKE_KM.caution ? 1 : 0;
   const fromName = from?.opts?.label || '所選地點';
@@ -1117,7 +1119,7 @@ ${legend}<p class="note">按標題列的 ▾ 或往下滑可縮小面板，地�
 <section class="card"><h3>震央 50 km 內的山（${mountains.length}）</h3>${mountains.length ? html`<ul class="cols">${mountains.map(li)}</ul>` : html`<p>無登山預報點位。</p>`}</section>
 ${others.length ? html`<section class="card"><h3>其他景點</h3><ul class="cols">${others.map(li)}</ul></section>` : ''}
 ${towns.length ? html`<section class="card"><h3>震央附近鄉鎮（30 km 內）</h3><p>${towns.join('、')}</p></section>` : ''}
-<section class="card"><details class="qlist"><summary>各地震度${hard.length ? `（震度 4 級以上：${hard.map((a) => `${a.area} ${a.int}`).join('、')}）` : ''}</summary><table class="kv"><tbody>${q.areas.map((a) => html`<tr><th scope="row">${a.area}</th><td>${a.int}</td></tr>`)}</tbody></table></details></section>
+<section class="card"><details class="qlist"><summary>各地震度${hard.length ? `（震度 4 級以上：${hard.map((a) => `${a.county || a.area} ${a.int}`).join('、')}）` : ''}</summary><table class="kv"><tbody>${areas.map((a) => html`<tr><th scope="row">${a.county || a.area}</th><td>${a.int}</td></tr>`)}</tbody></table></details></section>
 <p class="muted">${q.text || ''}</p>
 ${strong && q.img ? html`<section class="card"><h3>氣象署地震報告圖</h3><img class="eq-report" src="${safeUrl(q.img)}" alt="地震報告圖（震央與各地震度）" loading="lazy"></section>` : ''}
 <p><a href="${safeUrl(q.web)}" target="_blank" rel="noopener">氣象署地震報告頁</a>${q.img ? html`・<a href="${safeUrl(q.img)}" target="_blank" rel="noopener">報告圖</a>` : ''}</p>
