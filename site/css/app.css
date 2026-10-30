@@ -249,11 +249,11 @@ pre.text { white-space: pre-wrap; font: inherit; font-size: .9rem; }
 .chart text { fill: var(--muted); font-size: 11px; }
 .chart .line { fill: none; stroke-width: 2.5; }
 .chart .dash { stroke-dasharray: 6 4; }
-.chart .line.s1 { stroke: var(--s1); } .chart .line.s3 { stroke: var(--s3); } .chart .line.s4 { stroke: var(--s4); }
+.chart .line.s2 { stroke: var(--s2); } .chart .line.s1 { stroke: var(--s1); } .chart .line.s3 { stroke: var(--s3); } .chart .line.s4 { stroke: var(--s4); }
 .chart rect.s2 { fill: var(--s2); }
 .chart-sum { font-size: .8rem; color: var(--muted); margin: 0; }
 .lg::before { content: ""; display: inline-block; width: 1.4rem; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: .2rem; }
-.lg.s1::before { border-color: var(--s1); } .lg.s3::before { border-color: var(--s3); } .lg.s4::before { border-color: var(--s4); }
+.lg.s2::before { border-color: var(--s2); } .lg.s1::before { border-color: var(--s1); } .lg.s3::before { border-color: var(--s3); } .lg.s4::before { border-color: var(--s4); }
 .lg.dash::before { border-top-style: dashed; }
 .lg.bar::before { height: .8rem; border: 0; background: var(--s2); width: .8rem; }
 details.tbl summary { font-size: .8rem; font-weight: 400; color: var(--muted); }
@@ -656,10 +656,9 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 
 /* Compact layer bar of the text interface; both interfaces show the group tabs and only the chips of the chosen group. */
 :root[data-ui="text"] .controls { padding-top: .1rem; padding-bottom: .25rem; }
-:root[data-ui="text"] .layer-groups { margin-bottom: .15rem; }
-:root[data-ui="text"] .layer-groups .seg-btn { min-height: 34px; }
+:root .layer-groups .seg-btn { min-height: 36px; }
 :root[data-ui="text"] .chips { padding-bottom: .1rem; }
-:root[data-ui="text"] .chip { min-height: 36px; padding: 0 .75rem; border-width: 1.5px; }
+:root[data-ui="text"] .chip { min-height: 40px; padding: 0 .8rem; border-width: 1.5px; }
 :root[data-ui="text"] .controls .tools { margin-top: .1rem; padding: 0 .6rem .15rem; }
 #chips .chip.grp-off { display: none; }
 /* Short screens (phones in landscape): no group tabs, every layer in the one row. */
@@ -673,15 +672,15 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .mm-view { gap: 0; padding: 2px; background: var(--chip, #e8eeeb); border-radius: 10px; width: fit-content; }
 .mm-view .seg-btn { border: 0; background: none; border-radius: 8px; min-height: 32px; color: var(--muted); font-weight: 600; }
 .mm-view .seg-btn[aria-checked="true"] { background: var(--card); color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); font-weight: 700; }
-:root[data-ui="text"] #time-ctl .seg.tabs .seg-btn { min-height: 36px; }
+:root[data-ui="text"] #time-ctl .seg.tabs .seg-btn { min-height: 40px; }
 :root[data-ui="text"] .mm-models { margin: .25rem 0 .1rem; }
 :root[data-ui="text"] .mm-view { margin: .25rem 0 .1rem; }
 :root[data-ui="text"] .mm-note { margin: 0; line-height: 1.3; }
-:root[data-ui="text"] .mm-models .seg-btn { min-height: 34px; padding: .15rem .5rem; }
+:root[data-ui="text"] .mm-models .seg-btn { min-height: 38px; padding: .2rem .5rem; }
 
 /* Compact top status strip (typhoon / earthquake banner, update time) and group tabs of the icon interface (a little roomier than the text one). */
 .status { padding-top: .1rem; padding-bottom: .1rem; }
 .status .ty-banner { min-height: 36px; }
 .sp { min-height: 36px; }
-:root[data-ui="icon"] .layer-groups { margin-bottom: .2rem; }
-:root[data-ui="icon"] .layer-groups .seg-btn { min-height: 38px; }
+:root .layer-groups { margin-bottom: .2rem; }
+.mm-card-tabs { display: flex; gap: .3rem; margin: .3rem 0 .5rem; }

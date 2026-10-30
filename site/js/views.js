@@ -13,6 +13,7 @@ import { assess, LEVELS, STRONG_QUAKE_KM } from './safety.js';
 import { loadAloft, aloftCard, sunCard, levelAlt as levelAltOf, compass as compassName } from './aloft.js';
 import { sunTimes, twDate } from './sun.js';
 import { ensembleCard, bindEnsemble } from './ensemble.js';
+import { mmCompareCard, bindMmCompare } from './mmcard.js';
 import { loadHydro, hydroCard, townAlerts } from './hydro.js';
 import { cardize, bindCards, jumpToGroup, GROUPS } from './cards.js';
 import { ico } from './icons.js';
@@ -904,11 +905,12 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     aloft: cardize(aloftHtml, { id: 'aloft', grp: 'air', summary: aloftSum }),
     hydro: cardize(hydroHtml, { id: 'hydro', grp: 'water', alert: hydroAlerts.length > 0, summary: hydroSum }),
     ens: cardize(ensembleCard(), { id: 'ens', grp: 'fc', icon: '∿', summary: '按下載入 ECMWF／GFS 10 天範圍' }),
+    mmc: cardize(mmCompareCard(), { id: 'mmc', grp: 'fc', icon: '∿', summary: '' }),
     sun: cardize(sunCard(lat, lon, eleHere), { id: 'sun', grp: 'sun', summary: sun0 ? `日出 ${sun0.rise}・日沒 ${sun0.set}${eleHere && eleHere >= 300 ? '（海拔視野開闊）' : ''}` : '' }),
     near: cardize(nearHtml, { id: 'near', grp: 'info', summary: near2 }),
     mtns: cardize(station ? mountainsCard(station.lat, station.lon) : peak ? mountainsCard(lat, lon, 10, peak.k) : '', { id: 'mtns', grp: 'info', icon: '▲', summary: '' }),
   };
-  const order = ['risk', 'station', 'fc', 'mtnFc', 'town', 'now', 'stations', 'aloft', 'rain', 'heat', 'wrf3', 'wrfg', 'hydro', 'ens', 'sun', 'mtns', 'near'];
+  const order = ['risk', 'station', 'fc', 'mtnFc', 'town', 'now', 'stations', 'aloft', 'rain', 'heat', 'wrf3', 'wrfg', 'hydro', 'mmc', 'ens', 'sun', 'mtns', 'near'];
   const present = order.filter((k) => cardsOut[k]);
   const groupsPresent = Object.keys(GROUPS).filter((g) => present.some((k) => cardsOut[k].includes(`data-grp="${g}"`)));
   const bf = (n) => (n === null || n === undefined ? '—' : `${n} 級`);
@@ -959,6 +961,7 @@ ${raw(present.map((k) => cardsOut[k]).join(''))}
       bindHistory(root);
       bindCards(root);
       bindEnsemble(root, lat, lon, eleHere);
+      bindMmCompare(root, lat, lon);
       root.querySelector('#btn-brief-info')?.addEventListener('click', (ev) => { const d = root.querySelector('#pstrip-info'); d.hidden = !d.hidden; ev.currentTarget.setAttribute('aria-expanded', String(!d.hidden)); });
       root.querySelector('#btn-fav')?.addEventListener('click', () => document.getElementById('sheet-fav').click());
       setSheetMenu([

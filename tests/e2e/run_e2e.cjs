@@ -1523,6 +1523,20 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
   });
 
+  await check('point card 模式對照: models side by side for temperature, rain, wind and pressure', async () => {
+    const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}).length; });
+    if (has < 2) { console.log('SKIP no multi-model data built locally'); return; }
+    await page.evaluate(async () => { const v = await import('./js/views.js'); v.showPoint(23.47, 120.96, { label: '玉山' }); });
+    await page.waitForSelector('#h-mmc', { state: 'attached' });
+    await page.evaluate(() => { const d = document.querySelector('#h-mmc').closest('details'); if (d) d.open = true; });
+    await page.click('#btn-mmc');
+    await page.waitForSelector('#mmc-out figure', { timeout: 30000 });
+    assert((await page.$$('#mmc-out .line')).length >= 2, 'temperature lines of at least two models');
+    await page.click('[data-mmc="rain"]');
+    await page.waitForFunction(() => document.querySelector('#mmc-out')?.textContent.includes('6 小時雨量'), null, { timeout: 30000 });
+    await page.click('#sheet-close').catch(() => {});
+  });
+
   await check('multi-model layer: temperature and pressure tabs, WRF 3 km has no pressure, compare works on them', async () => {
     const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.values(S.manifest.layers.mm?.models || {}).filter((m) => m.temp?.length && m.msl?.length).length; });
     if (has < 2) { console.log('SKIP temperature and pressure not built locally'); return; }

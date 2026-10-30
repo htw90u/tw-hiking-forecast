@@ -586,6 +586,39 @@ const MM_WARN = {
   wind: { 3: '3 km 模式的 10 m 風；稜線與山口的實際風速仍可能更強，請與測站對照。', 25: '25 km 網格的地形比實際平滑，山區風速偏弱，只適合看趨勢。' },
 };
 
+const MM_CARD_HOURS = 120;   // the point card shows the first five days
+
+/** Series of every model at one place for the point card: [{ id, label, cls, times, values }] of rain (6 h mm), temp (°C), msl (hPa) or wind (m/s). */
+export async function mmSeriesAt(lat, lon, v) {
+  const L_ = S.manifest?.layers || {};
+  const cls = { wrf3: 's2', ecmwf: 's1', aifs: 's4', gfs: 's3' };
+  const t0 = Date.now() - 3 * 3600e3;
+  const out = [];
+  for (const id of MM_ORDER) {
+    if (v === 'wind') {
+      const w = (id === 'wrf3' ? Boolean(L_.wrf3?.steps?.length) : Boolean(L_.mm?.models?.[id]?.wind)) ? await mmLoadWind(id) : null;
+      if (!w) continue;
+      const g = w.grid;
+      const i = Math.round((lon - g.lon0) / g.res); const j = Math.round((lat - g.lat0) / g.res);
+      if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) continue;
+      const keep = w.steps.map((t, k) => k).filter((k) => tkey(w.steps[k]) >= t0 && tkey(w.steps[k]) <= t0 + (MM_CARD_HOURS + 3) * 3600e3);
+      out.push({ id, label: MM_INFO[id].short || MM_INFO[id].label, cls: cls[id], times: keep.map((k) => w.steps[k]),
+        values: keep.map((k) => { const uv = w.uv(k, j * g.nx + i); return uv ? Math.round(Math.hypot(uv[0], uv[1]) * 10) / 10 : null; }) });
+      continue;
+    }
+    const frames = mmRawFrames(id, v).filter((f) => tkey(f.time) >= t0 && tkey(f.time) <= t0 + (MM_CARD_HOURS + 3) * 3600e3);
+    if (!frames.length) continue;
+    const grids = [];
+    for (let k = 0; k < frames.length; k += 8) grids.push(...await Promise.all(frames.slice(k, k + 8).map((f) => getGrid(f.meta))));
+    const values = grids.map((g) => {
+      const x = sample(g, lat, lon);
+      return x === null ? (v === 'rain' ? 0 : null) : Math.round(x * 10) / 10;
+    });
+    out.push({ id, label: MM_INFO[id].short || MM_INFO[id].label, cls: cls[id], times: frames.map((f) => f.time), values });
+  }
+  return out;
+}
+
 function mmVar() { return ['wind', 'temp', 'msl'].includes(S.layer.mmVar) ? S.layer.mmVar : 'rain'; }
 
 /** Models shown: the chosen one, or (compare switched on, rain only) the ticked ones. */
@@ -639,9 +672,9 @@ function mmCurrent() {
 }
 
 /** Rain frames of the chosen model: [{meta, time}] (the 6 hours ending at `time`). */
-function mmRawFrames(id) {
+function mmRawFrames(id, variable = mmVar()) {
   const L_ = S.manifest?.layers || {};
-  const v = mmVar() === 'wind' ? 'rain' : mmVar();
+  const v = variable === 'wind' ? 'rain' : variable;
   if (id === 'wrf3') return (L_.wrf3?.[v] || []).map((x) => ({ meta: x.meta, time: L_.wrf3.steps[x.fh / 6] }));
   return (L_.mm?.models?.[id]?.[v] || []).map((x) => ({ meta: x.meta, time: x.time }));
 }
