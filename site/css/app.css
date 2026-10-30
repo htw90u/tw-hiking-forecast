@@ -678,3 +678,10 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 :root[data-ui="text"] .mm-view { margin: .25rem 0 .1rem; }
 :root[data-ui="text"] .mm-note { margin: 0; line-height: 1.3; }
 :root[data-ui="text"] .mm-models .seg-btn { min-height: 34px; padding: .15rem .5rem; }
+
+/* Compact top status strip (typhoon / earthquake banner, update time) and group tabs of the icon interface (a little roomier than the text one). */
+.status { padding-top: .1rem; padding-bottom: .1rem; }
+.status .ty-banner { min-height: 36px; }
+.sp { min-height: 36px; }
+:root[data-ui="icon"] .layer-groups { margin-bottom: .2rem; }
+:root[data-ui="icon"] .layer-groups .seg-btn { min-height: 38px; }
