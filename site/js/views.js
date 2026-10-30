@@ -179,7 +179,9 @@ export function setSheetMini(on, { refit = true } = {}) {
   if (b) {
     b.setAttribute('aria-expanded', String(!on));
     b.setAttribute('aria-label', on ? '展開面板' : '縮小面板（保留地圖上的標示）');
-    b.firstElementChild.innerHTML = ico(on ? 'chev-down' : 'chev-up');
+    // Bottom sheet (phone) minimises downwards; the desktop side panel collapses up to the top-right corner.
+    const topAnchored = matchMedia('(min-width: 900px)').matches && !matchMedia('(max-height: 500px) and (orientation: landscape)').matches;
+    b.firstElementChild.innerHTML = ico(on === topAnchored ? 'chev-down' : 'chev-up');
   }
   if (refit && S.focusBounds) setTimeout(() => { S.map.invalidateSize(); fitVisible(S.focusBounds); }, 60);
 }
