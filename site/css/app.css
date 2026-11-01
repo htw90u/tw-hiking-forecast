@@ -297,7 +297,7 @@ summary::-webkit-details-marker { display: none; }
 .legend.quake-hide { display: none !important; }
 
 /* Minimised sheet: header bar only, map highlights stay visible */
-.sheet.mini { height: auto !important; bottom: 0; }
+.sheet.mini { height: auto !important; bottom: var(--tabbar-h, 0px); background: var(--chip); }
 .sheet.mini .sheet-body { display: none; }
 .sheet.mini #sheet-title { cursor: pointer; }
 @media (min-width: 900px) {

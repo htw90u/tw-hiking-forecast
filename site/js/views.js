@@ -174,14 +174,25 @@ export function setSheetMini(on, { refit = true } = {}) {
   const sheet = document.getElementById('sheet');
   sheet.classList.toggle('mini', on);
   document.body.classList.toggle('sheet-mini', on);
+  if (on) syncTabbarHeight();
   if (on) { sheet.classList.remove('full'); document.body.classList.remove('sheet-full'); }
   const b = document.getElementById('sheet-min');
   if (b) {
     b.setAttribute('aria-expanded', String(!on));
     b.setAttribute('aria-label', on ? '展開面板' : '縮小面板（保留地圖上的標示）');
-    b.firstElementChild.innerHTML = ico(on ? 'chev-down' : 'chev-up');
+    // Bottom sheet (phone) minimises downwards; the desktop side panel collapses up to the top-right corner.
+    const topAnchored = matchMedia('(min-width: 900px)').matches && !matchMedia('(max-height: 500px) and (orientation: landscape)').matches;
+    b.firstElementChild.innerHTML = ico(on === topAnchored ? 'chev-down' : 'chev-up');
   }
   if (refit && S.focusBounds) setTimeout(() => { S.map.invalidateSize(); fitVisible(S.focusBounds); }, 60);
+}
+
+/** Height of a bottom tab bar, so the minimised sheet docks above it instead of covering it. */
+function syncTabbarHeight() {
+  const t = document.getElementById('tabbar');
+  const r = t ? t.getBoundingClientRect() : null;
+  const atBottom = r && r.height > 0 && r.top > innerHeight / 2;
+  document.documentElement.style.setProperty('--tabbar-h', atBottom ? `${Math.round(innerHeight - r.top)}px` : '0px');
 }
 
 export function closeSheet() {
