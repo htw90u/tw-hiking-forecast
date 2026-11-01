@@ -2,6 +2,7 @@
 import { S } from './state.js';
 import { loadSettings, saveSettings, applySettings, DEFAULTS } from './settings.js';
 import { ico, paintIcons } from './icons.js';
+import { fetchLiveQuakes, mergeQuakes } from './quakelive.js';
 import { getJSON, setDataVersion, fmtTime, ageText, esc, bbox, $, intText, isStrongQuake, eleText } from './util.js';
 import { LAYERS, showLayer, setOpacity, stopAnimation, restartAnimation, setWeatherVisible } from './layers.js';
 import { PALETTE_NAMES } from './palettes.js';
@@ -619,12 +620,14 @@ function updateStatus() {
   // Base-map notice: a short warning pill; the full sentence opens under the strip (and stays in the text for screen readers).
   if (S.baseNoteFor !== S.baseNotice) { S.baseNoteFor = S.baseNotice; S.baseNoteDone = false; clearTimeout(S.baseNoteTimer); S.baseNoteTimer = null; }
   const baseNote = S.baseNotice && !S.baseNoteDone ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
+  const fresh = S.newBuild ? '<button type="button" class="sp sp-warn" id="btn-reload">有新資料，點此更新</button>' : '';
   const upd = `<span class="sp sp-plain">資料更新 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
-  el.innerHTML = `<div class="strip-row">${tyBanner}${eqBanner}${baseNote}${off ? '<span class="sp sp-off">離線・顯示快取資料</span>' : ''}${upd}${failed.length ? `<span class="sp sp-warn">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}</div>${S.baseNotice && !S.baseNoteDone ? `<p class="strip-detail" id="base-detail" hidden>${esc(S.baseNotice)}</p>` : ''}`;
+  el.innerHTML = `<div class="strip-row">${tyBanner}${eqBanner}${baseNote}${off ? '<span class="sp sp-off">離線・顯示快取資料</span>' : ''}${fresh}${upd}${failed.length ? `<span class="sp sp-warn">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}</div>${S.baseNotice && !S.baseNoteDone ? `<p class="strip-detail" id="base-detail" hidden>${esc(S.baseNotice)}</p>` : ''}`;
   const bn = el.querySelector('.base-note');
   if (bn && !S.baseNoteTimer) S.baseNoteTimer = setTimeout(() => { S.baseNoteDone = true; updateStatus(); }, 10000);
   if (bn) bn.addEventListener('click', () => { const d = el.querySelector('#base-detail'); d.hidden = !d.hidden; bn.setAttribute('aria-expanded', String(!d.hidden)); });
   el.querySelector('#ty-banner')?.addEventListener('click', showTyphoon);
+  el.querySelector('#btn-reload')?.addEventListener('click', () => window.location.reload());
   placeLegend();
   const openQuakes = () => (recentQ.length === 1 ? showQuake(q0) : showQuakes({ recentMs: QUAKE_RECENT_MS }));
   el.querySelector('#eq-banner')?.addEventListener('click', openQuakes);
@@ -982,6 +985,41 @@ async function loadData() {
   S.counties = topojson.feature(topo, topo.objects.counties).features;
 }
 
+// ---------------------------------------------------------------- live refresh
+const quakeKey = (q) => `${q.time}|${q.lat}|${q.lon}`;
+
+/** New earthquake reports straight from the CWA bucket (the site build only runs every 20 minutes or so). */
+async function refreshQuakes() {
+  if (document.hidden || !navigator.onLine || !S.map) return;
+  try {
+    const live = await fetchLiveQuakes();
+    if (!live.length) return;
+    const had = new Set(S.quakes.map(quakeKey));
+    if (!live.some((q) => !had.has(quakeKey(q)))) return;
+    S.quakes = mergeQuakes(S.quakes, live);
+    buildOverlays();
+    updateStatus();
+  } catch (e) { console.warn('live quakes', e); }
+}
+
+/** A newer site build exists: offer a reload (never reloads by itself, an open panel would be lost). */
+async function checkBuild() {
+  if (document.hidden || !navigator.onLine || !S.manifest || S.newBuild) return;
+  try {
+    const res = await fetch(`data/manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const m = await res.json();
+    if (m.built && m.built !== S.manifest.built) { S.newBuild = true; updateStatus(); }
+  } catch (e) { console.warn('manifest check', e); }
+}
+
+function startLiveRefresh() {
+  setInterval(refreshQuakes, 60e3);
+  setInterval(checkBuild, 5 * 60e3);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshQuakes(); checkBuild(); } });
+  refreshQuakes();
+}
+
 async function main() {
   paintIcons();
   S.settings = loadSettings();
@@ -1091,6 +1129,7 @@ async function main() {
   showTyphoonByDefault();
   buildOverlays();
   updateStatus();
+  startLiveRefresh();
   showLayer(S.settings.layer);
   document.body.classList.add('ready');
 }

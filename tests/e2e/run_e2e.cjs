@@ -1523,6 +1523,26 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
   });
 
+  await check('live earthquakes: a report newer than the build is read from the CWA bucket and shown without a rebuild', async () => {
+    const xml = fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'quake_report.xml'), 'utf8')
+      .replace(/<EarthquakeNo>\d+<\/EarthquakeNo>/, '<EarthquakeNo>999001</EarthquakeNo>')
+      .replace(/<OriginTime>[^<]+<\/OriginTime>/, `<OriginTime>${new Date(Date.now() - 600e3 + 8 * 3600e3).toISOString().slice(0, 19)}+08:00</OriginTime>`);
+    const data = Buffer.from(xml, 'utf8');
+    const name = Buffer.from('CWA-EQ999001.xml');
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(name.length, 26);
+    const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt32LE(data.length, 20); cd.writeUInt32LE(data.length, 24); cd.writeUInt16LE(name.length, 28); cd.writeUInt32LE(0, 42);
+    const eo = Buffer.alloc(22); eo.writeUInt32LE(0x06054b50, 0); eo.writeUInt16LE(1, 8); eo.writeUInt16LE(1, 10);
+    const local = Buffer.concat([lh, name, data]);
+    eo.writeUInt32LE(46 + name.length, 12); eo.writeUInt32LE(local.length, 16);
+    const zip = Buffer.concat([local, cd, name, eo]);
+    await page.route(/cwaopendata\.s3\.ap-northeast-1\.amazonaws\.com\/Earthquake\/E-A001[56]-001\.zip/, (r) => r.fulfill({ status: 200, contentType: 'application/zip', headers: { 'Access-Control-Allow-Origin': '*' }, body: zip }));
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForFunction(async () => { const { S } = await import('./js/state.js'); return S.quakes.some((q) => q.no === '999001'); }, null, { timeout: 15000 });
+    const q = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return S.quakes.find((x) => x.no === '999001'); });
+    assert(q.mag === 4 && q.areas.length > 0 && q.stations.length > 0 && /高雄/.test(q.loc), `parsed report ${JSON.stringify({ mag: q.mag, areas: q.areas.length, loc: q.loc })}`);
+    await page.unroute(/cwaopendata\.s3\.ap-northeast-1\.amazonaws\.com\/Earthquake\/E-A001[56]-001\.zip/);
+  });
+
   await check('point card 模式對照: models side by side for temperature, rain, wind and pressure', async () => {
     const has = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return Object.keys(S.manifest.layers.mm?.models || {}).length; });
     if (has < 2) { console.log('SKIP no multi-model data built locally'); return; }
