@@ -191,8 +191,8 @@ export function setSheetMini(on, { refit = true } = {}) {
 function syncTabbarHeight() {
   const t = document.getElementById('tabbar');
   const r = t ? t.getBoundingClientRect() : null;
-  const atBottom = r && r.height > 0 && r.top > innerHeight / 2;
-  document.documentElement.style.setProperty('--tabbar-h', atBottom ? `${Math.round(innerHeight - r.top)}px` : '0px');
+  const atBottom = r && r.height > 0 && r.top > window.innerHeight / 2;
+  document.documentElement.style.setProperty('--tabbar-h', atBottom ? `${Math.round(window.innerHeight - r.top)}px` : '0px');
 }
 
 export function closeSheet() {
