@@ -91,3 +91,11 @@
 - 災防科技中心（NCDR，災害防救資料服務平台 datahub.ncdr.nat.gov.tw）：有山區閃洪預警、平原區淹水預警、短延時推估雨量、坡地災害等 API；需先註冊申請帳號與授權（datahub.ncdr.nat.gov.tw 可連線；dmap／opendata 子網域目前被環境擋下）。待申請後評估：山區閃洪預警（河谷溪降水風險，與登山高度相關）、土石流潛勢圖層。
 
 - 衛星雲圖更細緻影像：氣象署網站/App 使用更高解析度產品，開放資料僅約 1.9 km；待氣象署授權後評估改用。
+
+## 外部定時觸發（GitHub 排程不準時）
+GitHub 的 `schedule` 在免費額度下實測只約每 5～7 小時跑一次。改由外部排程服務（例如 cron-job.org）呼叫 workflow_dispatch：
+- 在 GitHub 建立 fine-grained personal access token：只選這個儲存庫、權限 Actions = Read and write。
+- 外部服務設定：POST `https://api.github.com/repos/htw90u/tw-hiking-forecast/actions/workflows/build-deploy.yml/dispatches`，
+  標頭 `Authorization: Bearer <token>`、`Accept: application/vnd.github+json`、`X-GitHub-Api-Version: 2022-11-28`，內容 `{"ref":"ccr-d0930dee-tgbw3o"}`（預設分支），每 15 分鐘一次。
+- 工作流程的 `concurrency` 設為不取消進行中的建置，所以同時只會跑一個，其餘排隊；一次建置約 15～20 分鐘。
+- 狀態：[ ] 待使用者建立 token 與外部排程
