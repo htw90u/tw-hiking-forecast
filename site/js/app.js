@@ -616,12 +616,12 @@ function updateStatus() {
   const recentQ = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < QUAKE_RECENT_MS);
   const q0 = recentQ.find(isStrongQuake) || recentQ[0];   // a strong quake leads the status strip
   const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
-  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">${ico('wave')}</span><span>${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
+  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">${ico('wave')}</span><span>${esc(fmtTime(q0.time, { date: false }))} ${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Base-map notice: a short warning pill; the full sentence opens under the strip (and stays in the text for screen readers).
   if (S.baseNoteFor !== S.baseNotice) { S.baseNoteFor = S.baseNotice; S.baseNoteDone = false; clearTimeout(S.baseNoteTimer); S.baseNoteTimer = null; }
   const baseNote = S.baseNotice && !S.baseNoteDone ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
   const fresh = S.newBuild ? '<button type="button" class="sp sp-warn" id="btn-reload">有新資料，點此更新</button>' : '';
-  const upd = `<span class="sp sp-plain">資料更新 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
+  const upd = `<span class="sp sp-plain">氣象資料 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
   el.innerHTML = `<div class="strip-row">${tyBanner}${eqBanner}${baseNote}${off ? '<span class="sp sp-off">離線・顯示快取資料</span>' : ''}${fresh}${upd}${failed.length ? `<span class="sp sp-warn">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}</div>${S.baseNotice && !S.baseNoteDone ? `<p class="strip-detail" id="base-detail" hidden>${esc(S.baseNotice)}</p>` : ''}`;
   const bn = el.querySelector('.base-note');
   if (bn && !S.baseNoteTimer) S.baseNoteTimer = setTimeout(() => { S.baseNoteDone = true; updateStatus(); }, 10000);

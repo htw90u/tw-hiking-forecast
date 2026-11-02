@@ -108,7 +108,7 @@ function serve() {
     const chips = await page.$$eval('.chip', (b) => b.length);
     assert(chips >= 7, `expected >= 7 layer chips, got ${chips}`);
     const status = await page.textContent('#status');
-    assert(/資料更新/.test(status), `status text: ${status}`);
+    assert(/氣象資料/.test(status), `status text: ${status}`);
   });
 
   await check('radar overlay rendered with legend', async () => {
