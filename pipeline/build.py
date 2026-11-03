@@ -221,7 +221,6 @@ class Builder:
             g = grids.make_grid(vals, int(pset["GridDimensionX"]), int(pset["GridDimensionY"]),
                                 float(pset["StartPointLongitude"]), float(pset["StartPointLatitude"]),
                                 float(pset["GridResolution"]), (-99, -999))
-            g = grids.crop(g)
             t = pset["DateTime"]
             name = "radar_" + re.sub(r"\D", "", t)[:12]
             grids.write_layer(self.out / "grids", name, g, 0.1, -100.0,
