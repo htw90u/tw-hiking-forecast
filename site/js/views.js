@@ -867,7 +867,7 @@ ${raw(vrow('雷達回波', 'radar', 'dBZ', 0, '無回波'))}${raw(vrow('過去1�
   const otherStations = station ? stationsNear.filter((x) => x.it.id !== station.id) : stationsNear;
   const stationsHtml = html`<section class="card" aria-labelledby="h-st"><h3 id="h-st">${station ? '其他鄰近測站' : '鄰近測站'}</h3>
 <label class="chk"><input type="checkbox" id="st-rain"${showRain ? ' checked' : ''}> 顯示雨量站</label>
-${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 1).map(({ it, d }) => stationLine(it, d))}</ul>${otherStations.length > 1 ? html`<details class="more-st"><summary>另有 ${Math.min(5, otherStations.length - 1)} 個鄰近測站</summary><ul class="stations">${otherStations.slice(1, 6).map(({ it, d }) => stationLine(it, d))}</ul></details>` : ''}<p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>35 km 內沒有其他測站。</p>`}
+${otherStations.length ? html`<ul class="stations">${otherStations.slice(0, 1).map(({ it, d }) => stationLine(it, d))}</ul>${otherStations.length > 1 ? html`<details class="more-st"><summary>另有 ${Math.min(5, otherStations.length - 1)} 個鄰近測站</summary><ul class="stations">${otherStations.slice(1, 6).map(({ it, d }) => stationLine(it, d))}</ul></details>` : ''}<p class="muted">觀測時間 ${fmtTime(S.stationsTime)}（${ageText(S.stationsTime)}）</p>` : html`<p>${S.stations.length ? '35 km 內沒有其他測站。' : '測站資料沒載入，請按上方「點此重試」或重新開啟。'}</p>`}
 ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`;
   const nearHtml = near.length ? html`<section class="card"><h3>附近景點／山岳</h3><ul>${near}</ul></section>` : '';
 
@@ -880,7 +880,7 @@ ${stationsNear.length ? historyBlock(stationsNear, histDefault) : ''}</section>`
     vals.satir?.v != null ? `雲頂 ${fmtNum(vals.satir.v, 0)}°C` : null].filter(Boolean).join('・');
   const altOf = (st) => (st.alt !== undefined ? `（海拔 ${Math.round(st.alt)} m）` : '（海拔不明）');
   const stSum = ws0 ? [`${ws0.n}${altOf(ws0)}`, `${weatherSt[0].d.toFixed(1)} km`, ws0.T !== undefined ? `${fmtNum(ws0.T)}°C` : null, ws0.RH !== undefined ? `濕度 ${fmtNum(ws0.RH, 0)}%` : null,
-    ws0.WS !== undefined ? `風 ${fmtNum(ws0.WS)} m/s` : null].filter(Boolean).join('・') : (otherStations.length ? `${otherStations[0].it.n}${altOf(otherStations[0].it)}・${otherStations[0].d.toFixed(1)} km` : '35 km 內沒有測站');
+    ws0.WS !== undefined ? `風 ${fmtNum(ws0.WS)} m/s` : null].filter(Boolean).join('・') : (otherStations.length ? `${otherStations[0].it.n}${altOf(otherStations[0].it)}・${otherStations[0].d.toFixed(1)} km` : (S.stations.length ? '35 km 內沒有測站' : '測站資料沒載入'));
   const mtnSum = nearMtns.map(({ it, d }) => `${it.n} ${d.toFixed(1)} km`).join('・');
   const aloftPt = aloftSpot && S.aloft?.points?.[aloftSpot.it.k];
   const aloftSum = aloftPt ? (() => {

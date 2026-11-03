@@ -5,14 +5,24 @@ let version = '';
 
 export function setDataVersion(v) { version = v || ''; }
 
-export async function getJSON(path, { optional = false } = {}) {
+/** Optional files that could not be fetched (a missing file, 404, is normal and not listed): the app shows a retry hint for these. */
+export const loadFailures = new Set();
+
+/** Fetch a data file; a failing request is tried again (mobile networks drop requests), `optional` files give null at the end. */
+export async function getJSON(path, { optional = false, retries = 2 } = {}) {
   const url = DATA + path + (version ? `?v=${encodeURIComponent(version)}` : '');
-  const res = await fetch(url);
-  if (!res.ok) {
-    if (optional) return null;
-    throw new Error(`${res.status} ${path}`);
+  let err = null;
+  for (let k = 0; k <= retries; k += 1) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) { loadFailures.delete(path); return await res.json(); }
+      err = new Error(`${res.status} ${path}`);
+      if (res.status === 404) { if (optional) return null; throw err; }
+    } catch (e) { err = e; }
+    if (k < retries) await new Promise((r) => setTimeout(r, 800 * (k + 1)));
   }
-  return res.json();
+  if (optional) { loadFailures.add(path); return null; }
+  throw err;
 }
 
 const TZ = 'Asia/Taipei';

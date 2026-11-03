@@ -1523,6 +1523,28 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
   });
 
+  await check('data files that fail are fetched again, and a file that stays missing is reported', async () => {
+    const r = await page.evaluate(async () => {
+      const u = await import('./js/util.js');
+      const real = window.fetch;
+      let calls = 0;
+      window.fetch = (url, ...rest) => {
+        if (String(url).includes('_flaky.json')) { calls += 1; return Promise.resolve(calls < 3 ? new window.Response('', { status: 503 }) : new window.Response('{"ok":1}', { status: 200 })); }
+        if (String(url).includes('_gone.json')) return Promise.resolve(new window.Response('', { status: 503 }));
+        return real(url, ...rest);
+      };
+      try {
+        const ok = (await u.getJSON('_flaky.json', { optional: true }))?.ok;
+        const v = await u.getJSON('_gone.json', { optional: true, retries: 0 });
+        const failed = u.loadFailures.has('_gone.json');
+        u.loadFailures.clear();
+        return { ok, calls, v, failed };
+      } finally { window.fetch = real; }
+    });
+    assert(r.ok === 1 && r.calls === 3, `retry: ${JSON.stringify(r)}`);
+    assert(r.v === null && r.failed, `failure listed: ${JSON.stringify(r)}`);
+  });
+
   await check('live earthquakes: a report newer than the build is read from the CWA bucket and shown without a rebuild', async () => {
     const xml = fs.readFileSync(path.join(ROOT, 'tests', 'fixtures', 'quake_report.xml'), 'utf8')
       .replace(/<EarthquakeNo>\d+<\/EarthquakeNo>/, '<EarthquakeNo>999001</EarthquakeNo>')
