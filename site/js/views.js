@@ -1055,14 +1055,22 @@ export function flyTo(lat, lon, zoom) {
 }
 
 // ------------------------------------------------------------------ earthquakes
+/** Place text of a report without the words 位於 ("… 公里 (位於花蓮縣近海)" -> "… 公里 (花蓮縣近海)"). */
+const locText = (loc) => String(loc || '').replace('位於', '');
+
+/** Magnitude class 1..5 for the colour of a report: below 3, 3-4, 4-5, 5-6, 6 and above. */
+const magBand = (m) => (m >= 6 ? 5 : m >= 5 ? 4 : m >= 4 ? 3 : m >= 3 ? 2 : 1);
+const MAG_KEY = [['< 3', 1], ['3–4', 2], ['4–5', 3], ['5–6', 4], ['≥ 6', 5]];
+
 export function showQuakes({ recentMs = 0 } = {}) {
   const list = S.quakes.slice(0, 40);
   const isRecent = (q) => recentMs && Date.now() - new Date(q.time).getTime() < recentMs;
-  const item = (q) => html`<li><button class="link" data-quake="${q.time}"><strong>M${q.mag}</strong> ${q.loc}</button>
+  const item = (q) => html`<li class="mag${magBand(q.mag)}"><button class="link" data-quake="${q.time}"><strong>${Number(q.mag).toFixed(1)}</strong> ${locText(q.loc)}</button>
 <span class="meta">${fmtTime(q.time)}・深度 ${q.depth} km・最大震度 ${intText(q.maxInt)}${isStrongQuake(q) ? '・強震' : ''}${q.kind === 'local' ? '・小區域' : ''}</span></li>`;
   const recent = list.filter(isRecent);
-  const body = html`${recent.length ? html`<section class="card warn"><h3>24 小時內地震（${recent.length} 起）</h3><ul class="list">${recent.map(item)}</ul></section>` : ''}
-<ul class="list">${list.filter((q) => !isRecent(q)).map(item)}</ul>`;
+  const key = `<div class="mag-key" aria-label="規模色階">${MAG_KEY.map(([t, b]) => `<span class="mag${b}">規模 ${t}</span>`).join('')}</div>`;
+  const body = html`${{ __raw: true, html: key }}${recent.length ? html`<section class="qrecent"><h3>24 小時內地震（${recent.length} 起）</h3><ul class="list eqlist">${recent.map(item)}</ul></section>` : ''}
+<ul class="list eqlist">${list.filter((q) => !isRecent(q)).map(item)}</ul>`;
   openSheet('地震報告', body, { onRender: bindCommon });
 }
 
@@ -1113,7 +1121,7 @@ export async function showQuake(q, { from = null } = {}) {
   const dFrom = from ? haversineKm(from.lat, from.lon, q.lat, q.lon) : null;
   const fromLv = dFrom === null || !strong ? 0 : dFrom <= STRONG_QUAKE_KM.danger ? 2 : dFrom <= STRONG_QUAKE_KM.caution ? 1 : 0;
   const fromName = from?.opts?.label || '所選地點';
-  const body = html`<p class="qsub">${q.loc}・${fmtTime(q.time)}・深度 ${q.depth} km</p>
+  const body = html`<p class="qsub">${locText(q.loc)}・${fmtTime(q.time)}・深度 ${q.depth} km</p>
 <div class="pstrip qstat">
 <div class="pill ${strong ? 'lv1' : ''}"><b>${q.mag}</b>規模</div>
 <div class="pill ${strong ? 'lv1' : ''}"><b>${intText(q.maxInt)}</b>最大震度</div>

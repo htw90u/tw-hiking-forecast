@@ -17,11 +17,11 @@ export async function getJSON(path, { optional = false, retries = 2 } = {}) {
       const res = await fetch(url);
       if (res.ok) { loadFailures.delete(path); return await res.json(); }
       err = new Error(`${res.status} ${path}`);
-      if (res.status === 404) { if (optional) return null; throw err; }
+      if (res.status === 404) break;   // a missing file is final: no retry
     } catch (e) { err = e; }
     if (k < retries) await new Promise((r) => setTimeout(r, 800 * (k + 1)));
   }
-  if (optional) { loadFailures.add(path); return null; }
+  if (optional) { if (!/^404 /.test(err?.message || '')) loadFailures.add(path); return null; }
   throw err;
 }
 

@@ -684,3 +684,16 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 .sp { min-height: 36px; }
 :root .layer-groups { margin-bottom: .2rem; }
 .mm-card-tabs { display: flex; gap: .3rem; margin: .3rem 0 .5rem; }
+
+/* Earthquake reports: a framed box per report, coloured by magnitude (below 3, 3-4, 4-5, 5-6, 6 and above) */
+:root { --mag1: #78909c; --mag2: #fbc02d; --mag3: #f57c00; --mag4: #d32f2f; --mag5: #8e24aa; --mag1f: #fff; --mag2f: #111; --mag3f: #111; --mag4f: #fff; --mag5f: #fff; }
+:root[data-palette="cvd"] { --mag1: #56b4e9; --mag2: #f0e442; --mag3: #e69f00; --mag4: #d55e00; --mag5: #cc79a7; --mag1f: #111; --mag2f: #111; --mag3f: #111; --mag4f: #fff; --mag5f: #111; }
+:root[data-palette="contrast"] { --mag1: #ffffff; --mag2: #ffff00; --mag3: #ff8000; --mag4: #ff0000; --mag5: #ff00ff; --mag1f: #000; --mag2f: #000; --mag3f: #000; --mag4f: #fff; --mag5f: #000; }
+.mag1 { --q: var(--mag1); --qf: var(--mag1f); } .mag2 { --q: var(--mag2); --qf: var(--mag2f); } .mag3 { --q: var(--mag3); --qf: var(--mag3f); }
+.mag4 { --q: var(--mag4); --qf: var(--mag4f); } .mag5 { --q: var(--mag5); --qf: var(--mag5f); }
+ul.list.eqlist { display: grid; gap: .5rem; margin: .4rem 0; }
+ul.list.eqlist li { border: 2.5px solid var(--q); border-radius: 12px; padding: .55rem .7rem; background: color-mix(in srgb, var(--q) 14%, transparent); }
+ul.list.eqlist li strong { display: inline-block; min-width: 3.1rem; text-align: center; margin-right: .4rem; padding: .05rem .4rem; border-radius: 8px; background: var(--q); color: var(--qf); }
+.qrecent h3 { margin: .3rem 0; }
+.mag-key { display: flex; flex-wrap: wrap; gap: .35rem; margin: .2rem 0 .5rem; font-size: .85rem; }
+.mag-key span { border: 2px solid var(--q); border-radius: 8px; padding: .05rem .45rem; }

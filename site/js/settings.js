@@ -67,6 +67,7 @@ export function applySettings(s) {
   }
   root.dataset.theme = theme;
   root.dataset.motion = s.reduceMotion ? 'reduce' : 'full';
+  root.dataset.palette = ['cvd', 'contrast'].includes(s.palette) ? s.palette : 'cwa';
   root.dataset.bold = s.boldText ? 'on' : 'off';
   root.dataset.ui = s.ui === 'icon' ? 'icon' : 'text';
   // Icon UI: the action buttons live in the tab bar instead of the top bar.
