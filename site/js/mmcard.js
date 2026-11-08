@@ -1,7 +1,7 @@
 // Point card "模式對照": the models of the multi-model layer side by side at one place (first five days).
 import { esc } from './util.js';
 import { chart, dataTable } from './chart.js';
-import { mmSeriesAt } from './layers.js';
+import { mmSeriesAt, mmPrefetch } from './layers.js';
 
 const VARS = [
   { id: 'temp', label: '氣溫', title: '2 m 氣溫', unit: '°C' },
@@ -32,15 +32,26 @@ export function bindMmCompare(root, lat, lon) {
   if (!b) return;
   const out = root.querySelector('#mmc-out');
   let cur = 'temp';
+  let token = 0;
   const load = async () => {
+    const mine = ++token;
     b.disabled = true;
     out.innerHTML = '<p class="loading" role="status">載入模式對照…</p>';
     try {
-      out.innerHTML = mmCompareChart(await mmSeriesAt(lat, lon, cur), cur);
+      const all = await mmSeriesAt(lat, lon, cur, { onSeries: (list, done, total) => {
+        if (mine !== token) return;   // another tab was chosen meanwhile
+        out.innerHTML = (list.length ? mmCompareChart(list, cur) : '') + (done < total ? `<p class="loading" role="status">已載入 ${done}／${total} 個模式…</p>` : '');
+      } });
+      if (mine === token && !all.length) out.innerHTML = mmCompareChart([], cur);
+      // the other tabs are fetched quietly afterwards (not on a slow or data-saving connection)
+      const net = navigator.connection;
+      if (mine === token && !net?.saveData && !/^(slow-2g|2g|3g)$/.test(net?.effectiveType || '')) {
+        VARS.filter((x) => x.id !== cur).forEach((x, k) => setTimeout(() => mmPrefetch(x.id), 400 * (k + 1)));
+      }
     } catch (e) {
-      out.innerHTML = `<p class="warn-txt">模式對照載入失敗（${esc(e.message)}）。</p>`;
+      if (mine === token) out.innerHTML = `<p class="warn-txt">模式對照載入失敗（${esc(e.message)}）。</p>`;
     }
-    b.disabled = false;
+    if (mine === token) b.disabled = false;
   };
   b.addEventListener('click', load);
   root.querySelectorAll('[data-mmc]').forEach((t) => t.addEventListener('click', () => {

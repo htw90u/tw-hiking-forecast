@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import aloft, forecast, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, wrfglobal, modelgrid, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
+from . import aloft, forecast, pointcube, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, wrfglobal, modelgrid, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "wrfg", "mm", "heat", "hydro", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "wrfg", "mm", "mmpts", "heat", "hydro", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -490,6 +490,24 @@ class Builder:
         self.manifest["layers"]["mm"] = {"models": {k: {x: v[x] for x in ("label", "license", "init", "rain", "temp", "msl", "wind") if x in v} | ({"stale": True} if v.get("stale") else {})
                                                     for k, v in r["models"].items()}}
         return ", ".join(f"{k} {v['init'][5:16]}{'' if v.get('fresh') else ' (unchanged)'}" for k, v in r["models"].items())
+
+    def task_mmpts(self):
+        """One file per model and variable for the point card (see pointcube.py)."""
+        layers = self.manifest["layers"]
+        done = []
+        for mid, entry in (layers.get("mm", {}).get("models") or {}).items():
+            files = pointcube.build_model(self.out, mid, entry)
+            if files:
+                entry["pts"] = files
+                done.append(f"{mid} {len(files)}")
+        if layers.get("wrf3"):
+            files = pointcube.build_wrf3(self.out, layers["wrf3"])
+            if files:
+                layers["wrf3"]["pts"] = files
+                done.append(f"wrf3 {len(files)}")
+        if not done:
+            raise RuntimeError("no model data for the point cards")
+        return ", ".join(done)
 
     def task_heat(self):
         r = heat.build(self.out, self.f.get_json)

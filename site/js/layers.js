@@ -586,37 +586,101 @@ const MM_WARN = {
   wind: { 3: '3 km 模式的 10 m 風；稜線與山口的實際風速仍可能更強，請與測站對照。', 25: '25 km 網格的地形比實際平滑，山區風速偏弱，只適合看趨勢。' },
 };
 
-const MM_CARD_HOURS = 120;   // the point card shows the first five days
+// ---------------------------------------------------------------- point card: the models side by side at one place
+// The build stacks every model's pictures into one file per model and variable (pipeline/pointcube.py): one request per model.
+const NODATA = -32768;
+const cubeCache = new Map();
 
-/** Series of every model at one place for the point card: [{ id, label, cls, times, values }] of rain (6 h mm), temp (°C), msl (hPa) or wind (m/s). */
-export async function mmSeriesAt(lat, lon, v) {
+function decodeCube(o) {
+  const bin = window.atob(o.d);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return { times: o.times, grid: o.grid, scale: o.scale, a: new Int16Array(bytes.buffer) };
+}
+
+/** The cube file of a model and variable (decoded once and kept), or null when the build has none. */
+function loadCube(id, v) {
   const L_ = S.manifest?.layers || {};
-  const cls = { wrf3: 's2', ecmwf: 's1', aifs: 's4', gfs: 's3' };
+  const file = id === 'wrf3' ? L_.wrf3?.pts?.[v] : L_.mm?.models?.[id]?.pts?.[v];
+  if (!file) return null;
+  if (!cubeCache.has(file)) {
+    const p = getJSON(file).then(decodeCube);
+    p.catch(() => cubeCache.delete(file));
+    cubeCache.set(file, p);
+  }
+  return cubeCache.get(file);
+}
+
+/** Values of a cube at the cell nearest to a place: { times, values } (null where there is no data), or null outside the cube. */
+function cubeAt(c, lat, lon, zeroIsDry) {
+  const g = c.grid;
+  const i = Math.round((lon - g.lon0) / g.res);
+  const j = Math.round((lat - g.lat0) / g.res);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return null;
+  const values = c.times.map((t, k) => {
+    const x = c.a[(k * g.ny + j) * g.nx + i];
+    return x === NODATA ? (zeroIsDry ? 0 : null) : x / c.scale;
+  });
+  return { times: c.times, values };
+}
+
+const MM_SERIES_CLS = { wrf3: 's2', ecmwf: 's1', aifs: 's4', gfs: 's3' };
+
+/** Models that have data for a variable (the point card's tabs follow this). */
+function mmCardModels(v) {
+  const L_ = S.manifest?.layers || {};
+  return MM_ORDER.filter((id) => (id === 'wrf3' ? Boolean(L_.wrf3?.pts?.[v] || (v === 'wind' ? L_.wrf3?.steps?.length : L_.wrf3?.[v]?.length))
+    : Boolean(L_.mm?.models?.[id]?.pts?.[v] || L_.mm?.models?.[id]?.[v === 'wind' ? 'wind' : v]?.length)));
+}
+
+/** Series of one model at a place from its cube; falls back to the single pictures when the build has no cube. */
+async function mmModelSeries(id, lat, lon, v) {
   const t0 = Date.now() - 3 * 3600e3;
-  const out = [];
-  for (const id of MM_ORDER) {
-    if (v === 'wind') {
-      const w = (id === 'wrf3' ? Boolean(L_.wrf3?.steps?.length) : Boolean(L_.mm?.models?.[id]?.wind)) ? await mmLoadWind(id) : null;
-      if (!w) continue;
-      const g = w.grid;
+  const cube = loadCube(id, v);
+  let s = null;
+  if (cube) {
+    const at = cubeAt(await cube, lat, lon, v === 'rain');
+    if (at) s = at;
+  } else if (v === 'wind') {
+    const w = await mmLoadWind(id);
+    const g = w?.grid;
+    if (g) {
       const i = Math.round((lon - g.lon0) / g.res); const j = Math.round((lat - g.lat0) / g.res);
-      if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) continue;
-      const keep = w.steps.map((t, k) => k).filter((k) => tkey(w.steps[k]) >= t0 && tkey(w.steps[k]) <= t0 + (MM_CARD_HOURS + 3) * 3600e3);
-      out.push({ id, label: MM_INFO[id].short || MM_INFO[id].label, cls: cls[id], times: keep.map((k) => w.steps[k]),
-        values: keep.map((k) => { const uv = w.uv(k, j * g.nx + i); return uv ? Math.round(Math.hypot(uv[0], uv[1]) * 10) / 10 : null; }) });
-      continue;
+      if (i >= 0 && j >= 0 && i < g.nx && j < g.ny) {
+        s = { times: w.steps, values: w.steps.map((t, k) => { const uv = w.uv(k, j * g.nx + i); return uv ? Math.round(Math.hypot(uv[0], uv[1]) * 10) / 10 : null; }) };
+      }
     }
-    const frames = mmRawFrames(id, v).filter((f) => tkey(f.time) >= t0 && tkey(f.time) <= t0 + (MM_CARD_HOURS + 3) * 3600e3);
-    if (!frames.length) continue;
+  } else {
+    const frames = mmRawFrames(id, v);
     const grids = [];
     for (let k = 0; k < frames.length; k += 8) grids.push(...await Promise.all(frames.slice(k, k + 8).map((f) => getGrid(f.meta))));
-    const values = grids.map((g) => {
-      const x = sample(g, lat, lon);
-      return x === null ? (v === 'rain' ? 0 : null) : Math.round(x * 10) / 10;
-    });
-    out.push({ id, label: MM_INFO[id].short || MM_INFO[id].label, cls: cls[id], times: frames.map((f) => f.time), values });
+    s = { times: frames.map((f) => f.time), values: grids.map((g) => { const x = sample(g, lat, lon); return x === null ? (v === 'rain' ? 0 : null) : Math.round(x * 10) / 10; }) };
   }
-  return out;
+  if (!s) return null;
+  const keep = s.times.map((t, k) => k).filter((k) => tkey(s.times[k]) >= t0);
+  if (!keep.length) return null;
+  return { id, label: MM_INFO[id].short || MM_INFO[id].label, cls: MM_SERIES_CLS[id], times: keep.map((k) => s.times[k]), values: keep.map((k) => (s.values[k] === null ? null : Math.round(s.values[k] * 10) / 10)) };
+}
+
+/** Series of every model at a place; `onSeries(list, done, total)` is called as each model arrives, so the chart can grow. */
+export async function mmSeriesAt(lat, lon, v, { onSeries } = {}) {
+  const ids = mmCardModels(v);
+  const got = [];
+  let done = 0;
+  await Promise.all(ids.map(async (id) => {
+    let s = null;
+    try { s = await mmModelSeries(id, lat, lon, v); } catch (e) { console.warn('model series', id, e); }
+    done += 1;
+    if (s) got.push(s);
+    got.sort((a, b) => MM_ORDER.indexOf(a.id) - MM_ORDER.indexOf(b.id));
+    if (onSeries) onSeries([...got], done, ids.length);
+  }));
+  return got;
+}
+
+/** Load the cubes of a variable in the background (the other tabs of the card), without blocking anything. */
+export function mmPrefetch(v) {
+  mmCardModels(v).forEach((id) => { loadCube(id, v)?.catch(() => {}); });
 }
 
 function mmVar() { return ['wind', 'temp', 'msl'].includes(S.layer.mmVar) ? S.layer.mmVar : 'rain'; }

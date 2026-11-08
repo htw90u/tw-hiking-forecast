@@ -1052,3 +1052,32 @@ def test_modelgrid_build_model_with_fakes(tmp_path):
     assert abs(rain["max"] - 0.0) < 0.11, "both steps are 2 mm running totals: the 6-hour window is 0 mm"
     again = mg.build_model("ecmwf", tmp_path, Log(), now, steps=[6, 12], fetch=fetch, exists=lambda u: True, open_grib=FakeGrib)
     assert again["fresh"] is False, "the same run must not be processed twice"
+
+
+# ------------------------------------------------------------------ point cubes of the multi-model layer
+def test_pointcube_stacks_pictures_and_wind(tmp_path):
+    from pipeline import grids as g
+    from pipeline import pointcube as pc
+    lats = np.arange(16.0, 34.01, 0.25)
+    lons = np.arange(112.0, 130.01, 0.25)
+    frames = []
+    for k, h in enumerate((6, 12)):
+        data = np.add.outer(lats * 0, lons * 0) + 5.0 * (k + 1)             # a flat 5 / 10 mm
+        data[np.argmin(abs(lats - 24.0)), np.argmin(abs(lons - 121.0))] = np.nan   # one cell without data
+        g.write_layer(tmp_path / "grids", f"mm_x_rain_{h:03d}", {"data": data, "lon0": 112.0, "lat0": 16.0, "res": 0.25}, 0.1, 0.0, {"time": f"t{h}"})
+        frames.append({"h": h, "time": f"2026-11-08T{h:02d}:00:00+08:00", "meta": f"grids/mm_x_rain_{h:03d}.json"})
+    wind = {"grid": {"lat0": 20.0, "lon0": 116.0, "res": 0.25, "nx": 41, "ny": 33}, "steps": [f["time"] for f in frames],
+            "u": [[30] * (41 * 33)] * 2, "v": [[40] * (41 * 33)] * 2}
+    (tmp_path / "mm_x_wind.json").write_text(__import__("json").dumps(wind))
+    files = pc.build_model(tmp_path, "x", {"init": "i", "rain": frames, "wind": "mm_x_wind.json"})
+    assert set(files) == {"rain", "wind"}
+    import json as _json
+    rain = _json.loads((tmp_path / files["rain"]).read_text())
+    a = pc.unpack(rain)
+    gi = rain["grid"]
+    assert (gi["lat0"], gi["lon0"], gi["nx"], gi["ny"]) == (20.0, 116.0, 41, 33) and a.shape == (2, 33, 41)
+    assert abs(a[0, 5, 5] - 5.0) < 0.06 and abs(a[1, 5, 5] - 10.0) < 0.06
+    j, i = round((24.0 - gi["lat0"]) / gi["res"]), round((121.0 - gi["lon0"]) / gi["res"])
+    assert np.isnan(a[0, j, i]), "a cell without data stays empty"
+    spd = pc.unpack(_json.loads((tmp_path / files["wind"]).read_text()))
+    assert abs(spd[0, 3, 3] - 5.0) < 0.06, "speed of u = 3, v = 4 m/s is 5 m/s"
