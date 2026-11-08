@@ -1368,6 +1368,8 @@ const DATASETS = [
   ['E-A0015-001／E-A0016-001', '顯著有感／小區域有感地震報告'], ['E-A0015-003', '等震度圖'],
   ['W-C0034-005', '颱風消息與警報－熱帶氣旋路徑'], ['W-C0033-001／002', '天氣特報'],
   ['O-B0055-001／O-B0056-001', '東亞可見光反照率／紅外線亮度溫度資料'], ['O-C0042-xxx', '台灣衛星雲圖'],
+  ['M-A0064-000', '區域模式 WRF 3 km 預報（降水、氣溫、風）'], ['M-A0060-000', '全球模式 0.25°（降水、氣壓、氣溫、風，16 天）'],
+  ['M-A0061-000', '區域模式 WRF 15 km 壓力層風場（高空風）'], ['M-A0085-001', '熱傷害指數預報'],
   ['C-B0024-001', '過去氣象觀測'], ['history/Observation', '逐時觀測歷史快照（開放資料 S3）'],
 ];
 
@@ -1375,6 +1377,7 @@ export function showSources() {
   const year = (S.manifest?.built || '').slice(0, 4);
   const body = html`<section class="card"><h3>顯名聲明</h3>
 <p><strong>中央氣象署 ${year} 開放資料</strong>（各資料集與版本如下，版本以發布時間為準）</p>
+<p>本網站的天氣資料主要來自中央氣象署開放資料；本網站並非中央氣象署官方網站，加工與衍生資料未經中央氣象署審閱，請以氣象署發布為準。</p>
 <p>${OGDL_TEXT}</p>
 <p>政府資料開放授權條款：<a href="${OGDL_URL}" target="_blank" rel="noopener">${OGDL_URL}</a></p></section>
 <section class="card"><h3>使用的資料集</h3><table class="kv"><tbody>${DATASETS.map(([id, name]) => html`<tr><th scope="row">${id}</th><td>${name}</td></tr>`)}</tbody></table>
@@ -1390,6 +1393,11 @@ export function showSources() {
 <section class="card"><h3>其他來源</h3><ul>
 <li>行政區界：taiwan-atlas（MIT），資料來源內政部。</li>
 <li>底圖：OpenTopoMap（CC-BY-SA）、© OpenStreetMap contributors（ODbL）、內政部國土測繪中心、OpenCycleMap／Landscape／Outdoors（Maps © Thunderforest）、歷史地圖：中央研究院人社中心臺灣百年歷史地圖（CC BY-NC，非商業使用）。</li>
+<li>模式預報圖層（降雨、風、氣溫、氣壓）：ECMWF IFS 與 AIFS（機器學習模式）開放資料（© ECMWF，CC BY 4.0）、美國國家海洋暨大氣總署 NOAA GFS（公有領域），由本網站處理後顯示，非中央氣象署發布；氣象署 WRF 3 km 與全球模式見上方資料集。</li>
+<li>系集預報（點位面板）：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 提供的 ECMWF IFS（51 成員）、ECMWF AIFS 與 NCEP GEFS 系集（CC BY 4.0），由您的瀏覽器直接連線取得。</li>
+<li>河川水位、水庫放流：經濟部水利署開放資料（opendata.wra.gov.tw，依政府資料開放授權條款）。</li>
+<li>土石流警戒：農業部水土保持署土石流防災資訊網（246.ardswc.gov.tw）。</li>
+<li>NASA 影像圖層：Imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS)；MODIS Terra 每日真彩色與積雪指數，非中央氣象署資料。</li>
 <li>陣風預報：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 數值模式（CC BY 4.0），非中央氣象署發布；體感溫度：氣象署預報值，測站體感為依溫度、濕度、風速以氣象署公式估算（含山頭海拔估算：Copernicus DEM 90 m 地形模型）。</li>
 <li>山頭（非氣象署登山預報點）：© OpenStreetMap contributors，依開放資料庫授權（ODbL 1.0）使用，每週更新；點選時顯示鄰近鄉鎮預報。</li>
 <li>地圖程式庫：Leaflet（BSD-2）、topojson-client（ISC）。</li></ul></section>`;

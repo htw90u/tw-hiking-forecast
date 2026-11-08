@@ -697,3 +697,6 @@ ul.list.eqlist li strong { display: inline-block; min-width: 3.1rem; text-align:
 .qrecent h3 { margin: .3rem 0; }
 .mag-key { display: flex; flex-wrap: wrap; gap: .35rem; margin: .2rem 0 .5rem; font-size: .85rem; }
 .mag-key span { border: 2px solid var(--q); border-radius: 8px; padding: .05rem .45rem; }
+
+.sp-src { cursor: pointer; font-weight: 600; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.attr-src { font-weight: 700; }

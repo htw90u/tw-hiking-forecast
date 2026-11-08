@@ -622,13 +622,14 @@ function updateStatus() {
   const baseNote = S.baseNotice && !S.baseNoteDone ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';
   const lost = loadFailures.size ? '<button type="button" class="sp sp-warn" id="btn-retry">部分資料沒載入，點此重試</button>' : '';
   const fresh = S.newBuild ? '<button type="button" class="sp sp-warn" id="btn-reload">有新資料，點此更新</button>' : '';
-  const upd = `<span class="sp sp-plain">氣象資料 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</span>`;
+  const upd = `<button type="button" class="sp sp-src" id="btn-sources" title="資料來源與授權">中央氣象署 ${esc(fmtTime(built, { date: false }))}（${esc(ageText(built))}）</button>`;
   el.innerHTML = `<div class="strip-row">${tyBanner}${eqBanner}${baseNote}${off ? '<span class="sp sp-off">離線・顯示快取資料</span>' : ''}${lost}${fresh}${upd}${failed.length ? `<span class="sp sp-warn">部分資料暫缺：${esc(failed.join(', '))}</span>` : ''}</div>${S.baseNotice && !S.baseNoteDone ? `<p class="strip-detail" id="base-detail" hidden>${esc(S.baseNotice)}</p>` : ''}`;
   const bn = el.querySelector('.base-note');
   if (bn && !S.baseNoteTimer) S.baseNoteTimer = setTimeout(() => { S.baseNoteDone = true; updateStatus(); }, 10000);
   if (bn) bn.addEventListener('click', () => { const d = el.querySelector('#base-detail'); d.hidden = !d.hidden; bn.setAttribute('aria-expanded', String(!d.hidden)); });
   el.querySelector('#ty-banner')?.addEventListener('click', showTyphoon);
   el.querySelector('#btn-reload')?.addEventListener('click', () => window.location.reload());
+  el.querySelector('#btn-sources')?.addEventListener('click', showSources);
   el.querySelector('#btn-retry')?.addEventListener('click', () => window.location.reload());
   placeLegend();
   const openQuakes = () => (recentQ.length === 1 ? showQuake(q0) : showQuakes({ recentMs: QUAKE_RECENT_MS }));
@@ -1036,7 +1037,9 @@ async function main() {
   S.map.createPane('stations').style.zIndex = 610;
   S.map.createPane('spots').style.zIndex = 620;
   S.map.createPane('alerts').style.zIndex = 640; // strong-earthquake icons, above all other markers
-  S.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
+  // The first thing in the attribution corner names the main data source; it opens the sources and licence panel.
+  S.map.attributionControl.setPrefix('<a href="#" id="attr-src" class="attr-src">資料來源：中央氣象署</a> | <a href="https://leafletjs.com">Leaflet</a>');
+  S.map.getContainer().addEventListener('click', (e) => { if (e.target.closest('#attr-src')) { e.preventDefault(); showSources(); } });
   S.scale = L.control.scale({ imperial: false }).addTo(S.map);
   setBasemap();
   // Layer name and data time, top centre of the map (filled by renderLegend).

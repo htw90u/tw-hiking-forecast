@@ -108,7 +108,7 @@ function serve() {
     const chips = await page.$$eval('.chip', (b) => b.length);
     assert(chips >= 7, `expected >= 7 layer chips, got ${chips}`);
     const status = await page.textContent('#status');
-    assert(/氣象資料/.test(status), `status text: ${status}`);
+    assert(/中央氣象署/.test(status), `status text: ${status}`);
   });
 
   await check('radar overlay rendered with legend', async () => {
@@ -404,11 +404,10 @@ function serve() {
 
   await check('sources & licence panel with OGDL attribution', async () => {
     await page.click('#sheet-close').catch(() => {});
-    await openSettings();
-    await page.click('#set-src');
+    await page.click('#btn-sources');
     await page.waitForSelector('#sheet-title:has-text("資料來源")');
     const t = await page.textContent('#sheet-body');
-    for (const want of ['顯名聲明', '中央氣象署', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0041']) assert(t.includes(want), `panel lacks ${want}`);
+    for (const want of ['顯名聲明', '中央氣象署', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0041', 'M-A0064', 'M-A0060', 'M-A0085', 'ECMWF', 'NOAA', 'NASA', '水利署', '水土保持署', '非中央氣象署官方網站']) assert(t.includes(want), `panel lacks ${want}`);
   });
 
   await check('settings: font 200%, contrast theme, colour-blind palette persist', async () => {
@@ -1513,6 +1512,7 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
     const t1 = await page.textContent('#mm-time');
     assert(t1 === t0, `switching the model must keep the time (${t0} -> ${t1})`);
+    await page.waitForFunction(() => (document.getElementById('legend')?.textContent || '').includes('AIFS'), null, { timeout: 15000 }).catch(() => {});
     assert((await page.textContent('#legend')).includes('AIFS'), 'legend should name the model');
     await page.click('[data-mmvar="wind"]');
     await page.waitForSelector('.wind-mk', { timeout: 15000 });
