@@ -760,7 +760,7 @@ function serve() {
     await page.waitForSelector('.vis-mk');
     const rivers = await page.$$eval('.vis-mk', (e) => e.length);
     assert(rivers >= 4, `river markers: ${rivers}`);
-    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 4, 'water colour bar');
+    assert((await page.$$eval('#legend summary .lg-strip .cells > span', (e) => e.length)) === 5, 'water colour bar (no warning level, normal, three levels)');
     await page.click('[data-watermode="rsv"]');
     await page.waitForFunction(() => document.querySelector('#map-banner')?.textContent.includes('水庫'));
     assert((await page.$$eval('.vis-mk.alert', (e) => e.length)) >= 1, 'reservoir release markers missing');
@@ -1523,6 +1523,16 @@ function serve() {
     await page.waitForSelector('img.wx-grid');
   });
 
+  await check('river stations without a warning level are told apart from stations below it', async () => {
+    const r = await page.evaluate(async () => {
+      const h = await import('./js/hydro.js');
+      return [h.riverStatus({ wl: 3, a1: null, a2: null, a3: null }), h.riverStatus({ wl: 3, a1: 9, a2: 7, a3: 5 }), h.riverStatus({ wl: 8, a1: 9, a2: 7, a3: 5 }), h.riverStatus({ wl: 9.5, a1: 9, a2: 7, a3: 5 }),
+        h.riverStatusText(-1), h.riverStatusText(0)];
+    });
+    assert(r[0] === -1 && r[1] === 0 && r[2] === 2 && r[3] === 3, `status values ${r}`);
+    assert(r[4] === '無警戒水位' && r[5] === '未達警戒', `status texts ${r}`);
+  });
+
   await check('data files that fail are fetched again, and a file that stays missing is reported', async () => {
     const r = await page.evaluate(async () => {
       const u = await import('./js/util.js');
@@ -1559,7 +1569,12 @@ function serve() {
     const zip = Buffer.concat([local, cd, name, eo]);
     await page.route(/cwaopendata\.s3\.ap-northeast-1\.amazonaws\.com\/Earthquake\/E-A001[56]-001\.zip/, (r) => r.fulfill({ status: 200, contentType: 'application/zip', headers: { 'Access-Control-Allow-Origin': '*' }, body: zip }));
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await page.waitForFunction(async () => { const { S } = await import('./js/state.js'); return S.quakes.some((q) => q.no === '999001'); }, null, { timeout: 15000 });
+    const seen = await page.evaluate(async () => {
+      const { S } = await import('./js/state.js');
+      for (let i = 0; i < 150; i += 1) { if (S.quakes.some((q) => q.no === '999001')) return true; await new Promise((r) => window.setTimeout(r, 100)); }
+      return false;
+    });
+    assert(seen, 'the live report never reached the quake list');
     const q = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return S.quakes.find((x) => x.no === '999001'); });
     assert(q.mag === 4 && q.areas.length > 0 && q.stations.length > 0 && /高雄/.test(q.loc), `parsed report ${JSON.stringify({ mag: q.mag, areas: q.areas.length, loc: q.loc })}`);
     await page.unroute(/cwaopendata\.s3\.ap-northeast-1\.amazonaws\.com\/Earthquake\/E-A001[56]-001\.zip/);

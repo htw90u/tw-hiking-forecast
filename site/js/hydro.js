@@ -9,13 +9,17 @@ export async function loadHydro() {
 }
 
 /** 0 = below every alert level, 1 / 2 / 3 = reached the 3rd (lowest) / 2nd / 1st (highest) alert level. */
+/** 3 reached the first-level warning ... 1 the third, 0 below all warning levels, -1 the station has no warning level at all (nothing to compare with). */
 export function riverStatus(r) {
+  const has = [r.a1, r.a2, r.a3].some((v) => v !== null && v !== undefined);
+  if (!has) return -1;
   if (r.a1 !== null && r.a1 !== undefined && r.wl >= r.a1) return 3;
   if (r.a2 !== null && r.a2 !== undefined && r.wl >= r.a2) return 2;
   if (r.a3 !== null && r.a3 !== undefined && r.wl >= r.a3) return 1;
   return 0;
 }
-export const RIVER_STATUS = ['未達警戒', '達三級警戒', '達二級警戒', '達一級警戒'];
+const RIVER_STATUS = ['未達警戒', '達三級警戒', '達二級警戒', '達一級警戒'];
+export const riverStatusText = (st) => (st < 0 ? '無警戒水位' : RIVER_STATUS[st]);
 
 /** 0 no release, 1 releasing, 2 flood release planned, 3 spilling now. */
 export function reservoirStatus(r) {
@@ -39,7 +43,7 @@ const kv = (k, v) => `<span class="tt-k">${k}</span> ${v}`;
 
 export function riverTip(r) {
   const alerts = [['一級', r.a1], ['二級', r.a2], ['三級', r.a3]].filter(([, v]) => v !== null && v !== undefined).map(([n, v]) => `${n} ${v} m`).join('、');
-  return [`<b class="tt-name">${esc(r.n)}${r.river ? `（${esc(r.river)}）` : ''}</b>`, kv('狀態', RIVER_STATUS[riverStatus(r)]), kv('水位', `${fmt(r.wl, 2)} m`),
+  return [`<b class="tt-name">${esc(r.n)}${r.river ? `（${esc(r.river)}）` : ''}</b>`, kv('狀態', riverStatusText(riverStatus(r))), kv('水位', `${fmt(r.wl, 2)} m`),
     alerts ? kv('警戒水位', esc(alerts)) : null, r.t ? kv('時間', esc(fmtTime(r.t))) : null].filter(Boolean).join('<br>');
 }
 

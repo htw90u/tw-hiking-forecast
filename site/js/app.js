@@ -1059,7 +1059,7 @@ async function main() {
   S.map.on('moveend', () => { updatePeaks(); updateLabels(); });
   S.map.on('zoomend', layoutTyLabels);
   S.map.on('moveend', () => { if (S.layer.id === 'wind' && S.layer.windMode === 'aloft') showLayer('wind', { keepFrame: true }); });
-  S.map.on('zoomend', () => { if (S.layer.id === 'wind' && (S.layer.windMode || 'fc') === 'fc') showLayer('wind', { keepFrame: true }); if (S.layer.id === 'visib' && S.layer.visMode === 'fc') showLayer('visib', { keepFrame: true }); });
+  S.map.on('zoomend', () => { if (S.layer.id === 'wind' && (S.layer.windMode || 'fc') === 'fc') showLayer('wind', { keepFrame: true }); if (S.layer.id === 'visib' && S.layer.visMode === 'fc') showLayer('visib', { keepFrame: true }); if (S.layer.id === 'water') showLayer('water', { keepFrame: true }); });
   document.addEventListener('quakemode', (e) => {
     applyOverlayVisibility();
     setWeatherVisible(!e.detail);

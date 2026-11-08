@@ -1124,7 +1124,7 @@ function statusMarkers(items, kind, text, tip, pos) {
   const placed = [];
   items.sort((a, b) => b.st - a.st || (b.sort ?? 0) - (a.sort ?? 0)).forEach((it) => {
     const pt = S.map.latLngToLayerPoint(pos(it));
-    if (it.st === 0 && placed.some((q) => q.distanceTo(pt) < 42)) return;
+    if (it.st <= 0 && placed.some((q) => q.distanceTo(pt) < 42)) return;
     placed.push(pt);
     const c = col(it.st);
     const html = `<span class="vis-mk${it.st >= 2 ? ' alert' : ''}" style="--c:rgb(${c[0]},${c[1]},${c[2]})">${esc(text(it))}</span>`;
@@ -1151,7 +1151,7 @@ async function showWater() {
   renderLegend({ label: mode === 'river' ? '河川水位（水利署）' : '水庫水位與放流（水利署）', time: latest, kindOverride: mode === 'river' ? 'water' : 'rsv',
     unit: 'm', src: '即時水位資料（未經品管）', license: 'ogdl',
     note: mode === 'river'
-      ? '數字為水位（公尺），顏色為是否達到該站的警戒水位（正常＝藍；三級＝黃、二級＝橘、一級＝紅；未公告警戒水位的站一律顯示藍色）。水位站只在放大後才全部顯示；溪流水位上漲很快，渡溪前請確認上游天氣。'
+      ? '數字為水位（公尺），顏色為是否達到該站的警戒水位（正常＝藍；三級＝黃、二級＝橘、一級＝紅；水利署沒有公告警戒水位的站顯示灰色，無法判斷是否達到警戒）。縮小時重疊的站會隱藏，放大後才全部顯示；溪流水位上漲很快，渡溪前請確認上游天氣。'
       : '數字為水位（公尺），顏色為放流狀態：灰＝無放流、藍＝放流中（含發電、供水）、橘＝預定洩洪（預洩洪）、紅＝溢洪道洩洪中。只列出能對到氣象署水庫景點位置的水庫。' });
   renderTimeControl();
 }

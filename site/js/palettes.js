@@ -75,6 +75,7 @@ const CWA_WATER = ['#1e88e5', '#ffd600', '#ff9100', '#e53935'];
 const CVD_WATER = ['#3b528b', '#5ec962', '#fde725', '#440154'];
 const CONTRAST_WATER = ['#ffffff', '#ffff00', '#ff8000', '#ff0000'];
 const WATER_LABELS = ['正常', '三級', '二級', '一級'];
+const NO_LEVEL = '#9aa5ab';   // stations without a warning level
 const RSV_LABELS = ['無放流', '放流中', '預洩洪', '洩洪中'];
 const CWA_RSV = ['#9e9e9e', '#1e88e5', '#ff9100', '#e53935'];
 const DEBRIS_LABELS = ['黃色', '紅色'];
@@ -180,7 +181,7 @@ export const SCALES = {
   msl: { cwa: zip(MSL_BOUNDS, CWA_MSL, MSL_LABELS), cvd: zip(MSL_BOUNDS, resample(VIRIDIS17, MSL_BOUNDS.length), MSL_LABELS), contrast: zip(MSL_BOUNDS, CONTRAST_MSL, MSL_LABELS) },
   heat: { cwa: zip(HEAT_BOUNDS, CWA_HEAT, HEAT_LABELS), cvd: zip(HEAT_BOUNDS, CVD_HEAT, HEAT_LABELS), contrast: zip(HEAT_BOUNDS, CONTRAST_HEAT, HEAT_LABELS) },
   visib: { cwa: zip(VISIB_BOUNDS, CWA_VISIB, VISIB_LABELS), cvd: zip(VISIB_BOUNDS, CVD_VISIB, VISIB_LABELS), contrast: zip(VISIB_BOUNDS, CONTRAST_VISIB, VISIB_LABELS) },
-  water: { cwa: zip([0, 1, 2, 3], CWA_WATER, WATER_LABELS), cvd: zip([0, 1, 2, 3], CVD_WATER, WATER_LABELS), contrast: zip([0, 1, 2, 3], CONTRAST_WATER, WATER_LABELS) },
+  water: { cwa: zip([-1, 0, 1, 2, 3], [NO_LEVEL, ...CWA_WATER], ['無警戒', ...WATER_LABELS]), cvd: zip([-1, 0, 1, 2, 3], [NO_LEVEL, ...CVD_WATER], ['無警戒', ...WATER_LABELS]), contrast: zip([-1, 0, 1, 2, 3], ['#808080', ...CONTRAST_WATER], ['無警戒', ...WATER_LABELS]) },
   rsv: { cwa: zip([0, 1, 2, 3], CWA_RSV, RSV_LABELS), cvd: zip([0, 1, 2, 3], CVD_WATER, RSV_LABELS), contrast: zip([0, 1, 2, 3], ['#808080', '#ffffff', '#ff8000', '#ff0000'], RSV_LABELS) },
   debris: { cwa: zip([1, 2], CWA_DEBRIS, DEBRIS_LABELS), cvd: zip([1, 2], ['#fde725', '#440154'], DEBRIS_LABELS), contrast: zip([1, 2], ['#ffff00', '#ff0000'], DEBRIS_LABELS) },
   rainbig: { cwa: zip(BIG_BOUNDS, BIG_RAIN), cvd: zip(BIG_BOUNDS, BIG_CVD), contrast: zip(BIG_BOUNDS, BIG_CONTRAST) },
