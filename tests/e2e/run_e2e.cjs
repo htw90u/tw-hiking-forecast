@@ -108,7 +108,7 @@ function serve() {
     const chips = await page.$$eval('.chip', (b) => b.length);
     assert(chips >= 7, `expected >= 7 layer chips, got ${chips}`);
     const status = await page.textContent('#status');
-    assert(/中央氣象署/.test(status), `status text: ${status}`);
+    assert(/氣象資料更新/.test(status), `status text: ${status}`);
   });
 
   await check('radar overlay rendered with legend', async () => {
@@ -404,7 +404,7 @@ function serve() {
 
   await check('sources & licence panel with OGDL attribution', async () => {
     await page.click('#sheet-close').catch(() => {});
-    await page.click('#btn-sources');
+    await page.click('#attr-src');
     await page.waitForSelector('#sheet-title:has-text("資料來源")');
     const t = await page.textContent('#sheet-body');
     for (const want of ['顯名聲明', '中央氣象署', '政府資料開放授權條款', 'https://data.gov.tw/license', 'F-C0041', 'M-A0064', 'M-A0060', 'M-A0085', 'ECMWF', 'NOAA', 'NASA', '水利署', '水土保持署', '非中央氣象署官方網站']) assert(t.includes(want), `panel lacks ${want}`);
