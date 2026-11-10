@@ -565,6 +565,7 @@ details.sub > .in { padding: .3rem .6rem .6rem; }
 /* "顯示" button (eye) and the icons of the marker toggles */
 .eye-ic { width: 1.15em; height: 1.15em; vertical-align: -.2em; }
 .more-t { margin: 0 0 .3rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.ic-trail { color: #c0392b; }
 .tog-ic svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .ic-stn svg circle { fill: #fff; stroke: #222; stroke-width: 1.6; }
 .ic-eq svg circle { fill: none; stroke: #e65100; stroke-width: 1.8; } .ic-eq svg circle:first-child { fill: #e65100; }

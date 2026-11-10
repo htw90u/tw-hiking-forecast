@@ -148,6 +148,7 @@ const STN_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="
 const EQ_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="2"/><circle cx="7" cy="7" r="5.2"/></svg>';
 const TY_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1.8a5.2 5.2 0 1 1-4.9 3.5M7 4.6a2.4 2.4 0 1 1-2.4 2.4"/></svg>';
 const SPOT_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1.4a4.2 4.2 0 0 0-4.2 4.2c0 3.1 4.2 7 4.2 7s4.2-3.9 4.2-7A4.2 4.2 0 0 0 7 1.4z"/><circle cx="7" cy="5.6" r="1.5"/></svg>';
+const TRAIL_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M1.5 11c3-1 3-5 6-5s3-3 5-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="4 2.2"/></svg>';
 const PEAK_SVG = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2.2 12.6 12H1.4z"/></svg>';
 const spotIcon = (c) => (SPOT_GLYPHS[c]
   ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${SPOT_GLYPHS[c]}"/></svg>`
@@ -202,6 +203,9 @@ function buildOverlays() {
 
   // OSM peaks: thousands of points, so markers are created only for the visible area (see updatePeaks).
   o.peaks = L.layerGroup([], { attribution: '山頭 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)' });
+
+  // OSM hiking routes: downloaded and drawn the first time the layer is switched on (see loadTrails).
+  o.trails = L.layerGroup([], { attribution: '步道 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)' });
 
   o.quakes = L.layerGroup();
   // Strong quakes of the last 3 days get the separate warning icon instead (buildStrongQuakes).
@@ -286,6 +290,7 @@ function applyOverlayVisibility() {
     const hiddenByQuake = S.quakeMode && (k === 'stations' || k === 'spots' || k === 'quakes');
     const minZoom = { stations: 9, spots: 9, peaks: PEAK_MIN_ZOOM }[k] || 0;
     const on = show[k] && !hiddenByQuake && S.map.getZoom() >= minZoom;
+    if (on && k === 'trails') loadTrails();
     if (on && !S.map.hasLayer(g)) g.addTo(S.map);
     if (!on && S.map.hasLayer(g)) S.map.removeLayer(g);
   });
@@ -295,6 +300,27 @@ function applyOverlayVisibility() {
 }
 
 const PEAK_MIN_ZOOM = 10;
+const TRAIL_COLORS = ['#c0392b', '#d35400', '#8e44ad', '#16698c', '#5d4037']; // international / national / regional / local / other
+let trailsState = '';   // '' | 'loading' | 'done'
+
+/** Download trails.json once and draw the routes (canvas renderer: several thousand segments). */
+async function loadTrails() {
+  if (trailsState) return;
+  trailsState = 'loading';
+  const doc = await getJSON('trails.json', { optional: true });
+  if (!doc) { trailsState = ''; return; }
+  const renderer = L.canvas({ padding: 0.3 });
+  const g = S.overlays.trails;
+  [...doc.routes].reverse().forEach((r) => {   // small networks first so the big ones draw on top
+    const color = TRAIL_COLORS[r.net] || TRAIL_COLORS[4];
+    r.l.forEach((flat) => {
+      const pts = [];
+      for (let i = 0; i < flat.length; i += 2) pts.push([flat[i] / 1e4, flat[i + 1] / 1e4]);
+      g.addLayer(L.polyline(pts, { color, weight: r.net <= 1 ? 3 : 2.2, opacity: 0.85, interactive: false, renderer, lineCap: 'round' }));
+    });
+  });
+  trailsState = 'done';
+}
 // Highest peaks first: fewer markers when zoomed out.
 const peakLimit = (z) => (z <= 10 ? 250 : z === 11 ? 500 : 800);
 let peakKeys = '';
@@ -440,7 +466,7 @@ function buildChips() {
 function buildOverlayToggles() {
   const MK = (cls, svg) => `<span class="${cls} tog-ic" aria-hidden="true">${svg}</span>`;
   // Rows: observations and hazards / forecast mountains and spots / all peaks ('|' starts a new row).
-  const items = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], ['quakes', `${MK('ic-eq', EQ_SVG)}地震`], ['typhoon', `${MK('ic-ty', TY_SVG)}颱風`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
+  const items = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], ['quakes', `${MK('ic-eq', EQ_SVG)}地震`], ['typhoon', `${MK('ic-ty', TY_SVG)}颱風`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`], ['trails', `${MK('ic-trail', TRAIL_SVG)}登山步道`]];
   const box = document.getElementById('toggles');
   const names = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
   const group = (id, title, attr, list, state) => `<div class="tog-group" role="group" aria-labelledby="${id}-t">
