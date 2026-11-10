@@ -1147,7 +1147,7 @@ function serve() {
     assert(st.sub.includes('縣') || st.sub.includes('市'), `spot search result without township: ${JSON.stringify(st)}`);
     assert(st.recentQ === 0 || st.badges > 0, 'earthquake badges missing');
     const order = await page.$$eval('[data-ov]', (e) => e.map((x) => x.dataset.ov));
-    assert(order.join() === 'stations,quakes,typhoon,mountains,spots,peaks', `toggle order ${order}`);
+    assert(order.join() === 'stations,quakes,typhoon,mountains,spots,peaks,trails', `toggle order ${order}`);
     if (!(await page.isVisible('#toggles'))) await page.click('#btn-more');
     await page.click('.cat-legend summary');
     await page.screenshot({ path: path.join(SHOTS, 'icon-legend.png') });
