@@ -206,6 +206,7 @@ function buildOverlays() {
 
   // OSM hiking routes: downloaded and drawn the first time the layer is switched on (see loadTrails).
   o.trails = L.layerGroup([], { attribution: '步道 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)' });
+  drawTrails();   // the overlays are rebuilt on every data refresh: draw again when the routes are already loaded
 
   o.quakes = L.layerGroup();
   // Strong quakes of the last 3 days get the separate warning icon instead (buildStrongQuakes).
@@ -301,17 +302,16 @@ function applyOverlayVisibility() {
 
 const PEAK_MIN_ZOOM = 10;
 const TRAIL_COLORS = ['#c0392b', '#d35400', '#8e44ad', '#16698c', '#5d4037']; // international / national / regional / local / other
-let trailsState = '';   // '' | 'loading' | 'done'
+let trailsDoc = null;
+let trailsLoading = false;
 
-/** Download trails.json once and draw the routes (canvas renderer: several thousand segments). */
-async function loadTrails() {
-  if (trailsState) return;
-  trailsState = 'loading';
-  const doc = await getJSON('trails.json', { optional: true });
-  if (!doc) { trailsState = ''; return; }
-  const renderer = L.canvas({ padding: 0.3 });
+/** Draw the routes into the current trails layer group (canvas renderer: several thousand segments). */
+function drawTrails() {
   const g = S.overlays.trails;
-  [...doc.routes].reverse().forEach((r) => {   // small networks first so the big ones draw on top
+  if (!trailsDoc || !g) return;
+  g.clearLayers();
+  const renderer = L.canvas({ padding: 0.3 });
+  [...trailsDoc.routes].reverse().forEach((r) => {   // small networks first so the big ones draw on top
     const color = TRAIL_COLORS[r.net] || TRAIL_COLORS[4];
     r.l.forEach((flat) => {
       const pts = [];
@@ -319,7 +319,15 @@ async function loadTrails() {
       g.addLayer(L.polyline(pts, { color, weight: r.net <= 1 ? 3 : 2.2, opacity: 0.85, interactive: false, renderer, lineCap: 'round' }));
     });
   });
-  trailsState = 'done';
+}
+
+/** Download trails.json the first time the layer is on. */
+async function loadTrails() {
+  if (trailsDoc || trailsLoading) return;
+  trailsLoading = true;
+  trailsDoc = await getJSON('trails.json', { optional: true });
+  trailsLoading = false;
+  drawTrails();
 }
 // Highest peaks first: fewer markers when zoomed out.
 const peakLimit = (z) => (z <= 10 ? 250 : z === 11 ? 500 : 800);
