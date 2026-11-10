@@ -315,7 +315,7 @@ let osmAttrOn = false;
 /** One OSM credit for the peak and route overlays, only while one is shown and the base map does not already credit OSM. */
 function syncOsmAttr() {
   const baseCredits = /OpenStreetMap/.test(baseLayer?.options?.attribution || '');
-  const want = !baseCredits && ['peaks', 'trails'].some((k) => S.settings.overlays[k] && S.map.hasLayer(S.overlays[k]));
+  const want = !baseCredits && ['peaks', 'trails'].some((k) => S.settings.overlays[k] && S.overlays[k] && S.map.hasLayer(S.overlays[k]));
   if (want === osmAttrOn) return;
   osmAttrOn = want;
   if (want) S.map.attributionControl.addAttribution(OSM_ATTR); else S.map.attributionControl.removeAttribution(OSM_ATTR);
