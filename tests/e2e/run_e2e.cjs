@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // End-to-end test of the web app with Playwright (Chromium).
-// Usage: node tests/e2e/run_e2e.cjs [--site site] [--shots logs/shots]
+// Usage: node tests/e2e/run_e2e.cjs [--site site] [--shots logs/shots] [--only <text in a check name>]
 // Requires site/data built by `python -m pipeline.build`.
 const http = require('http');
 const fs = require('fs');
@@ -31,7 +31,9 @@ function log(level, msg) {
   console.log(color ? line.replace(level, `${C[level] || ''}${level}\x1b[0m`) : line);
 }
 let currentPage = null; // screenshot target when a check fails
+const ONLY = opt('--only', '');   // run only the checks whose name contains this text (plus the start-up check)
 async function check(name, fn) {
+  if (ONLY && !name.includes(ONLY) && !name.startsWith('app loads')) return;
   try { await fn(); log('PASS', name); } catch (e) {
     failures += 1;
     const shot = path.join(SHOTS, `FAIL-${failures}.png`);
@@ -1845,6 +1847,71 @@ function serve() {
     }
     assert((await page.$$('[data-kind="fav"][data-del]')).length >= 1, 'favourite was removed by clearing recents');
     await page.click('#sheet-close');
+  });
+
+  await check('hiking routes overlay: notice on first switch-on, silenced by "don\'t show again"; routes, names by zoom, one OSM credit', async () => {
+    const fixture = { time: '2026-01-01T00:00:00+08:00', fields: ['n', 'ref', 'net', 'osm', 'len', 'l'], routes: [
+      { n: '測試國家步道', ref: '', net: 1, osm: 1, len: 3, l: [[236000, 1207000, 236100, 1207100, 236200, 1207300]] },
+      { n: '測試地方小徑', ref: '', net: 3, osm: 2, len: 2, l: [[235800, 1207200, 235900, 1207350]] },
+    ] };
+    try {
+      await page.evaluate(() => { try { const s = JSON.parse(localStorage.getItem('hikingwx.settings.v1') || '{}'); s.trailsNoticeOff = false; s.overlays = { ...(s.overlays || {}), trails: false }; localStorage.setItem('hikingwx.settings.v1', JSON.stringify(s)); } catch { /* ignore */ } });
+      await page.reload();
+      await page.waitForSelector('body.ready');
+      // The service worker answers data requests, so the fixture is served by wrapping fetch (undone by the reload below).
+      await page.evaluate((fx) => {
+        const real = window.fetch.bind(window);
+        window.fetch = (u, o) => (String(u).includes('data/trails.json') ? Promise.resolve(new window.Response(JSON.stringify(fx), { status: 200, headers: { 'Content-Type': 'application/json' } })) : real(u, o));
+      }, fixture);
+      const view = (z) => page.evaluate(async (zz) => { const { S } = await import('./js/state.js'); S.map.setView([23.61, 120.715], zz, { animate: false }); }, z);
+      const group = () => page.evaluate(async () => { const { S } = await import('./js/state.js'); return { n: S.overlays.trails.getLayers().length, on: S.map.hasLayer(S.overlays.trails) }; });
+      await view(13);
+      await page.click('#btn-more');
+      assert((await group()).n === 0 && !(await group()).on, 'routes drawn before the switch is on');
+      // First switch-on: notice appears (not silenced), the routes load.
+      await page.check('input[data-ov="trails"]');
+      await page.waitForSelector('#dlg-trails[open]');
+      const txt = await page.textContent('#dlg-trails');
+      assert(txt.includes('OpenStreetMap 圖客') && txt.includes('已標記成路線') && txt.includes('主管機關'), `notice text: ${txt}`);
+      await page.click('#dlg-trails button');
+      await page.waitForFunction(() => !document.querySelector('#dlg-trails'));
+      assert(!(await page.evaluate(() => JSON.parse(localStorage.getItem('hikingwx.settings.v1')).trailsNoticeOff)), 'notice silenced without asking');
+      await page.waitForFunction(async () => { const { S } = await import('./js/state.js'); return S.overlays.trails.getLayers().length === 2; }, null, { timeout: 15000 });
+      // Names: national route from zoom 12, local route only from zoom 13; the box carries the route class.
+      await view(13);
+      await page.waitForFunction(() => document.querySelectorAll('.map-lbl.lbl-trails').length >= 2, null, { timeout: 10000 });
+      const names13 = await page.$$eval('.map-lbl.lbl-trails', (e) => e.map((x) => x.textContent));
+      assert(names13.includes('測試國家步道') && names13.includes('測試地方小徑'), `zoom 13 names: ${names13}`);
+      assert(await page.locator('.map-lbl.lbl-trails.tn1').count() === 1, 'national route label lacks its class');
+      await view(12);
+      await page.waitForTimeout(400);
+      const names12 = await page.$$eval('.map-lbl.lbl-trails', (e) => e.map((x) => x.textContent));
+      assert(names12.includes('測試國家步道') && !names12.includes('測試地方小徑'), `zoom 12 names: ${names12}`);
+      await view(11);
+      await page.waitForTimeout(400);
+      assert(await page.locator('.map-lbl.lbl-trails').count() === 0, 'route names shown below zoom 12');
+      // One OpenStreetMap credit only (the base map's or the overlays', never both).
+      const credit = await page.textContent('.leaflet-control-attribution');
+      assert((credit.match(/OpenStreetMap/g) || []).length === 1, `OSM credit count: ${credit}`);
+      // Off and on again: the notice returns; with "don't show again" it stays away.
+      await page.uncheck('input[data-ov="trails"]');
+      assert(!(await group()).on, 'routes still on the map after switching off');
+      await page.check('input[data-ov="trails"]');
+      await page.waitForSelector('#dlg-trails[open]');
+      await page.check('#trails-off');
+      await page.click('#dlg-trails button');
+      await page.waitForFunction(() => !document.querySelector('#dlg-trails'));
+      assert(await page.evaluate(() => JSON.parse(localStorage.getItem('hikingwx.settings.v1')).trailsNoticeOff), 'silence not saved');
+      await page.uncheck('input[data-ov="trails"]');
+      await page.check('input[data-ov="trails"]');
+      await page.waitForTimeout(600);
+      assert(!(await page.locator('#dlg-trails').count()), 'notice shown again after "don\'t show again"');
+      await page.uncheck('input[data-ov="trails"]');
+    } finally {
+      await page.evaluate(() => { try { const s = JSON.parse(localStorage.getItem('hikingwx.settings.v1') || '{}'); s.trailsNoticeOff = false; s.overlays = { ...(s.overlays || {}), trails: false }; localStorage.setItem('hikingwx.settings.v1', JSON.stringify(s)); } catch { /* ignore */ } });
+      await page.reload();
+      await page.waitForSelector('body.ready');
+    }
   });
 
   await check('desktop layout screenshot', async () => {
