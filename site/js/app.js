@@ -107,6 +107,7 @@ function setBasemap() {
     baseLayer.addTo(S.map);
   }
   setHistOverlays();
+  if (S.overlays.peaks) syncOsmAttr();
   if (S.manifest) updateStatus();
 }
 
@@ -202,10 +203,10 @@ function buildOverlays() {
   });
 
   // OSM peaks: thousands of points, so markers are created only for the visible area (see updatePeaks).
-  o.peaks = L.layerGroup([], { attribution: '山頭 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)' });
+  o.peaks = L.layerGroup();
 
   // OSM hiking routes: downloaded and drawn the first time the layer is switched on (see loadTrails).
-  o.trails = L.layerGroup([], { attribution: '步道 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)' });
+  o.trails = L.layerGroup();
   drawTrails();   // the overlays are rebuilt on every data refresh: draw again when the routes are already loaded
 
   o.quakes = L.layerGroup();
@@ -284,6 +285,18 @@ function layoutTyLabels() {
   });
 }
 
+const OSM_ATTR = '山頭、步道 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
+let osmAttrOn = false;
+
+/** One OSM credit for the peak and route overlays, only while one is shown and the base map does not already credit OSM. */
+function syncOsmAttr() {
+  const baseCredits = /OpenStreetMap/.test(baseLayer?.options?.attribution || '');
+  const want = !baseCredits && ['peaks', 'trails'].some((k) => S.settings.overlays[k] && S.map.hasLayer(S.overlays[k]));
+  if (want === osmAttrOn) return;
+  osmAttrOn = want;
+  if (want) S.map.attributionControl.addAttribution(OSM_ATTR); else S.map.attributionControl.removeAttribution(OSM_ATTR);
+}
+
 function applyOverlayVisibility() {
   const show = S.settings.overlays;
   Object.entries(S.overlays).forEach(([k, g]) => {
@@ -296,6 +309,7 @@ function applyOverlayVisibility() {
     if (!on && S.map.hasLayer(g)) S.map.removeLayer(g);
   });
   document.getElementById('map').dataset.zoom = String(S.map.getZoom());
+  syncOsmAttr();
   updatePeaks();
   updateLabels();
 }
@@ -303,6 +317,30 @@ function applyOverlayVisibility() {
 const PEAK_MIN_ZOOM = 10;
 const TRAIL_COLORS = ['#c0392b', '#d35400', '#8e44ad', '#16698c', '#5d4037']; // international / national / regional / local / other
 let trailsDoc = null;
+let trailAnchors = null;   // [{n, net, pts: [[lat, lon] of each segment's middle]}]
+
+/** One label per route in view: the segment middle nearest the view centre; local routes only from zoom 13. */
+function trailLabelItems() {
+  if (!trailsDoc) return [];
+  if (!trailAnchors) {
+    trailAnchors = trailsDoc.routes.map((r) => ({ n: r.n, net: r.net, pts: r.l.map((f) => { const i = (f.length / 4 | 0) * 2; return [f[i] / 1e4, f[i + 1] / 1e4]; }) }));
+  }
+  const view = S.map.getBounds().pad(0.05);
+  const c = S.map.getCenter();
+  const z = S.map.getZoom();
+  const out = [];
+  for (const r of trailAnchors) {
+    if (r.net > 2 && z < 13) continue;
+    let best = null;
+    for (const [lat, lon] of r.pts) {
+      if (!view.contains([lat, lon])) continue;
+      const d = (lat - c.lat) ** 2 + (lon - c.lng) ** 2;
+      if (!best || d < best.d) best = { d, lat, lon };
+    }
+    if (best) out.push({ n: r.n, lat: best.lat, lon: best.lon });
+  }
+  return out;
+}
 let trailsLoading = false;
 
 /** Draw the routes into the current trails layer group (canvas renderer: several thousand segments). */
@@ -328,6 +366,7 @@ async function loadTrails() {
   trailsDoc = await getJSON('trails.json', { optional: true });
   trailsLoading = false;
   drawTrails();
+  updateLabels();
 }
 // Highest peaks first: fewer markers when zoomed out.
 const peakLimit = (z) => (z <= 10 ? 250 : z === 11 ? 500 : 800);
@@ -364,6 +403,7 @@ const LABEL_KINDS = [
   ['spots', 10, () => S.spots.filter((p) => p.c !== 'mountain'), 11],
   ['peaks', 10, () => peakView, 7],
   ['stations', 11, () => S.stations, 5],
+  ['trails', 12, () => trailLabelItems(), 0],
 ];
 const MAX_LABELS = 300;
 let labelLayer = null;
@@ -476,7 +516,7 @@ function buildOverlayToggles() {
   // Rows: observations and hazards / forecast mountains and spots / all peaks ('|' starts a new row).
   const items = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], ['quakes', `${MK('ic-eq', EQ_SVG)}地震`], ['typhoon', `${MK('ic-ty', TY_SVG)}颱風`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`], ['trails', `${MK('ic-trail', TRAIL_SVG)}登山步道`]];
   const box = document.getElementById('toggles');
-  const names = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`]];
+  const names = [['stations', `${MK('ic-stn', STN_SVG)}觀測站`], '|', ['mountains', `${MK('pin-mtn', MTN_SVG)}有預報的山`], ['spots', `${MK('ic-spot', SPOT_SVG)}景點`], '|', ['peaks', `${MK('pin-peak', PEAK_SVG)}所有山頭`], ['trails', `${MK('ic-trail', TRAIL_SVG)}登山步道`]];
   const group = (id, title, attr, list, state) => `<div class="tog-group" role="group" aria-labelledby="${id}-t">
 <div class="tog-head"><span class="tog-lbl" id="${id}-t">${title}</span><span class="tog-all"><button type="button" class="link" data-all="${attr}" data-on="1">全選</button><button type="button" class="link" data-all="${attr}" data-on="0">全部取消</button></span></div>
 ${list.map((x) => (x === '|' ? '<span class="tog-row" aria-hidden="true"></span>' : `<label class="tog"><input type="checkbox" data-${attr}="${x[0]}"${state[x[0]] ? ' checked' : ''}> ${x[1]}</label>`)).join('')}</div>`;
@@ -649,8 +689,10 @@ function updateStatus() {
   // Felt earthquakes in the last 24 hours get their own banner and tab (like a typhoon warning).
   const recentQ = (S.quakes || []).filter((q) => Date.now() - new Date(q.time).getTime() < QUAKE_RECENT_MS);
   const q0 = recentQ.find(isStrongQuake) || recentQ[0];   // a strong quake leads the status strip
+  // The date is shown only when the quake is not from today (Taiwan time).
+  const sameDay = (iso) => fmtTime(iso).split(' ')[0] === fmtTime(new Date().toISOString()).split(' ')[0];
   const qPlace = q0 ? (q0.loc.match(/位於([^)）]+)/)?.[1] || q0.loc).trim() : '';
-  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">${ico('wave')}</span><span>${esc(fmtTime(q0.time, { date: false }))} ${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
+  const eqBanner = q0 ? `<button class="ty-banner eq-banner" id="eq-banner" title="${esc(`${fmtTime(q0.time)} ${qPlace}`)}" aria-label="${esc(`地震 ${fmtTime(q0.time)} ${qPlace} 規模${Number(q0.mag).toFixed(1)} 最大震度${intText(q0.maxInt)}，24 小時內 ${recentQ.length} 起，查看詳情`)}"><span aria-hidden="true">${ico('wave')}</span><span>${esc(fmtTime(q0.time, { date: !sameDay(q0.time) }))} ${isStrongQuake(q0) ? '強震' : '地震'} ${esc(Number(q0.mag).toFixed(1))}・${esc(intText(q0.maxInt))}${recentQ.length > 1 ? `（${recentQ.length} 起）` : ''}</span><span class="ty-more" aria-hidden="true">›</span></button>` : '';
   // Base-map notice: a short warning pill; the full sentence opens under the strip (and stays in the text for screen readers).
   if (S.baseNoteFor !== S.baseNotice) { S.baseNoteFor = S.baseNotice; S.baseNoteDone = false; clearTimeout(S.baseNoteTimer); S.baseNoteTimer = null; }
   const baseNote = S.baseNotice && !S.baseNoteDone ? `<button type="button" class="sp sp-warn base-note" aria-expanded="false" aria-controls="base-detail">底圖已改用臺灣通用 ⓘ<span class="sr-only">：${esc(S.baseNotice)}</span></button>` : '';

@@ -340,6 +340,7 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 [data-theme="contrast"] .map-lbl { color: #ff0; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000, 0 0 4px #000; }
 .map-lbl.lbl-left > span { position: absolute; right: 0; top: 0; }
 .tog-lbl { color: var(--muted); }
+.map-lbl.lbl-trails { color: #9c3d12; font-weight: 600; font-style: italic; }
 .map-lbl.lbl-peaks { color: #6b4f33; font-weight: 600; }
 .seg-btn.mtn.osm > span { color: #8a6a4a; }
 
