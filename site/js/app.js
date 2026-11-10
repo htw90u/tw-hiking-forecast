@@ -293,9 +293,9 @@ function showTrailsNotice() {
   dlg.setAttribute('aria-labelledby', 'dlg-trails-t');
   dlg.innerHTML = `<form method="dialog" class="notice">
 <h2 id="dlg-trails-t">登山步道資料說明</h2>
-<p>步道線條來自 OpenStreetMap 志工整理的登山路線，不是官方資料。</p>
+<p>步道線條來自 OpenStreetMap 圖客整理的登山路線，不是官方資料。</p>
 <ul>
-<li>只有已登記成路線、而且有名稱的步道會顯示，沒登記的山徑看不到。</li>
+<li>只有已標記成路線、且有名稱的步道會顯示，沒標記的山徑看不到。</li>
 <li>路線位置、名稱與封閉、坍方等路況，可能和現況不同。</li>
 </ul>
 <p>行前請以林業及自然保育署、國家公園等主管機關的公告與入山規定為準。</p>
