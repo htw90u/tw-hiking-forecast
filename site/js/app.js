@@ -285,6 +285,30 @@ function layoutTyLabels() {
   });
 }
 
+/** Notice shown when the hiking-route overlay is switched on (can be silenced). */
+function showTrailsNotice() {
+  if (S.settings.trailsNoticeOff || document.getElementById('dlg-trails')) return;
+  const dlg = document.createElement('dialog');
+  dlg.id = 'dlg-trails';
+  dlg.setAttribute('aria-labelledby', 'dlg-trails-t');
+  dlg.innerHTML = `<form method="dialog" class="notice">
+<h2 id="dlg-trails-t">登山步道資料說明</h2>
+<p>步道線條來自 OpenStreetMap 志工整理的登山路線，不是官方資料。</p>
+<ul>
+<li>只有已登記成路線、而且有名稱的步道會顯示，沒登記的山徑看不到。</li>
+<li>路線位置、名稱與封閉、坍方等路況，可能和現況不同。</li>
+</ul>
+<p>行前請以林業及自然保育署、國家公園等主管機關的公告與入山規定為準。</p>
+<label class="tog"><input type="checkbox" id="trails-off"> 不再顯示這則說明</label>
+<div class="notice-act"><button class="btn" value="ok">我知道了</button></div></form>`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => {
+    if (dlg.querySelector('#trails-off').checked) { S.settings.trailsNoticeOff = true; saveSettings(S.settings); }
+    dlg.remove();
+  });
+  dlg.showModal();
+}
+
 const OSM_ATTR = '山頭、步道 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
 let osmAttrOn = false;
 
@@ -544,6 +568,7 @@ ${cats.map((c) => `<li><span class="pin-cat cat-${c.id}" aria-hidden="true">${sp
     saveSettings(S.settings);
     apply[attr]();
     refreshAll();
+    if (attr === 'ov' && c.dataset.ov === 'trails' && c.checked) showTrailsNotice();
   })));
   box.querySelectorAll('[data-all]').forEach((b) => b.addEventListener('click', () => {
     const attr = b.dataset.all;
@@ -553,6 +578,7 @@ ${cats.map((c) => `<li><span class="pin-cat cat-${c.id}" aria-hidden="true">${sp
     saveSettings(S.settings);
     apply[attr]();
     refreshAll();
+    if (attr === 'ov' && on && store.ov.trails) showTrailsNotice();
   }));
   refreshAll();
 }

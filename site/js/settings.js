@@ -24,6 +24,7 @@ export const DEFAULTS = {
   satOpacity: 1,         // satellite picture opacity (own value: see layers.js layerOpacity)
   overlays: { stations: true, mountains: true, peaks: true, spots: false, trails: false, quakes: true, typhoon: true },
   labels: { mountains: true, peaks: true, spots: true, trails: true, stations: false }, // names drawn on the map
+  trailsNoticeOff: false, // the one-time notice about the OSM hiking routes: true after "don't show again"
   labelsVer: 2,          // bumped when the label defaults change
   thresholds: { rain1h: 10, rain1hRed: 30, rain24: 80, rain24Red: 200, gust: 10, gustRed: 17, cold: 5, coldRed: 0 },
 };

@@ -707,3 +707,10 @@ ul.list.eqlist li strong { display: inline-block; min-width: 3.1rem; text-align:
 .mag-key span { border: 2px solid var(--q); border-radius: 8px; padding: .05rem .45rem; }
 
 .attr-src { font-weight: 700; }
+
+/* One-time notice dialogs */
+.notice { padding: 1rem 1.1rem; display: grid; gap: .6rem; }
+.notice h2 { margin: 0; font-size: 1.1rem; }
+.notice p, .notice ul { margin: 0; line-height: 1.55; }
+.notice ul { padding-left: 1.2rem; }
+.notice-act { display: flex; justify-content: flex-end; }
