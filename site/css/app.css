@@ -340,7 +340,13 @@ li.row-del .grow { flex: 1; display: flex; flex-direction: column; min-width: 0;
 [data-theme="contrast"] .map-lbl { color: #ff0; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000, 0 0 4px #000; }
 .map-lbl.lbl-left > span { position: absolute; right: 0; top: 0; }
 .tog-lbl { color: var(--muted); }
-.map-lbl.lbl-trails { color: #9c3d12; font-weight: 600; font-style: italic; }
+/* Route names: a white box with a border in the route's line colour (as on Waymarked Trails), unlike the plain peak names */
+.map-lbl.lbl-trails { --tc: #5d4037; font-weight: 600; text-shadow: none; }
+.map-lbl.lbl-trails.tn0 { --tc: #c0392b; } .map-lbl.lbl-trails.tn1 { --tc: #d35400; } .map-lbl.lbl-trails.tn2 { --tc: #8e44ad; } .map-lbl.lbl-trails.tn3 { --tc: #16698c; }
+.map-lbl.lbl-trails:not(.lbl-left), .map-lbl.lbl-trails.lbl-left > span {
+  color: var(--tc); background: #fff; border: 1.5px solid var(--tc); border-radius: 3px; padding: 0 3px; box-sizing: border-box; }
+[data-theme="contrast"] .map-lbl.lbl-trails { --tc: #ff0; }
+[data-theme="contrast"] .map-lbl.lbl-trails:not(.lbl-left), [data-theme="contrast"] .map-lbl.lbl-trails.lbl-left > span { background: #000; }
 .map-lbl.lbl-peaks { color: #6b4f33; font-weight: 600; }
 .seg-btn.mtn.osm > span { color: #8a6a4a; }
 

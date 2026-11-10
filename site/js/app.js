@@ -337,7 +337,7 @@ function trailLabelItems() {
       const d = (lat - c.lat) ** 2 + (lon - c.lng) ** 2;
       if (!best || d < best.d) best = { d, lat, lon };
     }
-    if (best) out.push({ n: r.n, lat: best.lat, lon: best.lon });
+    if (best) out.push({ n: r.n, net: r.net, lat: best.lat, lon: best.lon });
   }
   return out;
 }
@@ -433,7 +433,7 @@ function updateLabels() {
     const gap = half + 2;
     for (const { p, pt } of list) {
       if (placed.length >= MAX_LABELS) return;
-      const w = p.n.length * charW + 6;
+      const w = p.n.length * charW + 6 + (p.net === undefined ? 0 : 8);
       const others = marks.filter((q) => q.pt !== pt);
       // Right of the marker first, then left.
       const r = [{ x: pt.x + gap, left: false }, { x: pt.x - gap - w, left: true }]
@@ -445,8 +445,8 @@ function updateLabels() {
         pane: 'labels', interactive: false, keyboard: false,
         // Left labels: a zero-width box at the marker with the text right-aligned against it.
         icon: r.left
-          ? L.divIcon({ className: `map-lbl lbl-${k} lbl-left`, html: `<span>${esc(p.n)}</span>`, iconSize: [0, h], iconAnchor: [gap, h / 2] })
-          : L.divIcon({ className: `map-lbl lbl-${k}`, html: esc(p.n), iconSize: null, iconAnchor: [-gap, h / 2] }),
+          ? L.divIcon({ className: `map-lbl lbl-${k}${p.net === undefined ? '' : ` tn${p.net}`} lbl-left`, html: `<span>${esc(p.n)}</span>`, iconSize: [0, h], iconAnchor: [gap, h / 2] })
+          : L.divIcon({ className: `map-lbl lbl-${k}${p.net === undefined ? '' : ` tn${p.net}`}`, html: esc(p.n), iconSize: null, iconAnchor: [-gap, h / 2] }),
       }));
     }
   }
