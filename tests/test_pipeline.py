@@ -1081,3 +1081,29 @@ def test_pointcube_stacks_pictures_and_wind(tmp_path):
     assert np.isnan(a[0, j, i]), "a cell without data stays empty"
     spd = pc.unpack(_json.loads((tmp_path / files["wind"]).read_text()))
     assert abs(spd[0, 3, 3] - 5.0) < 0.06, "speed of u = 3, v = 4 m/s is 5 m/s"
+
+
+def test_trails_convert_and_build(tmp_path):
+    from datetime import datetime
+    from pipeline import trails
+
+    class L:
+        def info(self, *a): pass
+        def warn(self, *a): pass
+
+    way = lambda i, pts: {"type": "way", "ref": i, "geometry": [{"lat": a, "lon": b} for a, b in pts]}  # noqa: E731
+    data = {"elements": [
+        {"type": "relation", "id": 7, "tags": {"name": "Test Trail", "network": "nwn", "ref": "A"}, "members": [
+            way(1, [(24.0, 121.0), (24.0005, 121.0), (24.001, 121.0), (24.002, 121.001)]),
+            way(1, [(24.0, 121.0), (24.1, 121.0)]),   # duplicate way id is skipped
+            {"type": "node", "ref": 9}]},
+        {"type": "relation", "id": 8, "tags": {"name": "Empty"}, "members": []},
+    ]}
+    r = trails.convert(data)
+    assert len(r) == 1 and r[0]["net"] == 1 and r[0]["osm"] == 7
+    assert r[0]["l"][0][:2] == [240000, 1210000] and len(r[0]["l"][0]) == 6   # collinear middle point dropped
+    assert 0.2 <= r[0]["len"] <= 0.4
+    n, fresh = trails.build(tmp_path, L(), datetime(2026, 1, 1), fetch=lambda log: data)
+    assert (n, fresh) == (1, True)
+    n, fresh = trails.build(tmp_path, L(), datetime(2026, 1, 2), fetch=lambda log: 1 / 0)
+    assert (n, fresh) == (1, False)   # fresh copy: no download

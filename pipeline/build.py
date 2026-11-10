@@ -24,7 +24,7 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from . import aloft, forecast, pointcube, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, wrfglobal, modelgrid, hazards, lightning, peaks, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
+from . import aloft, forecast, pointcube, geo, grids, gusts, heat, hydro, wrf as wrfmodel, wrf3, wrfglobal, modelgrid, hazards, lightning, peaks, trails, qpf, qpfacc, qpfweb, rainacc, satellite, shakemap, stations, wind  # noqa: E402
 from .fetch import Fetcher, FetchError  # noqa: E402
 from .log import Log, TZ, now  # noqa: E402
 
@@ -35,7 +35,7 @@ TOPO = ROOT / "site" / "geo" / "towns-10t.json"
 # when explicitly enabled (--typhoon-tables or TYPHOON_TABLES=1), e.g. for
 # private use or after permission has been granted (see docs/TODO.md).
 TYPHOON_TABLES_LINK = "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_NEWS.html"
-TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "wrfg", "mm", "mmpts", "heat", "hydro", "typhoon", "warnings", "satellite"]
+TASKS = ["stations", "history", "rainacc", "grids", "radar", "qpf", "spots", "peaks", "trails", "towns", "gusts", "aloft", "wind", "quakes", "lightning", "wrf", "wrf3", "wrfg", "mm", "mmpts", "heat", "hydro", "typhoon", "warnings", "satellite"]
 
 
 def write_json(path: Path, obj) -> None:
@@ -436,6 +436,11 @@ class Builder:
         n, fresh = peaks.build(self.out, self.log, now(), force=self.args.refresh_peaks)
         self.manifest["layers"]["peaks"] = {"count": n, "source": "OpenStreetMap", "license": "ODbL-1.0"}
         return f"{n} OSM peaks ({'downloaded' if fresh else 'cached, refreshed weekly'})"
+
+    def task_trails(self):
+        n, fresh = trails.build(self.out, self.log, now(), force=self.args.refresh_peaks)
+        self.manifest["layers"]["trails"] = {"count": n, "source": "OpenStreetMap", "license": "ODbL-1.0"}
+        return f"{n} OSM hiking routes ({'downloaded' if fresh else 'cached, refreshed weekly'})"
 
     def task_towns(self):
         r = forecast.build_towns(self.f.get_json, self.out, self.log)
