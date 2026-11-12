@@ -88,11 +88,17 @@ def decode(rgba: np.ndarray, now: datetime, hours: int, tpl: dict) -> dict:
     n_i = sum(c.isdigit() for c in issue.strftime(FMT))
     n_v = sum(c.isdigit() for c in start.strftime(FMT)) * 2
     return {"issue": issue, "start": start, "end": start + timedelta(hours=hours),
-            "err": max(si / n_i, sv / n_v), "margin": min(si2 - si, sv2 - sv), "glyphs": lines}
+            "err": max(si / n_i, sv / n_v), "margin": min(si2 - si, sv2 - sv), "glyphs": lines,
+            "err_v": sv / n_v, "margin_v": sv2 - sv}   # valid-time line alone (the issue line cannot tell 17:30 from 19:30 without 7/9 templates)
 
 
 def confident(res: dict) -> bool:
     return res["err"] < 0.06 and res["margin"] > 0.05
+
+
+def confident_valid(res: dict) -> bool:
+    """The valid-time line alone is recognised (enough to place a 12-hour QPF map in time)."""
+    return res["err_v"] < 0.06 and res["margin_v"] > 0.05
 
 
 def learn_unknown_digits(res: dict, hours: int, store: Path, tpl: dict) -> list:

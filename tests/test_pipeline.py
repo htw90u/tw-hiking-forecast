@@ -110,9 +110,22 @@ def test_qpf_island_insets(qpf_result):
 
 
 def test_qpf_period_start():
+    # nearest 02/08/14/20 boundary to the issue time (matches the headers seen: 17:30 -> 20:00, 20:30 -> 20:00, 05:30 -> 08:00)
+    assert qpf.period_start("2026-11-12T17:05:28+08:00").isoformat().startswith("2026-11-12T20")
     assert qpf.period_start("2026-10-23T20:09:10+08:00").hour == 20
-    assert qpf.period_start("2026-10-23T08:40:00+08:00").hour == 8
-    assert qpf.period_start("2026-10-23T01:40:00+08:00").isoformat().startswith("2026-10-22T20")
+    assert qpf.period_start("2026-11-12T05:40:00+08:00").hour == 8
+    assert qpf.period_start("2026-11-12T11:30:00+08:00").hour == 14
+    assert qpf.period_start("2026-11-12T23:35:00+08:00").isoformat().startswith("2026-11-13T02")
+    assert qpf.period_start("2026-10-23T01:40:00+08:00").isoformat().startswith("2026-10-23T02")
+
+
+def test_qpf_header_valid_time_is_read_from_the_image():
+    from datetime import datetime, timedelta, timezone
+    from pipeline import qpfweb
+    now = datetime(2026, 10, 23, 21, 0, tzinfo=timezone(timedelta(hours=8)))
+    res = qpfweb.decode(qpfweb.read_png((FIX / "qpf_I.png").read_bytes()), now, 12, qpfweb.load_templates())
+    assert qpfweb.confident_valid(res)
+    assert res["start"].isoformat() == "2026-10-23T20:00:00+08:00" and res["end"].hour == 8   # header: 2026/10/23 20:00 ~ 2026/10/24 08:00
 
 
 def test_land_mask_includes_taipei():

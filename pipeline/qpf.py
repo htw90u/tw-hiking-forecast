@@ -9,6 +9,7 @@ automatically if CWA changes the layout.
 """
 import io
 import json
+import math
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -243,10 +244,15 @@ def fit_inset(rgb: np.ndarray, name: str, pts: np.ndarray, threshold: float = 1.
 
 
 def period_start(sent_iso: str) -> datetime:
-    """Start of period (I): the issue time floored to 02/08/14/20 local time."""
+    """Fallback start of period (I): the 02/08/14/20 local-time boundary nearest to the issue time.
+
+    The image header holds the real valid time (read by pipeline.qpfweb.decode); the issue time is not a fixed
+    schedule (e.g. issue 20:30 -> valid from 20:00, issue 17:30 -> valid from 20:00, issue 05:30 -> 08:00), the
+    nearest boundary fits every header seen so far."""
     t = datetime.fromisoformat(sent_iso)
-    h = t.hour - ((t.hour - 2) % 6)
-    return t.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=h)
+    minutes = t.hour * 60 + t.minute + t.second / 60
+    k = math.floor((minutes - 120) / 360 + 0.5)
+    return t.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=120 + 360 * k)
 
 
 def process(png_bytes: bytes, pts: np.ndarray, land: np.ndarray, insets: dict = None):

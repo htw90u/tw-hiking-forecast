@@ -241,6 +241,7 @@ class Builder:
         land = geo.land_mask(topo, g["lon0"], g["lat0"], g["res"], g["nx"], g["ny"])
         insets = qpf.prepare_insets(topo)
         periods = []
+        tpl = qpfweb.load_templates(Path(self.args.cache) / "qpf_digits")
         main_cls, inset_cls, starts, issued = [], {}, [], None
         for i, ds_id in enumerate(qpf.QPF_IDS):
             meta = self.f.get_json(f"Forecast/{ds_id}.json")["cwaopendata"]
@@ -248,7 +249,18 @@ class Builder:
             r = qpf.process(png, pts, land, insets)
             if r["refit"]:
                 self.log.warn(f"QPF {ds_id}: layout changed, re-fitted transform {np.round(r['fit'], 2).tolist()}")
+            # The valid time is printed in the image header: read it; the issue-time rule is only the fallback.
             start = qpf.period_start(meta["Sent"]) + timedelta(hours=12 * i)
+            try:
+                head = qpfweb.decode(qpfweb.read_png(png), now(), 12, tpl)
+                if qpfweb.confident_valid(head):
+                    if head["start"] != start:
+                        self.log.warn(f"QPF {ds_id}: header says valid from {head['start']:%m/%d %H:%M}, issue-time rule gave {start:%m/%d %H:%M}; using the header")
+                    start = head["start"]
+                else:
+                    self.log.warn(f"QPF {ds_id}: header not recognised (err {head['err_v']:.3f}, margin {head['margin_v']:.3f}); using the issue-time rule")
+            except Exception as e:  # noqa: BLE001
+                self.log.warn(f"QPF {ds_id}: header read failed ({e}); using the issue-time rule")
             main_cls.append(r["grid"])
             starts.append(start)
             issued = meta["Sent"]
