@@ -60,6 +60,7 @@ export function chart({ title, unit, times, series, zeroBase = false }) {
     if (!vals.length) return `${s.label} 無資料`;
     const mx = Math.max(...vals);
     const mn = Math.min(...vals);
+    if (s.total) return `${s.label} ${vals[vals.length - 1]}${unit}`;
     return s.kind === 'bar' ? `${s.label} 合計 ${vals.reduce((a, b) => a + b, 0).toFixed(1)}${unit}，最大 ${mx}${unit}`
       : `${s.label} 最高 ${mx}${unit}、最低 ${mn}${unit}`;
   }).join('；');

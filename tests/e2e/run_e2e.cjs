@@ -329,6 +329,9 @@ function serve() {
     await page.waitForTimeout(800);
     const has = await page.$('#hist-out figure.chart');
     assert(has, 'no chart for 7 days');
+    // A station with hourly rain also gets the running total over the period.
+    const titles = await page.$$eval('#hist-out .chart-title strong', (e) => e.map((x) => x.textContent));
+    if (titles.includes('時雨量')) assert(titles.includes('累積雨量'), `no accumulated-rain chart: ${titles}`);
   });
 
   await check('search mountain and open spot forecast', async () => {

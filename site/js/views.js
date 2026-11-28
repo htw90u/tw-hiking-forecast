@@ -268,7 +268,7 @@ function stationCard(st) {
     st.Tmax === undefined ? '' : tile('今日高／低', `${fmtNum(st.Tmax, 1)}／${fmtNum(st.Tmin, 1, '°C')}`),
     num('氣壓', st.P, 'hPa'), num('能見度', st.vis, 'km'), num('紫外線', st.uv, '', 0),
   ].join('');
-  const rain = [['10分鐘', 'R10m'], ['1小時', 'R1h'], ['3小時', 'R3h'], ['6小時', 'R6h'], ['12小時', 'R12h'], ['24小時', 'R24h'], ['今日累積', 'Rnow']]
+  const rain = [['10分鐘', 'R10m'], ['1小時', 'R1h'], ['3小時', 'R3h'], ['6小時', 'R6h'], ['12小時', 'R12h'], ['24小時', 'R24h'], ['2天', 'R2d'], ['3天', 'R3d'], ['今日累積', 'Rnow']]
     .map(([l, k]) => num(l, st[k], 'mm')).join('');
   return raw(`<section class="card station" aria-labelledby="h-stn"><h3 id="h-stn">${esc(st.n)}測站・即時觀測</h3>
 <p class="meta">${esc(STATION_KIND[st.k] || '測站')}・海拔 ${st.alt !== undefined ? `${Math.round(st.alt)} m` : '不明'}・${esc(st.county || '')}${esc(st.town || '')}・站號 ${esc(st.id)}</p>
@@ -594,6 +594,10 @@ async function renderHistory(container, sid, range) {
   let out = '';
   if (T && T.some((v) => v !== null)) out += chart({ title: '溫度', unit: '°C', times: tt, series: [{ label: '氣溫', values: T, kind: 'line', cls: 's1' }] });
   if (R && R.some((v) => v !== null)) out += chart({ title: '時雨量', unit: 'mm', times: tt, zeroBase: true, series: [{ label: '每小時雨量', values: R, kind: 'bar', cls: 's2' }] });
+  // Running total of the hourly rain over the chosen period (hours without a report add nothing).
+  let run = 0;
+  const cum = R && R.some((v) => v !== null) ? R.map((v) => { if (v !== null && v !== undefined) run += v; return +run.toFixed(1); }) : null;
+  if (cum) out += chart({ title: '累積雨量', unit: 'mm', times: tt, zeroBase: true, series: [{ label: '期間累積', values: cum, kind: 'line', cls: 's2', total: true }] });
   if (!((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null)))) out += `<p class="note">${isRainGauge ? '這是自動雨量站，只觀測雨量，所以沒有風速圖。' : '此站氣象署未回報風向、風力、陣風（風力儀器故障），所以沒有風速圖。可改選其他測站。'}</p>`;
   if ((WS && WS.some((v) => v !== null)) || (G && G.some((v) => v !== null))) {
     out += chart({
@@ -608,7 +612,7 @@ async function renderHistory(container, sid, range) {
   const WD = pick('WD');
   const lvl = (a) => a && a.map((v) => (v === null || v === undefined ? null : beaufort(v)));
   const dirs = WD && WD.map((v) => (v === null || v === undefined ? null : windDir(v)));
-  const cols = [['氣溫°C', T], ['時雨量mm', R], ['風向', dirs], ['風速m/s', WS], ['風力級', lvl(WS)], ['陣風m/s', G], ['陣風級', lvl(G)], ['濕度%', RH]].filter(([, v]) => v).map(([label, values]) => ({ label, values }));
+  const cols = [['氣溫°C', T], ['時雨量mm', R], ['累積雨量mm', cum], ['風向', dirs], ['風速m/s', WS], ['風力級', lvl(WS)], ['陣風m/s', G], ['陣風級', lvl(G)], ['濕度%', RH]].filter(([, v]) => v).map(([label, values]) => ({ label, values }));
   out += dataTable(tt, cols);
   box.innerHTML = out || '<p>此期間沒有資料。</p>';
 }
